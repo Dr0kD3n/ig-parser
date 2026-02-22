@@ -92,7 +92,6 @@ const CONFIG = {
 app.use(express.json());
 
 const GIRLS_FILE = path.join(__dirname, 'found_girls.json');
-const VOTES_FILE = path.join(__dirname, 'votes.json');
 
 // --- Routes ---
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
@@ -104,29 +103,58 @@ app.get('/api/girls', (req, res) => {
 });
 
 app.get('/api/votes', (req, res) => {
-    if (fs.existsSync(VOTES_FILE)) {
-        try { res.json(JSON.parse(fs.readFileSync(VOTES_FILE, 'utf8'))); } catch (e) { res.json({}); }
-    } else { res.json({}); }
+    if (fs.existsSync(GIRLS_FILE)) {
+        try {
+            const profiles = JSON.parse(fs.readFileSync(GIRLS_FILE, 'utf8'));
+            
+            // Собираем объект { "url": "like" } на лету, чтобы фронтенд ничего не заметил
+            const votes = {};
+            profiles.forEach(p => {
+                if (p.vote) {
+                    votes[p.url] = p.vote;
+                }
+            });
+            res.json(votes);
+        } catch (e) { 
+            res.json({}); 
+        }
+    } else { 
+        res.json({}); 
+    }
 });
 
 app.post('/api/vote', (req, res) => {
-    // ИСПРАВЛЕНО: берем 'status', так как фронтенд отправляет именно его
     const { url, status } = req.body; 
 
-    let votes = {};
-    if (fs.existsSync(VOTES_FILE)) { 
+    if (!url || !status) {
+        return res.status(400).json({ success: false, error: 'Нет url или status' });
+    }
+
+    let profiles = [];
+    if (fs.existsSync(GIRLS_FILE)) { 
         try { 
-            votes = JSON.parse(fs.readFileSync(VOTES_FILE, 'utf8')); 
-        } catch (e) { } 
+            profiles = JSON.parse(fs.readFileSync(GIRLS_FILE, 'utf8')); 
+        } catch (e) {
+            console.error('Ошибка чтения файла:', e);
+        } 
     }
     
-    // Используем status для записи
-    votes[url] = status; 
+    // Ищем индекс профиля, у которого совпадает URL
+    const profileIndex = profiles.findIndex(p => p.url === url);
     
-    fs.writeFileSync(VOTES_FILE, JSON.stringify(votes, null, 2), 'utf8');
-    
-    console.log(`[GOLOS] ${status}: ${url}`);
-    res.json({ success: true });
+    if (profileIndex !== -1) {
+        // Добавляем/обновляем поле vote в найденном объекте
+        profiles[profileIndex].vote = status; 
+        
+        // Записываем обновленный массив обратно в файл
+        fs.writeFileSync(GIRLS_FILE, JSON.stringify(profiles, null, 2), 'utf8');
+        
+        console.log(`[GOLOS] ${status} -> добавлен в профиль: ${url}`);
+        res.json({ success: true });
+    } else {
+        console.log(`[GOLOS ERROR] Профиль не найден в базе: ${url}`);
+        res.status(404).json({ success: false, error: 'Профиль не найден' });
+    }
 });
 
 app.post('/api/dm', async (req, res) => {

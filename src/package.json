@@ -15,7 +15,9 @@
   "dependencies": {
     "24": "^0.0.0",
     "express": "^5.2.1",
-    "playwright": "^1.58.1"
+    "playwright": "^1.58.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "pkg": {
     "assets": [
