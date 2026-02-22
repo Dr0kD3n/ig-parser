@@ -203,20 +203,30 @@ export default function App() {
                 </button>
             </header>
 
-            <nav className="tabs-nav">
-                {[
-                    { id: 'main', label: tr('tab_profiles') },
-                    { id: 'controls', label: tr('tab_execution') },
-                    { id: 'settings', label: tr('tab_configuration') },
-                ].map(({ id, label }) => (
-                    <button
-                        key={id}
-                        className={`tab-btn${activeTab === id ? ' active' : ''}`}
-                        onClick={() => setActiveTab(id)}
-                    >
-                        {label}
-                    </button>
-                ))}
+            <nav className="tabs-nav" style={{ display: 'flex', alignItems: 'center' }}>
+                <div style={{ display: 'flex' }}>
+                    {[
+                        { id: 'main', label: tr('tab_profiles') },
+                        { id: 'controls', label: tr('tab_execution') },
+                        { id: 'settings', label: tr('tab_configuration') },
+                    ].map(({ id, label }) => (
+                        <button
+                            key={id}
+                            className={`tab-btn${activeTab === id ? ' active' : ''}`}
+                            onClick={() => setActiveTab(id)}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+                <button
+                    className="btn-primary"
+                    style={{ marginLeft: 'auto', background: '#2196F3', borderColor: '#2196F3', color: '#fff' }}
+                    onClick={fetchData}
+                    title={tr('btn_update')}
+                >
+                    {tr('btn_update')}
+                </button>
             </nav>
 
             {activeTab === 'main' && (
@@ -230,6 +240,7 @@ export default function App() {
                     onOpen={handleOpen}
                     onSendDM={handleSendDM}
                     onImageError={handleImageError}
+                    onRefresh={fetchData}
                     useProxyImages={!!settingsData.activeProfilesAccountId}
                     tr={tr}
                 />

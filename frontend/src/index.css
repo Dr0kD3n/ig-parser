@@ -280,11 +280,6 @@ body::before {
   object-fit: cover;
 }
 
-.card:hover .photoWrap img {
-  transform: scale(1.04);
-  transition: transform 0.4s ease;
-}
-
 .overlay {
   position: absolute;
   inset: 0;

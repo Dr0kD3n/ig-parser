@@ -86,7 +86,7 @@ console.warn = (...args) => {
 };
 
 const app = express();
-const PORT = 3000;
+const PORT = 1337;
 
 // ==========================================
 // 1. CONFIGURATION & SELECTORS

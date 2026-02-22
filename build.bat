@@ -1,7 +1,6 @@
 @echo off
-echo Building frontend for production...
-cd /d "%~dp0frontend"
-npm run build
-echo:
-echo Build complete! Output: backend/public/
-echo Now restart the server: node backend/server.js
+title IG-Bot Build
+echo Building Frontend...
+call npm run build --workspace=frontend
+echo Build complete. You can now use start.bat to run the server.
+pause

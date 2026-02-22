@@ -86,7 +86,7 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
     )
 })
 
-export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onImageError, useProxyImages, tr, lang }) {
+export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onImageError, onRefresh, useProxyImages, tr, lang }) {
     const [filterText, setFilterText] = useState('')
     const [filterStatus, setFilterStatus] = useState('all')
     const [hideNoImage, setHideNoImage] = useState(false)

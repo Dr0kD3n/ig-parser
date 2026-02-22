@@ -38,6 +38,7 @@ export const TRANSLATIONS = {
         proxy_placeholder: 'Прокси: IP:PORT:USER:PASS',
         cookies_placeholder: 'Куки (raw text)',
         btn_add: 'Добавить',
+        btn_update: 'Обновить',
         modal_templates_title: 'Шаблоны рассылки',
         one_msg_per_line: 'Одно сообщение на строку...',
         cancel: 'Отмена',

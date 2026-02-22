@@ -7,7 +7,7 @@ export default defineConfig({
         port: 5173,
         // Proxy API requests to Express backend during dev
         proxy: {
-            '/api': 'http://localhost:3000'
+            '/api': 'http://localhost:1337'
         }
     },
     build: {

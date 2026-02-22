@@ -1,7 +1,9 @@
 @echo off
-echo Starting Vite dev server (frontend)...
-cd /d "%~dp0frontend"
-start cmd /k npm run dev
-cd /d "%~dp0backend"
-echo Starting Node.js backend...
-node server.js
+title IG-Bot Dev
+echo Starting Development Environment...
+start /b cmd /c "npm run dev --workspace=frontend"
+start /b cmd /c "node backend\server.js"
+echo.
+echo Servers are running on port 1337 (Backend) and 5173 (Frontend).
+echo [!] To stop the servers, close this console window.
+pause

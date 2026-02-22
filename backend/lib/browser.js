@@ -55,10 +55,10 @@ async function createBrowserContext(config, headless = true) {
 }
 
 function optimizeContextForScraping(context) {
-    // Блокируем картинки/видео/шрифты для скорости и экономии трафика прокси
+    // Блокируем только картинки и медиа для скорости
     return context.route('**/*', (route) => {
         const type = route.request().resourceType();
-        if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
+        if (['image', 'media'].includes(type)) {
             route.abort();
         } else {
             route.continue();

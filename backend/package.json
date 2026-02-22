@@ -13,7 +13,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "24": "^0.0.0",
     "express": "^5.2.1",
     "playwright": "^1.58.1",
     "playwright-extra": "^4.3.6",
