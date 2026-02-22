@@ -178,7 +178,9 @@ async function getGirlsCached() {
     if (girlsCache && (now - girlsCacheTime) < CACHE_TTL) return girlsCache;
     try {
         const db = await getDB();
-        girlsCache = await db.all(`SELECT * FROM profiles ORDER BY timestamp DESC`);
+        let profiles = await db.all(`SELECT * FROM profiles ORDER BY timestamp DESC`);
+
+        girlsCache = profiles;
         girlsCacheTime = now;
     } catch (e) {
         girlsCache = [];
@@ -214,6 +216,7 @@ app.post('/api/vote', async (req, res) => {
     try {
         const db = await getDB();
         await db.run(`UPDATE profiles SET vote = ? WHERE url = ?`, [status, url]);
+
         invalidateGirlsCache();
         console.log(`[GOLOS] ${status} -> добавлен в профиль: ${url}`);
         res.json({ success: true });

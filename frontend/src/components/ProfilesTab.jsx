@@ -43,6 +43,11 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
                 )}
                 <div className="overlay" />
                 <div className="statusStack">
+                    {g.matchScore !== undefined && (
+                        <div className="badge matchTag" style={{ background: g.matchScore > 80 ? 'var(--primary-color)' : 'var(--bg-lighter)' }}>
+                            🎯 {g.matchScore}%
+                        </div>
+                    )}
                     {isLiked && <div className="badge likedTag">{tr('badge_like')}</div>}
                     {isDisliked && <div className="badge dislikedTag">{tr('badge_skip')}</div>}
                     {g.viewed && <div className="badge viewedTag">{tr('badge_viewed')}</div>}
@@ -89,6 +94,7 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
 export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onImageError, onRefresh, useProxyImages, tr, lang }) {
     const [filterText, setFilterText] = useState('')
     const [filterStatus, setFilterStatus] = useState('all')
+    const [sortOption, setSortOption] = useState('newest')
     const [hideNoImage, setHideNoImage] = useState(false)
     const [currentPage, setCurrentPage] = useState(1)
     const ITEMS_PER_PAGE = 24
@@ -103,7 +109,14 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
         else if (filterStatus === 'dislike') matchesStatus = votes[g.url] === 'dislike'
         const imgOk = !hideNoImage || (g.photo && !failedImages.has(g.url))
         return matchesName && matchesStatus && imgOk
-    }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    }).sort((a, b) => {
+        if (sortOption === 'match') {
+            const scoreA = a.matchScore !== undefined ? a.matchScore : 50;
+            const scoreB = b.matchScore !== undefined ? b.matchScore : 50;
+            if (scoreB !== scoreA) return scoreB - scoreA;
+        }
+        return new Date(b.timestamp) - new Date(a.timestamp);
+    })
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE))
     const page = Math.min(currentPage, totalPages)
@@ -129,6 +142,10 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
                     <option value="like">{tr('filter_like')}</option>
                     <option value="like_no_dm">{tr('filter_like_no_dm')}</option>
                     <option value="dislike">{tr('filter_dislike')}</option>
+                </select>
+                <select className="select-input" value={sortOption} onChange={e => { setSortOption(e.target.value); setCurrentPage(1) }}>
+                    <option value="newest">Сначала новые</option>
+                    <option value="match">По совпадению (%)</option>
                 </select>
                 <label className="checkbox-label">
                     <input type="checkbox" checked={hideNoImage} onChange={e => { setHideNoImage(e.target.checked); setCurrentPage(1) }} />

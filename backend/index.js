@@ -170,46 +170,11 @@ const analyzeProfile = async (context, url, config) => {
             console.log(`         ✅ Целевой профиль! Парсим данные (ищем фото)...`);
             const name = await page.locator('header h2, header h1, header span[dir="auto"]').first().innerText().catch(() => username);
 
-            const photoUrl = await page.evaluate(async (uname) => {
-                let pUrl = '';
-                try {
-                    const res = await fetch(`/api/v1/users/web_profile_info/?username=${uname}`, {
-                        headers: { 'X-IG-App-ID': '936619743392459' }
-                    });
-                    if (res.ok) {
-                        const json = await res.json();
-                        if (json?.data?.user?.profile_pic_url_hd) {
-                            pUrl = json.data.user.profile_pic_url_hd;
-                        }
-                    }
-                } catch (e) { }
+            const bio = extracted.bioClean;
 
-                if (!pUrl) {
-                    const html = document.documentElement.innerHTML;
-                    const matches = [...html.matchAll(/"profile_pic_url_hd":"([^"]+)"/g)];
-                    if (matches.length > 0) {
-                        const rawUrl = matches[matches.length - 1][1];
-                        try {
-                            pUrl = JSON.parse('"' + rawUrl + '"');
-                        } catch (e) {
-                            pUrl = rawUrl.replace(/\\u0026/g, '&').replace(/\\\//g, '/');
-                        }
-                    }
-                }
+            const profileData = { name, bio, photo: photoUrl, url };
 
-                if (!pUrl) {
-                    const header = document.querySelector('header');
-                    if (header) {
-                        const img = header.querySelector('img');
-                        if (img) pUrl = img.getAttribute('src') || img.src || '';
-                    }
-                }
-                return pUrl;
-            }, username);
-
-            await StateManager.saveResult({
-                name, bio: extracted.bioClean, photo: photoUrl, url
-            });
+            await StateManager.saveResult(profileData);
         } else {
             console.log(`         ➖ Пропуск: нет целевых слов.`);
         }
