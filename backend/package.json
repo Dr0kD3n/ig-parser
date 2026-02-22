@@ -1,5 +1,5 @@
 {
-  "name": "projects",
+  "name": "ig-bot-backend",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -17,7 +17,9 @@
     "express": "^5.2.1",
     "playwright": "^1.58.1",
     "playwright-extra": "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
   },
   "pkg": {
     "assets": [

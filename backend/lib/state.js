@@ -1,0 +1,83 @@
+const { getDB } = require('./db');
+const { normalizeUrl } = require('./config');
+
+const StateManager = {
+    processed: new Set(),
+    processedDonors: new Set(),
+    resultsCache: [], // Used for fast memory lookups if needed elsewhere
+
+    async init() {
+        const db = await getDB();
+
+        // В urls с type 'history' лежат как processed_profiles, так и processed_donors. 
+        // Мы разделим логику сейчас, или загрузим все в processed history.
+        // Для простоты, все URLs обработанные скриптами можно считать историей.
+        const historyRows = await db.all(`SELECT url FROM urls WHERE type = 'history'`);
+        this.processed = new Set(historyRows.map(r => r.url));
+        console.log(`🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: ${this.processed.size}`);
+
+        // Для совместимости state.js -> hasDonor, используем тот же Set или отдельный.
+        this.processedDonors = this.processed;
+
+        const profiles = await db.all(`SELECT * FROM profiles`);
+        this.resultsCache = profiles;
+    },
+
+    has(url) {
+        return this.processed.has(normalizeUrl(url));
+    },
+
+    async add(url) {
+        const normUrl = normalizeUrl(url);
+        if (this.processed.has(normUrl)) return;
+        this.processed.add(normUrl);
+        const db = await getDB();
+        try {
+            await db.run(`INSERT INTO urls (type, url) VALUES (?, ?)`, ['history', normUrl]);
+        } catch (e) {
+            // Already exists constraint
+        }
+    },
+
+    hasDonor(url) {
+        return this.processedDonors.has(normalizeUrl(url));
+    },
+
+    async addDonor(url) {
+        await this.add(url);
+    },
+
+    async saveResult(profileData) {
+        const db = await getDB();
+        const existing = await db.get(`SELECT * FROM profiles WHERE url = ?`, [profileData.url]);
+        const ts = new Date().toISOString();
+        if (existing) {
+            await db.run(`UPDATE profiles SET name = ?, bio = ?, photo = ?, timestamp = ? WHERE url = ?`,
+                [profileData.name || existing.name, profileData.bio || existing.bio, profileData.photo || existing.photo, ts, profileData.url]);
+        } else {
+            await db.run(`INSERT INTO profiles (url, name, bio, photo, vote, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
+                [profileData.url, profileData.name || '', profileData.bio || '', profileData.photo || '', profileData.vote || '', ts]);
+        }
+
+        console.log(`   🏆 [НАЙДЕНА] ${profileData.name || profileData.url} -> сохранена в базу!`);
+    },
+
+    async loadDonors() {
+        const db = await getDB();
+        const rows = await db.all(`SELECT url FROM urls WHERE type = 'donor'`);
+        return rows.map(r => r.url);
+    },
+
+    async saveDonor(url) {
+        const normUrl = normalizeUrl(url);
+        const db = await getDB();
+        try {
+            await db.run(`INSERT INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
+            console.log(`✅ Сохранен новый донор: ${normUrl}`);
+        } catch (e) {
+            // Ignore if already exists in donor table
+        }
+    }
+};
+
+module.exports = { StateManager, PATHS: {} };

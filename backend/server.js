@@ -1,0 +1,600 @@
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const http = require('http');
+const https = require('https');
+const { createBrowserContext } = require('./lib/browser');
+const { humanType, wait } = require('./lib/utils');
+const { StateManager } = require('./lib/state');
+const { getDB } = require('./lib/db');
+const { spawn } = require('child_process');
+const { EventEmitter } = require('events');
+
+const logEmitter = new EventEmitter();
+const LOGS_FILE = path.join(__dirname, 'logs.json');
+let botProcesses = {
+    index: null,
+    parser: null
+};
+
+// Tracking sessions for log grouping
+let currentSessionId = Date.now().toString();
+function refreshSession() {
+    currentSessionId = Date.now().toString();
+}
+
+// Load historical logs
+let historicalLogs = [];
+try {
+    if (fs.existsSync(LOGS_FILE)) {
+        historicalLogs = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf8'));
+    }
+} catch (e) {
+    originalLog('Error loading logs:', e);
+}
+
+function saveLogs() {
+    try {
+        fs.writeFileSync(LOGS_FILE, JSON.stringify(historicalLogs.slice(-1000)));
+    } catch (e) {
+        originalLog('Error saving logs:', e);
+    }
+}
+
+let saveLogsTimer = null;
+function debouncedSaveLogs() {
+    if (saveLogsTimer) return;
+    saveLogsTimer = setTimeout(() => {
+        saveLogsTimer = null;
+        saveLogs();
+    }, 2000);
+}
+
+function broadcastLog(source, message) {
+    const logEntry = {
+        timestamp: new Date().toISOString(),
+        source,
+        message: message.toString().trim(),
+        sessionId: currentSessionId
+    };
+    // Use originalLog to avoid infinite recursion when console.log is overridden
+    originalLog(`[${source}] ${logEntry.message}`);
+
+    historicalLogs.push(logEntry);
+    if (historicalLogs.length > 1000) historicalLogs.shift();
+    debouncedSaveLogs();
+
+    logEmitter.emit('log', logEntry);
+}
+
+// Save original console methods
+const originalLog = console.log;
+const originalError = console.error;
+const originalWarn = console.warn;
+
+// Override console methods to broadcast logs
+console.log = (...args) => {
+    broadcastLog('server', args.join(' '));
+};
+
+console.error = (...args) => {
+    broadcastLog('server-error', args.join(' '));
+};
+
+console.warn = (...args) => {
+    broadcastLog('server-warn', args.join(' '));
+};
+
+const app = express();
+const PORT = 3000;
+
+// ==========================================
+// 1. CONFIGURATION & SELECTORS
+// ==========================================
+
+const CONFIG = {
+    timeouts: {
+        pageLoad: 60000,
+        element: 5000,
+        typingDelayMin: 50,
+        typingDelayMax: 180,
+    },
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    selectors: {
+        directMessageBtn: [
+            // RU
+            'button:has-text("Написать")',
+            'div[role="button"]:has-text("Написать")',
+            'a:has-text("Написать")',
+            'button:has-text("Отправить сообщение")',
+            'div[role="button"]:has-text("Отправить сообщение")',
+            'div[role="button"]:has-text("Сообщение")',
+            // EN
+            'div[role="button"]:has-text("Message")',
+            'button:has-text("Message")',
+            'div[role="button"]:has-text("Send Message")'
+        ],
+        optionsBtn: [
+            'svg[aria-label="Параметры"]',
+            'svg[aria-label="Options"]',
+            'svg[aria-label="More options"]',
+            'div[role="button"] > svg'
+        ],
+        menuMessageBtn: [
+            'div[role="dialog"] button:has-text("Отправить сообщение")',
+            'div[role="dialog"] button:has-text("Написать")',
+            'div[role="dialog"] button:has-text("Send message")'
+        ],
+        chatInput: 'div[role="textbox"][contenteditable="true"]',
+        notNowBtn: [
+            'button:has-text("Не сейчас")',
+            'button:has-text("Not Now")'
+        ],
+        messageRow: 'div[role="row"], div[role="listitem"]'
+    }
+};
+
+async function getSettings() {
+    const db = await getDB();
+    const rows = await db.all(`SELECT * FROM accounts`);
+    const accounts = rows.map(r => ({
+        id: r.id, name: r.name, proxy: r.proxy, cookies: r.cookies
+    }));
+    const activeParser = rows.find(r => r.active_parser)?.id || null;
+    const activeServer = rows.find(r => r.active_server)?.id || null;
+    const activeIndex = rows.find(r => r.active_index)?.id || null;
+    const activeProfiles = rows.find(r => r.active_profiles)?.id || null;
+
+    return {
+        accounts,
+        activeParserAccountId: activeParser,
+        activeServerAccountId: activeServer,
+        activeIndexAccountId: activeIndex,
+        activeProfilesAccountId: activeProfiles
+    };
+}
+
+const { getProxy, getCookies, getList, getConfigPath } = require('./lib/config');
+
+app.use(express.json());
+
+// --- Static frontend (production build from frontend/) ---
+const publicDir = path.join(__dirname, 'public');
+const legacyHtml = path.join(__dirname, 'index.html');
+if (fs.existsSync(publicDir)) {
+    app.use(express.static(publicDir));
+} else {
+    // --- Fallback to old single-file index.html during migration
+    app.get('/', (req, res) => res.sendFile(legacyHtml));
+}
+
+// --- In-memory cache for profiles ---
+let girlsCache = null;
+let girlsCacheTime = 0;
+const CACHE_TTL = 5000; // 5 seconds
+
+async function getGirlsCached() {
+    const now = Date.now();
+    if (girlsCache && (now - girlsCacheTime) < CACHE_TTL) return girlsCache;
+    try {
+        const db = await getDB();
+        girlsCache = await db.all(`SELECT * FROM profiles ORDER BY timestamp DESC`);
+        girlsCacheTime = now;
+    } catch (e) {
+        girlsCache = [];
+    }
+    return girlsCache;
+}
+
+function invalidateGirlsCache() {
+    girlsCache = null;
+    girlsCacheTime = 0;
+}
+
+app.get('/api/girls', async (req, res) => {
+    res.json(await getGirlsCached());
+});
+
+app.get('/api/votes', async (req, res) => {
+    const profiles = await getGirlsCached();
+    const votes = {};
+    profiles.forEach(p => {
+        if (p.vote) votes[p.url] = p.vote;
+    });
+    res.json(votes);
+});
+
+app.post('/api/vote', async (req, res) => {
+    const { url, status } = req.body;
+
+    if (!url || !status) {
+        return res.status(400).json({ success: false, error: 'Нет url или status' });
+    }
+
+    try {
+        const db = await getDB();
+        await db.run(`UPDATE profiles SET vote = ? WHERE url = ?`, [status, url]);
+        invalidateGirlsCache();
+        console.log(`[GOLOS] ${status} -> добавлен в профиль: ${url}`);
+        res.json({ success: true });
+    } catch (e) {
+        console.log(`[GOLOS ERROR] Ошибка при голосовании: ${e.message}`);
+        res.status(500).json({ success: false, error: 'Ошибка сервера при сохранении' });
+    }
+});
+
+app.get('/api/settings', async (req, res) => {
+    const settings = await getSettings();
+    const names = await getList('names.txt');
+    const cities = await getList('cityKeywords.txt');
+    const niches = await getList('nicheKeywords.txt');
+    res.json({ accounts: settings.accounts || [], activeParserAccountId: settings.activeParserAccountId, activeServerAccountId: settings.activeServerAccountId, activeIndexAccountId: settings.activeIndexAccountId, activeProfilesAccountId: settings.activeProfilesAccountId, names, cities, niches });
+});
+
+app.post('/api/settings', async (req, res) => {
+    const { accounts, activeParserAccountId, activeServerAccountId, activeIndexAccountId, activeProfilesAccountId, names, cities, niches } = req.body;
+
+    try {
+        const db = await getDB();
+
+        await db.run(`DELETE FROM accounts`);
+        for (const a of accounts) {
+            await db.run(`INSERT INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+                a.id, a.name, a.proxy || '', a.cookies || '',
+                a.id === activeParserAccountId ? 1 : 0,
+                a.id === activeServerAccountId ? 1 : 0,
+                a.id === activeIndexAccountId ? 1 : 0,
+                a.id === activeProfilesAccountId ? 1 : 0
+            ]);
+        }
+
+        await db.run(`DELETE FROM keywords`);
+        for (const n of (names || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['name', n]);
+        for (const c of (cities || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['city', c]);
+        for (const n of (niches || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['niche', n]);
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Ошибка сохранения настроек:', e);
+        res.status(500).json({ success: false });
+    }
+});
+
+// --- Proxy image endpoint: fetches images through configured account proxy ---
+app.get('/api/proxy-image', async (req, res) => {
+    const imageUrl = req.query.url;
+    if (!imageUrl) return res.status(400).send('Missing url parameter');
+
+    try {
+        const proxy = await getProxy('profiles');
+        const parsedUrl = new URL(imageUrl);
+        const transport = parsedUrl.protocol === 'https:' ? https : http;
+
+        const fetchOptions = {
+            hostname: parsedUrl.hostname,
+            path: parsedUrl.pathname + parsedUrl.search,
+            headers: {
+                'User-Agent': CONFIG.userAgent,
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Referer': 'https://www.instagram.com/'
+            }
+        };
+
+        // If proxy is configured, route through it via HTTP CONNECT
+        if (proxy) {
+            const proxyUrl = new URL(proxy.server);
+            const authHeader = 'Basic ' + Buffer.from(`${proxy.username}:${proxy.password}`).toString('base64');
+
+            // For HTTPS targets, use HTTP CONNECT tunnel
+            if (parsedUrl.protocol === 'https:') {
+                const connectReq = http.request({
+                    host: proxyUrl.hostname,
+                    port: proxyUrl.port || 80,
+                    method: 'CONNECT',
+                    path: `${parsedUrl.hostname}:443`,
+                    headers: { 'Proxy-Authorization': authHeader }
+                });
+
+                connectReq.on('connect', (_res, socket) => {
+                    if (_res.statusCode !== 200) {
+                        return res.status(502).send('Proxy CONNECT failed');
+                    }
+                    const tlsReq = https.request({
+                        ...fetchOptions,
+                        socket: socket,
+                        agent: false
+                    }, handleImageResponse);
+                    tlsReq.on('error', () => res.status(502).send('Image fetch error'));
+                    tlsReq.end();
+                });
+                connectReq.on('error', () => res.status(502).send('Proxy connect error'));
+                connectReq.end();
+            } else {
+                // HTTP target through proxy
+                const proxyReq = http.request({
+                    hostname: proxyUrl.hostname,
+                    port: proxyUrl.port || 80,
+                    path: imageUrl,
+                    headers: {
+                        ...fetchOptions.headers,
+                        'Proxy-Authorization': authHeader,
+                        'Host': parsedUrl.hostname
+                    }
+                }, handleImageResponse);
+                proxyReq.on('error', () => res.status(502).send('Proxy request error'));
+                proxyReq.end();
+            }
+        } else {
+            // No proxy — direct fetch
+            const directReq = transport.request(fetchOptions, handleImageResponse);
+            directReq.on('error', () => res.status(502).send('Direct fetch error'));
+            directReq.end();
+        }
+
+        function handleImageResponse(imgRes) {
+            // Follow redirects (Instagram CDN does 301/302)
+            if ([301, 302, 307, 308].includes(imgRes.statusCode) && imgRes.headers.location) {
+                // Redirect — fetch again without proxy (CDN URLs are public)
+                const redirectTransport = imgRes.headers.location.startsWith('https') ? https : http;
+                redirectTransport.get(imgRes.headers.location, (redirRes) => {
+                    res.setHeader('Content-Type', redirRes.headers['content-type'] || 'image/jpeg');
+                    res.setHeader('Cache-Control', 'public, max-age=86400');
+                    redirRes.pipe(res);
+                }).on('error', () => res.status(502).send('Redirect fetch error'));
+                return;
+            }
+            if (imgRes.statusCode !== 200) {
+                return res.status(imgRes.statusCode || 502).send('Image not available');
+            }
+            res.setHeader('Content-Type', imgRes.headers['content-type'] || 'image/jpeg');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            imgRes.pipe(res);
+        }
+    } catch (e) {
+        res.status(500).send('Proxy image error');
+    }
+});
+
+app.get('/api/logs', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    // Send historical logs first
+    historicalLogs.forEach(log => {
+        res.write(`data: ${JSON.stringify(log)}\n\n`);
+    });
+
+    const onLog = (log) => {
+        res.write(`data: ${JSON.stringify(log)}\n\n`);
+    };
+
+    logEmitter.on('log', onLog);
+
+    req.on('close', () => {
+        logEmitter.off('log', onLog);
+    });
+});
+
+app.get('/api/bot/status', (req, res) => {
+    res.json({
+        index: !!botProcesses.index,
+        parser: !!botProcesses.parser
+    });
+});
+
+app.post('/api/bot/start', (req, res) => {
+    const { type } = req.body;
+    if (!['index', 'parser'].includes(type)) {
+        return res.status(400).json({ success: false, error: 'Invalid bot type' });
+    }
+
+    if (botProcesses[type]) {
+        return res.json({ success: false, error: 'Bot already running' });
+    }
+
+    refreshSession();
+    const scriptPath = path.join(__dirname, `${type}.js`);
+
+    // Используем process.execPath вместо 'node' для надежности на Windows
+    // и устанавливаем shell: true если необходимо (хотя для прямой ноды не обязательно)
+    const child = spawn(process.execPath, [scriptPath], {
+        cwd: __dirname,
+        env: { ...process.env, FORCE_COLOR: '1' }
+    });
+
+    botProcesses[type] = child;
+
+    // Обработка ошибки запуска самого процесса (например, если файл не найден или нет прав)
+    child.on('error', (err) => {
+        broadcastLog(`${type}-error`, `Failed to start process: ${err.message}`);
+        botProcesses[type] = null;
+    });
+
+    child.stdout.on('data', (data) => broadcastLog(type, data));
+    child.stderr.on('data', (data) => broadcastLog(`${type}-error`, data));
+
+    child.on('close', (code) => {
+        broadcastLog('system', `${type} bot exited with code ${code}`);
+        botProcesses[type] = null;
+    });
+
+    res.json({ success: true });
+});
+
+app.post('/api/bot/stop', (req, res) => {
+    const { type } = req.body;
+    if (botProcesses[type]) {
+        botProcesses[type].kill();
+        res.json({ success: true });
+    } else {
+        res.json({ success: false, error: 'Bot not running' });
+    }
+});
+
+app.post('/api/dm', async (req, res) => {
+    const { url, message } = req.body;
+    console.log({ url, message })
+
+    let currentContext = null;
+    try {
+        const reqConfig = { ...CONFIG };
+        reqConfig.proxy = await getProxy('server');
+        reqConfig.cookies = await getCookies('server');
+
+        refreshSession();
+        const { browser, context } = await createBrowserContext(reqConfig, false);
+        console.log(`📡 [SENDER] Используется прокси: ${reqConfig.proxy ? reqConfig.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
+        console.log(`🍪 [SENDER] Загружено куки: ${reqConfig.cookies.length}`);
+        currentContext = context;
+
+        const isSent = await sendMessageToProfile(context, url, message);
+
+        if (isSent) {
+            res.json({ success: true, message: 'Отправлено' });
+        } else {
+            res.json({ success: false, message: 'Не отправлено' });
+        }
+
+    } catch (e) {
+        console.error('Ошибка запуска:', e);
+        res.status(500).json({ success: false });
+    } finally {
+        if (currentContext) await currentContext.close();
+        // Do NOT close browser, so we reuse the global instance
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`Сервер запущен: http://localhost:${PORT}`);
+});
+
+// SPA catch-all (must be after all API routes)
+if (fs.existsSync(publicDir)) {
+    app.get('{*path}', (req, res) => {
+        res.sendFile(path.join(publicDir, 'index.html'));
+    });
+}
+
+const getSelectorString = (key) => {
+    const val = CONFIG.selectors[key];
+    return Array.isArray(val) ? val.join(',') : val;
+}
+
+// ==========================================
+// MAIN LOGIC
+// ==========================================
+
+const sendMessageToProfile = async (context, url, message) => {
+    const page = await context.newPage();
+    console.log(`\n📨 [SENDER] Начало обработки: ${url}`);
+
+    try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: CONFIG.timeouts.pageLoad });
+        await wait(2000);
+
+        let accessButton = null;
+        const directBtnSelector = getSelectorString('directMessageBtn');
+        const directBtn = page.locator(directBtnSelector).first();
+
+        try {
+            await directBtn.waitFor({ state: 'visible', timeout: 5000 });
+            if (await directBtn.isVisible()) {
+                console.log('✅ Кнопка "Написать" (или аналог) найдена в профиле.');
+                accessButton = directBtn;
+            }
+        } catch (e) { }
+
+        if (!accessButton) {
+            console.log('⚠️ Прямая кнопка не найдена. Проверяем "3 точки"...');
+            const optionsBtn = page.locator(getSelectorString('optionsBtn')).first();
+
+            if (await optionsBtn.isVisible()) {
+                await optionsBtn.click();
+                await wait(1500);
+                const menuMsgBtn = page.locator(getSelectorString('menuMessageBtn')).first();
+                try {
+                    await menuMsgBtn.waitFor({ state: 'visible', timeout: 3000 });
+                    console.log('✅ Кнопка "Написать" найдена в меню.');
+                    accessButton = menuMsgBtn;
+                } catch (e) {
+                    console.log('❌ В меню нет пункта отправки сообщения.');
+                }
+            }
+        }
+
+        if (!accessButton) {
+            console.log(`⛔ [SKIP] Кнопки нет. Делаю скриншот...`);
+            await page.screenshot({ path: path.join(__dirname, 'debug_error.png'), fullPage: true });
+            return false;
+        }
+
+        await accessButton.click();
+
+        try {
+            await Promise.race([
+                page.waitForSelector(CONFIG.selectors.chatInput, { state: 'visible', timeout: 15000 }),
+                page.waitForSelector(getSelectorString('notNowBtn'), { state: 'visible', timeout: 15000 })
+            ]);
+        } catch (e) {
+            console.log('❌ Тайм-аут: чат не открылся.');
+            return false;
+        }
+
+        const notNowBtn = page.locator(getSelectorString('notNowBtn')).first();
+        if (await notNowBtn.isVisible()) {
+            await notNowBtn.click();
+            await wait(1500);
+        }
+
+        const chatInput = page.locator(CONFIG.selectors.chatInput).first();
+        if (!await chatInput.isVisible()) {
+            console.log('❌ Поле ввода не найдено (ЛС закрыто).');
+            return false;
+        }
+
+        console.log('🔍 Проверка истории переписки...');
+        await wait(2500);
+
+        const allRows = await page.locator(getSelectorString('messageRow')).all();
+        let realMessageCount = 0;
+
+        for (const row of allRows) {
+            const text = await row.innerText();
+            if (
+                text.includes('Смотреть профиль') ||
+                text.includes('View profile') ||
+                text.includes('View Profile') ||
+                text.includes('Аккаунт в Instagram') ||
+                text.trim() === ''
+            ) {
+                continue;
+            }
+            realMessageCount++;
+        }
+
+        if (realMessageCount > 0) {
+            console.log(`⛔ [SKIP] Уже есть переписка (${realMessageCount} реальных сообщений). Закрываем.`);
+            return false;
+        }
+
+        console.log('✅ История чиста (баннер проигнорирован). Отправляем сообщение.');
+
+        await humanType(page, CONFIG.selectors.chatInput, message, CONFIG.timeouts);
+        await wait(1000);
+        await page.keyboard.press('Enter');
+        console.log(`🚀 [SENT] Сообщение отправлено: ${url}`);
+
+        await wait(3000);
+        return true;
+
+    } catch (error) {
+        console.error(`💥 Ошибка: ${error.message}`);
+        await page.screenshot({ path: path.join(__dirname, 'crash_error.png') });
+        return false;
+    } finally {
+        await page.close();
+    }
+};

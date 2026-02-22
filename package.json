@@ -1,0 +1,8 @@
+{
+    "name": "ig-bot",
+    "private": true,
+    "workspaces": [
+        "backend",
+        "frontend"
+    ]
+}
