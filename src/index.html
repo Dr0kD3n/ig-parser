@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Instagram Operator Panel 2.3 — 3 Line Bio</title>
+
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-root: #0F1115;
+      --bg-card: #161922;
+      --bg-header: rgba(15, 17, 21, 0.95);
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --shadow-lift: 0 10px 30px -5px rgba(255, 255, 255, 0.05), 0 20px 40px -10px rgba(0, 0, 0, 0.5);
+      --success: #10b981;
+      --danger: #ef4444;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --border: rgba(255, 255, 255, 0.08);
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; outline: none; }
+    body, html { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-root); color: var(--text-main); -webkit-font-smoothing: antialiased; }
+    .app { min-height: 100vh; padding-bottom: 40px; }
+
+    /* --- Header --- */
+    .header { display: flex; justify-content: space-between; align-items: center; padding: 16px 32px; backdrop-filter: blur(16px); background: var(--bg-header); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+    .logo { font-size: 20px; font-weight: 700; background: linear-gradient(45deg, #fff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -0.5px; }
+    .stats { font-size: 14px; color: var(--text-muted); display: flex; gap: 16px; }
+    .stats b { color: #fff; }
+
+    /* --- Buttons --- */
+    .btn-primary { padding: 10px 18px; background: var(--primary); color: white; border-radius: 10px; border: none; font-weight: 600; font-size: 13px; cursor: pointer; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); display: flex; align-items: center; gap: 6px; }
+
+    /* --- Toolbar --- */
+    .toolbar {
+      padding: 20px 32px 0;
+      max-width: 1800px;
+      margin: 0 auto;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    /* ВОССТАНОВЛЕННЫЕ СТИЛИ СЕЛЕКТА И ИНПУТА */
+    .search-input, .select-input {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+
+    .search-input:focus, .select-input:focus {
+      border-color: var(--primary);
+    }
+
+    .select-input {
+      cursor: pointer;
+      appearance: none;
+      padding-right: 40px;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      background-size: 16px;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .checkbox-label input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    /* --- Grid --- */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 20px;
+      padding: 24px 32px;
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+
+    .card { background: var(--bg-card); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); transition: box-shadow 0.3s ease, border-color 0.3s ease; position: relative; display: flex; flex-direction: column; }
+    .card:hover { border-color: rgba(255, 255, 255, 0.2); box-shadow: var(--shadow-lift); }
+
+    .photoWrap { position: relative; aspect-ratio: 4/5; overflow: hidden; background: #1a1c22; -webkit-mask-image: -webkit-radial-gradient(white, black); }
+    .photoWrap img { width: 100%; height: 100%; object-fit: cover; }
+    .overlay { position: absolute; inset: 0; bottom: -1px; background: linear-gradient(180deg, transparent 55%, rgba(15, 17, 21, 0.98) 100%); pointer-events: none; }
+
+    /* Badges */
+    .statusStack { position: absolute; top: 12px; left: 12px; display: flex; flex-direction: column; gap: 6px; z-index: 2; }
+    .badge { font-size: 10px; font-weight: 600; padding: 4px 8px; border-radius: 6px; backdrop-filter: blur(8px); color: white; text-transform: uppercase; }
+    .likedTag { background: rgba(16, 185, 129, 0.85); }
+    .dmTag { background: rgba(99, 102, 241, 0.85); }
+    .viewedTag { background: rgba(107, 114, 128, 0.85); }
+
+    /* Socials */
+    .linksStack { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; z-index: 2; }
+    .socialBtn { width: 34px; height: 34px; border-radius: 10px; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.1); }
+    .socialBtn:hover { background: rgba(255, 255, 255, 0.2); }
+
+    .cardBody { padding: 14px; flex-grow: 1; display: flex; flex-direction: column; }
+    .name { font-size: 15px; font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+    .timestamp { font-size: 10px; color: var(--text-muted); }
+    
+    /* Bio & Followers (Updated for 3 lines) */
+    .bio-container { 
+      margin-bottom: 12px; 
+      min-height: calc(1.4em * 3 + 12px); 
+    }
+    .bio-text { 
+      font-size: 12px; 
+      color: var(--text-main); 
+      line-height: 1.4; 
+      margin-bottom: 8px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      height: 4.2em; 
+    }
+    .followers-text { font-size: 11px; color: var(--text-main); font-weight: 600; display: block; }
+
+    .actions { display: grid; grid-template-columns: 1fr 1fr 40px; gap: 6px; margin-top: auto; }
+    .actionBtn { padding: 8px; border-radius: 8px; border: 1px solid transparent; font-weight: 600; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: 0.2s; }
+    .likeBtn { background: rgba(16, 185, 129, 0.1); color: #34d399; }
+    .dislikeBtn { background: rgba(239, 68, 68, 0.1); color: #f87171; }
+    .sendBtn { background: #27272a; color: #e4e4e7; }
+
+    .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); display: flex; justify-content: center; align-items: center; z-index: 200; backdrop-filter: blur(10px); }
+    .modalContent { background: var(--bg-card); padding: 24px; border-radius: 16px; width: 450px; border: 1px solid var(--border); }
+    .msg-textarea { width: 100%; height: 180px; background: rgba(0,0,0,0.4); border: 1px solid var(--border); color: #fff; padding: 12px; border-radius: 8px; resize: none; font-family: inherit; }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const InstagramIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>);
+    const TelegramIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>);
+    const HeartIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>);
+    const XIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>);
+    const SendIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>);
+
+    const parseSmartBio = (text, username) => {
+      if (!text) return { bio: " ", stats: [] };
+      let cleanText = text.replace(new RegExp(`^${username}\\s*`, 'i'), '');
+      const followersMatch = cleanText.match(/(\d[\d\s]*\s*подписчиков)/i);
+      const postsMatch = cleanText.match(/(\d[\d\s]*\s*публикаций)/i);
+      const stats = [];
+      if (followersMatch) stats.push(followersMatch[0]);
+      if (postsMatch) stats.push(postsMatch[0]);
+      let bioOnly = cleanText.replace(/(\d[\d\s]*\s*(подписчиков|публикаций|подписок))/gi, '').trim();
+      return { bio: bioOnly || " ", stats: stats };
+    };
+
+    function App() {
+      const [girls, setGirls] = useState([]);
+      const [votes, setVotes] = useState({});
+      const [viewed, setViewed] = useState(JSON.parse(localStorage.getItem('ig_viewed_profiles') || '[]'));
+      const [sentDM, setSentDM] = useState(JSON.parse(localStorage.getItem('ig_sent_dm') || '[]'));
+      const [filterText, setFilterText] = useState('');
+      const [filterStatus, setFilterStatus] = useState('all');
+      const [hideNoImage, setHideNoImage] = useState(false);
+      const [modalOpen, setModalOpen] = useState(false);
+      const [messagesText, setMessagesText] = useState("");
+      const [failedImages, setFailedImages] = useState(new Set());
+
+      useEffect(() => {
+        fetchData();
+        const savedMessages = JSON.parse(localStorage.getItem('ig_first_messages') || '[]');
+        setMessagesText(savedMessages.join('\n'));
+      }, []);
+
+      const fetchData = async () => {
+        try {
+          const [girlsRes, votesRes] = await Promise.all([fetch('/api/girls'), fetch('/api/votes')]);
+          const girlsData = await girlsRes.json();
+          const votesData = await votesRes.json();
+          girlsData.forEach(g => {
+            g.status = votesData[g.url] || '';
+            g.viewed = viewed.includes(g.url);
+            g.dmSent = sentDM.includes(g.url);
+          });
+          setGirls(girlsData);
+          setVotes(votesData);
+        } catch (e) { console.error("Error loading data", e); }
+      };
+
+      const handleVote = async (g, status) => {
+        g.status = status;
+        setVotes({ ...votes, [g.url]: status });
+        setGirls([...girls]);
+        fetch('/api/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: g.url, status }) });
+      };
+
+      const handleSendDM = async g => {
+        const msgs = JSON.parse(localStorage.getItem('ig_first_messages') || '[]');
+        const m = msgs[Math.floor(Math.random() * msgs.length)] || "Hello!";
+        g.dmSent = true;
+        const newSent = [...sentDM, g.url];
+        setSentDM(newSent);
+        localStorage.setItem('ig_sent_dm', JSON.stringify(newSent));
+        setGirls([...girls]);
+        fetch('/api/dm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: g.url, message: m }) });
+      };
+
+      const handleOpen = async g => {
+        if (!viewed.includes(g.url)) {
+          const newV = [...viewed, g.url];
+          setViewed(newV);
+          localStorage.setItem('ig_viewed_profiles', JSON.stringify(newV));
+        }
+        g.viewed = true;
+        setGirls([...girls]);
+        fetch('/api/view', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: g.url }) });
+        window.open(g.url, '_blank');
+      };
+
+      const filtered = girls.filter(g => {
+        const matchesName = g.name.toLowerCase().includes(filterText.toLowerCase());
+        const matchesStatus = filterStatus === 'all' || g.status === filterStatus || (filterStatus === 'new' && !g.status);
+        const imgOk = !hideNoImage || (g.photo && !failedImages.has(g.url));
+        return matchesName && matchesStatus && imgOk;
+      }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      return (
+        <div className="app">
+          <header className="header">
+            <div className="header-left">
+              <div className="logo">InstaPanel</div>
+              <div className="stats">
+                <span>Всего: <b>{girls.length}</b></span>
+                <span>Лайков: <b style={{color:'var(--success)'}}>{Object.values(votes).filter(v=>v==='like').length}</b></span>
+              </div>
+            </div>
+            <button className="btn-primary" onClick={() => setModalOpen(true)}>Сообщения</button>
+          </header>
+
+          <div className="toolbar">
+            <input className="search-input" placeholder="Поиск по имени..." value={filterText} onChange={e=>setFilterText(e.target.value)} />
+            <select className="select-input" value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
+               <option value="all">Все</option>
+               <option value="new">Новые</option>
+               <option value="like">Лайкнутые</option>
+            </select>
+            <label className="checkbox-label">
+              <input type="checkbox" checked={hideNoImage} onChange={e=>setHideNoImage(e.target.checked)} /> Скрыть без фото
+            </label>
+          </div>
+
+          <main className="grid">
+            {filtered.map(g => {
+              const { bio, stats } = parseSmartBio(g.bio, g.name);
+              return (
+                <div className={`card ${g.status ? 'status-'+g.status : ''}`} key={g.url}>
+                  <div className="photoWrap">
+                    <img 
+                      src={g.photo ? `https://images.weserv.nl/?url=${encodeURIComponent(g.photo.replace(/^https?:\/\//, ''))}&w=400&h=500&fit=cover&a=top` : ''} 
+                      onError={() => setFailedImages(new Set([...failedImages, g.url]))}
+                    />
+                    <div className="overlay"></div>
+                    <div className="statusStack">
+                      {g.status === 'like' && <div className="badge likedTag">Лайк</div>}
+                      {g.dmSent && <div className="badge dmTag">DM</div>}
+                      {g.viewed && !g.status && <div className="badge viewedTag">Смотрел</div>}
+                    </div>
+                    <div className="linksStack">
+                      <div className="socialBtn" onClick={() => window.open(`https://t.me/${g.name}`, '_blank')}><TelegramIcon /></div>
+                      <div className="socialBtn" onClick={() => handleOpen(g)}><InstagramIcon /></div>
+                    </div>
+                  </div>
+                  
+                  <div className="cardBody">
+                    <div className="name">
+                      <span>{g.name}</span>
+                      <span className="timestamp">{new Date(g.timestamp).toLocaleDateString()}</span>
+                    </div>
+                    
+                    <div className="bio-container">
+                      <div className="bio-text" title={g.bio}>{bio}</div>
+                      {stats.map((s, i) => (
+                        <span key={i} className="followers-text">{s}</span>
+                      ))}
+                    </div>
+
+                    <div className="actions">
+                      <button className="actionBtn likeBtn" onClick={() => handleVote(g, 'like')}><HeartIcon /> Лайк</button>
+                      <button className="actionBtn dislikeBtn" onClick={() => handleVote(g, 'dislike')}><XIcon /> Скип</button>
+                      <button className="actionBtn sendBtn" onClick={() => handleSendDM(g)}><SendIcon /></button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </main>
+
+          {modalOpen && (
+            <div className="modal" onClick={() => setModalOpen(false)}>
+              <div className="modalContent" onClick={e=>e.stopPropagation()}>
+                <h3 style={{margin:0}}>Шаблоны сообщений</h3>
+                <textarea className="msg-textarea" value={messagesText} onChange={e=>setMessagesText(e.target.value)} />
+                <div style={{display:'flex', justifyContent:'flex-end', gap:12, marginTop:20}}>
+                  <button className="btn-primary" style={{background:'transparent'}} onClick={()=>setModalOpen(false)}>Отмена</button>
+                  <button className="btn-primary" onClick={() => {
+                    localStorage.setItem('ig_first_messages', JSON.stringify(messagesText.split('\n').filter(l=>l.trim())));
+                    setModalOpen(false);
+                  }}>Сохранить</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

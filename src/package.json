@@ -1,0 +1,29 @@
+{
+  "name": "projects",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "bin": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "pkg . --targets node18-win-x64"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "24": "^0.0.0",
+    "express": "^5.2.1",
+    "playwright": "^1.58.1"
+  },
+  "pkg": {
+    "assets": [
+      "node_modules/playwright-core/**/*",
+      "node_modules/@playwright/test/**/*"
+    ],
+    "scripts": [
+      "node_modules/playwright-core/lib/**/*.js"
+    ]
+  }
+}
