@@ -2,7 +2,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const { getProxy, getCookies, getList, normalizeUrl, getSetting, getAllAccounts } = require('./lib/config');
 const { StateManager } = require('./lib/state');
-const { createBrowserContext, optimizeContextForScraping, startLiveView, checkLoginPage } = require('./lib/browser');
+const { createBrowserContext, optimizeContextForScraping, startLiveView, checkLoginPage, takeLiveScreenshot } = require('./lib/browser');
 const { shuffleArray, wait } = require('./lib/utils');
 const logger = require('./lib/logger');
 const { saveCrashReport } = require('./lib/reporter');
@@ -43,6 +43,17 @@ const SELECTORS = {
     LOADER: 'div[role="dialog"] [role="progressbar"], div[role="dialog"] svg[aria-label="Loading..."], div[role="dialog"] svg[aria-label="Загрузка..."]'
 };
 
+const checkSkipSignal = () => {
+    const flagPath = path.join(__dirname, 'skip_donor.flag');
+    if (require('fs').existsSync(flagPath)) {
+        try {
+            require('fs').unlinkSync(flagPath);
+            return true;
+        } catch (e) { }
+    }
+    return false;
+};
+
 const randomDelay = (min = 100, max = 300) => wait(min + Math.random() * (max - min));
 
 const extractVisibleCandidates = () => {
@@ -76,6 +87,8 @@ const scrollAndCollectUrls = async (page, config) => {
     logger.info(`      🔽 Начинаем скролл списка...`);
 
     for (let i = 0; i < config.scroll.maxAttempts; i++) {
+        if (checkSkipSignal()) return [];
+
         const visible = await page.evaluate(extractVisibleCandidates);
         visible.forEach(url => collectedUrls.add(url));
 
@@ -136,7 +149,9 @@ const analyzeProfile = async (context, url, config) => {
 
     try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: config.timeouts.pageLoad });
+        await takeLiveScreenshot(page);
         await page.waitForSelector('header', { timeout: 10000 });
+        await takeLiveScreenshot(page);
         await wait(150);
 
         const username = url.split('/').filter(Boolean).pop() || '';
@@ -235,7 +250,7 @@ const analyzeProfile = async (context, url, config) => {
     }
 };
 
-const processDonor = async (context, donorUrl, config) => {
+const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     logger.info(`\n==============================================`);
     logger.info(`📂 ОТКРЫВАЕМ ДОНОРА: ${donorUrl}`);
     logger.info(`==============================================`);
@@ -243,6 +258,7 @@ const processDonor = async (context, donorUrl, config) => {
     let shouldSkipDonor = false;
     try {
         await page.goto(donorUrl, { waitUntil: 'domcontentloaded' });
+        await takeLiveScreenshot(page);
 
         // 1. Проверка на страницу логина
         if (await checkLoginPage(page)) {
@@ -281,6 +297,7 @@ const processDonor = async (context, donorUrl, config) => {
         }
 
         await followersBtn.click();
+        await takeLiveScreenshot(page);
 
         await page.waitForSelector('div[role="dialog"]', { timeout: 10000 });
         logger.info(`   ✅ Список подписчиков открыт.`);
@@ -295,9 +312,8 @@ const processDonor = async (context, donorUrl, config) => {
             const name = namesToSearch[nameIdx];
             logger.info(`\n   🔎 ПОИСК ПО ИМЕНИ: "${name}"`);
 
-            if (require('fs').existsSync(path.join(__dirname, 'skip_donor.flag'))) {
+            if (checkSkipSignal()) {
                 console.log(`\n⏭️ [СИГНАЛ] Получен сигнал пропуска. Завершаем работу с донором ${donorUrl}...`);
-                require('fs').unlinkSync(path.join(__dirname, 'skip_donor.flag'));
                 break;
             }
 
@@ -311,6 +327,7 @@ const processDonor = async (context, donorUrl, config) => {
 
             logger.info(`      ⏳ Ждем выдачу результатов от Инстаграма...`);
             try { await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 }); } catch (e) { }
+            await takeLiveScreenshot(page);
             await wait(50);
 
             const candidates = await scrollAndCollectUrls(page, config);
@@ -327,25 +344,38 @@ const processDonor = async (context, donorUrl, config) => {
                 emptyResultsCount++;
                 logger.info(`      ⏭️ Новых профилей нет (${emptyResultsCount}/3 подряд).`);
                 if (emptyResultsCount >= 3) {
-                    logger.warn(`⚠️ 3 ПУСТЫХ РЕЗУЛЬТАТА ПОДРЯД. СКОРЕЕ ВСЕГО ШЕДОУБАН. ИНИЦИИРУЕМ СМЕНУ ПРОФИЛЯ...`);
-                    throw new RotateAccountError('Shadowban (3 empty results)', namesToSearch.slice(nameIdx + 1));
+                    if (totalAccounts > 1) {
+                        logger.warn(`⚠️ 3 ПУСТЫХ РЕЗУЛЬТАТА ПОДРЯД. СКОРЕЕ ВСЕГО ШЕДОУБАН. ИНИЦИИРУЕМ СМЕНУ ПРОФИЛЯ...`);
+                        throw new RotateAccountError('Shadowban (3 empty results)', namesToSearch.slice(nameIdx + 1));
+                    } else {
+                        logger.warn(`⚠️ 3 ПУСТЫХ РЕЗУЛЬТАТА ПОДРЯД. ВОЗМОЖЕН ШЕДОУБАН. ПРОДОЛЖАЕМ (ТОЛЬКО 1 АККАУНТ ДЛЯ ЗАДАЧИ).`);
+                        emptyResultsCount = 0; // Reset to allow continuing
+                    }
                 }
                 continue;
             } else {
                 emptyResultsCount = 0;
             }
 
-            logger.info(`      🚀 Обрабатываем новые профили пачками по 3 штуки (экономия ОЗУ)...`);
-            const CHUNK_SIZE = 3;
+            logger.info(`      🚀 Обрабатываем новые профили пачками...`);
+            const concurrentProfiles = await getSetting('concurrentProfiles');
+            const CHUNK_SIZE = concurrentProfiles ? parseInt(concurrentProfiles) : 3;
             for (let i = 0; i < newCandidates.length; i += CHUNK_SIZE) {
-                if (require('fs').existsSync(path.join(__dirname, 'skip_donor.flag'))) {
+                if (checkSkipSignal()) {
                     console.log(`\n⏭️ [СИГНАЛ] Получен сигнал пропуска в процессе анализа профилей...`);
-                    require('fs').unlinkSync(path.join(__dirname, 'skip_donor.flag'));
                     shouldSkipDonor = true;
                     break;
                 }
                 const chunk = newCandidates.slice(i, i + CHUNK_SIZE);
-                await Promise.all(chunk.map(url => analyzeProfile(context, url, config)));
+                for (const url of chunk) {
+                    if (checkSkipSignal()) {
+                        console.log(`\n⏭️ [СИГНАЛ] Получен сигнал пропуска перед анализом профиля: ${url}`);
+                        shouldSkipDonor = true;
+                        break;
+                    }
+                    await analyzeProfile(context, url, config);
+                }
+                if (shouldSkipDonor) break;
                 await randomDelay(100, 300);
             }
             if (shouldSkipDonor) break;
@@ -419,18 +449,24 @@ const run = async () => {
         }
 
         try {
-            await processDonor(context, donorUrl, CONFIG);
+            await processDonor(context, donorUrl, CONFIG, accounts.length);
             await StateManager.addDonor(donorUrl);
             donorIdx++; // Move to next donor on success
             // Reset to full names list for next donor
             CONFIG.target.names = shuffleArray(await getList('names.txt'));
         } catch (e) {
             if (e.name === 'RotateAccountError') {
-                logger.info(`🔄 ПЕРЕКЛЮЧЕНИЕ ПРОФИЛЯ: ${e.reason}`);
+                const isRotationNeeded = accounts.length > 1;
+                if (isRotationNeeded) {
+                    logger.info(`🔄 ПЕРЕКЛЮЧЕНИЕ ПРОФИЛЯ: ${e.reason}`);
+                } else {
+                    logger.info(`🔄 ПЕРЕЗАГРУЗКА СЕССИИ: ${e.reason}`);
+                }
+
                 clearInterval(liveViewInterval);
                 await browser.close();
 
-                if (accounts.length > 1) {
+                if (isRotationNeeded) {
                     currentAccountIndex = (currentAccountIndex + 1) % accounts.length;
                     logger.info(`🔀 Переключились на аккаунт #${currentAccountIndex + 1} из ${accounts.length}`);
                 } else {

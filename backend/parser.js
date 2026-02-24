@@ -2,7 +2,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const { getProxy, getCookies, getList, normalizeUrl, getSetting } = require('./lib/config');
 const { StateManager } = require('./lib/state');
-const { createBrowserContext, optimizeContextForScraping, startLiveView } = require('./lib/browser');
+const { createBrowserContext, optimizeContextForScraping, startLiveView, takeLiveScreenshot } = require('./lib/browser');
 const { wait } = require('./lib/utils');
 const { saveCrashReport } = require('./lib/reporter');
 
@@ -22,9 +22,17 @@ const getDynamicConfig = async () => {
     };
 };
 
+const shuffleArray = (array) => {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+};
+
 const getCombinedKeywords = (cities, niches) => {
-    if (!niches || niches.length === 0) return cities || [];
-    if (!cities || cities.length === 0) return niches || [];
+    if (!niches || niches.length === 0) return shuffleArray([...(cities || [])]);
+    if (!cities || cities.length === 0) return shuffleArray([...(niches || [])]);
 
     const combined = [];
     for (const city of cities) {
@@ -32,7 +40,7 @@ const getCombinedKeywords = (cities, niches) => {
             combined.push(`${city} ${niche}`);
         }
     }
-    return combined;
+    return shuffleArray(combined);
 };
 
 const run = async () => {
@@ -75,6 +83,7 @@ const run = async () => {
     try {
         console.log('Открываем главную страницу Instagram...');
         await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: CONFIG.timeouts.pageLoad });
+        await takeLiveScreenshot(page);
         await wait(3000);
 
         // Ищем строку поиска
@@ -109,7 +118,9 @@ const run = async () => {
                 await searchInputLocator.pressSequentially(keyword, { delay: Math.floor(Math.random() * (120 - 50 + 1) + 50) });
 
                 console.log(`⏳ Ждем результаты поиска от Instagram...`);
+                await takeLiveScreenshot(page);
                 await wait(4000);
+                await takeLiveScreenshot(page);
 
                 // Парсим результаты из выпадающего списка
                 const links = await page.evaluate(() => {

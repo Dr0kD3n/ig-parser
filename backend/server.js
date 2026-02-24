@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
-const { createBrowserContext, startLiveView } = require('./lib/browser');
+const { createBrowserContext, startLiveView, takeLiveScreenshot } = require('./lib/browser');
 const { humanType, wait } = require('./lib/utils');
 const { StateManager } = require('./lib/state');
 const { getDB } = require('./lib/db');
@@ -16,8 +16,7 @@ const logEmitter = new EventEmitter();
 const LOGS_FILE = path.join(__dirname, 'logs.json');
 let botProcesses = {
     index: null,
-    parser: null,
-    checker: null
+    parser: null
 };
 
 // Tracking sessions for log grouping
@@ -147,10 +146,12 @@ async function getSettings() {
     const activeServerIds = rows.filter(r => r.active_server).sort((a, b) => a.active_server - b.active_server).map(r => r.id);
     const activeIndexIds = rows.filter(r => r.active_index).sort((a, b) => a.active_index - b.active_index).map(r => r.id);
     const activeProfilesIds = rows.filter(r => r.active_profiles).sort((a, b) => a.active_profiles - b.active_profiles).map(r => r.id);
-    const activeCheckerIds = rows.filter(r => r.active_checker).sort((a, b) => a.active_checker - b.active_checker).map(r => r.id);
 
     const showBrowserStr = await db.get(`SELECT value FROM settings WHERE key = 'showBrowser'`);
     const showBrowser = showBrowserStr ? showBrowserStr.value === 'true' : false;
+
+    const concurrentProfilesStr = await db.get(`SELECT value FROM settings WHERE key = 'concurrentProfiles'`);
+    const concurrentProfiles = concurrentProfilesStr ? parseInt(concurrentProfilesStr.value) : 3;
 
     return {
         accounts,
@@ -158,8 +159,8 @@ async function getSettings() {
         activeServerAccountIds: activeServerIds,
         activeIndexAccountIds: activeIndexIds,
         activeProfilesAccountIds: activeProfilesIds,
-        activeCheckerAccountIds: activeCheckerIds,
-        showBrowser
+        showBrowser,
+        concurrentProfiles
     };
 }
 
@@ -240,65 +241,109 @@ app.get('/api/settings', async (req, res) => {
     const names = await getList('names.txt');
     const cities = await getList('cityKeywords.txt');
     const niches = await getList('nicheKeywords.txt');
+    const donors = await StateManager.loadDonors();
     res.json({
         accounts: settings.accounts || [],
         activeParserAccountIds: settings.activeParserAccountIds,
         activeServerAccountIds: settings.activeServerAccountIds,
         activeIndexAccountIds: settings.activeIndexAccountIds,
         activeProfilesAccountIds: settings.activeProfilesAccountIds,
-        activeCheckerAccountIds: settings.activeCheckerAccountIds,
         names,
         cities,
         niches,
-        showBrowser: settings.showBrowser
+        donors,
+        showBrowser: settings.showBrowser,
+        concurrentProfiles: settings.concurrentProfiles
     });
 });
 
 app.post('/api/settings', async (req, res) => {
-    const { accounts, names, cities, niches, showBrowser } = req.body;
+    const { accounts, names, cities, niches, donors, showBrowser } = req.body;
 
     try {
         const db = await getDB();
 
         await db.run('BEGIN TRANSACTION');
         try {
-            // Safe delete: only remove accounts NOT in the incoming list
-            const incomingIds = (accounts || []).map(a => a.id);
-            if (incomingIds.length > 0) {
-                const placeholders = incomingIds.map(() => '?').join(',');
-                await db.run(`DELETE FROM accounts WHERE id NOT IN (${placeholders})`, incomingIds);
-            } else {
-                await db.run(`DELETE FROM accounts`);
-            }
-            for (const a of (accounts || [])) {
-                const getPriority = (arr, id) => {
-                    const idx = (arr || []).indexOf(id);
-                    return idx === -1 ? 0 : idx + 1;
-                };
+            if (req.body.hasOwnProperty('accounts')) {
+                // Safeguard: don't delete all accounts if list is empty but we had accounts, 
+                // unless it's a deliberate choice (e.g. forceEmpty flag)
+                const existingAccounts = await db.all('SELECT id FROM accounts');
+                if (existingAccounts.length > 0 && (!accounts || accounts.length === 0) && !req.body.forceEmpty) {
+                    console.warn('Blocked attempt to clear accounts list without forceEmpty flag');
+                } else {
+                    const incomingIds = (accounts || []).map(a => a.id);
+                    if (incomingIds.length > 0) {
+                        const placeholders = incomingIds.map(() => '?').join(',');
+                        await db.run(`DELETE FROM accounts WHERE id NOT IN (${placeholders})`, incomingIds);
+                    } else {
+                        await db.run(`DELETE FROM accounts`);
+                    }
+                    for (const a of (accounts || [])) {
+                        const getPriority = (arr, id) => {
+                            const idx = (arr || []).indexOf(id);
+                            return idx === -1 ? 0 : idx + 1;
+                        };
 
-                let fingerprint = a.fingerprint;
-                if (!fingerprint) {
-                    fingerprint = JSON.stringify(generateFingerprint());
+                        let fingerprint = a.fingerprint;
+                        if (!fingerprint) {
+                            fingerprint = JSON.stringify(generateFingerprint());
+                        }
+
+                        await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, fingerprint)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                            a.id, a.name, a.proxy || '', a.cookies || '',
+                            getPriority(req.body.activeParserAccountIds, a.id),
+                            getPriority(req.body.activeServerAccountIds, a.id),
+                            getPriority(req.body.activeIndexAccountIds, a.id),
+                            getPriority(req.body.activeProfilesAccountIds, a.id),
+                            fingerprint
+                        ]);
+                    }
+                }
+            }
+
+            // Only update keywords if they are explicitly provided in the request
+            const updateList = async (type, items) => {
+                if (!req.body.hasOwnProperty(type + 's')) return;
+                const cleanItems = (items || []).map(i => i.trim()).filter(Boolean);
+
+                // Safeguard: if incoming is empty but DB has many, block it unless forceEmpty
+                const existing = await db.get(`SELECT count(*) as c FROM keywords WHERE type = ?`, [type]);
+                if (existing.c > 5 && cleanItems.length === 0 && !req.body.forceEmpty) {
+                    console.warn(`Blocked attempt to clear ${type} list without forceEmpty flag`);
+                    return;
                 }
 
-                await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, active_checker, fingerprint)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
-                    a.id, a.name, a.proxy || '', a.cookies || '',
-                    getPriority(req.body.activeParserAccountIds, a.id),
-                    getPriority(req.body.activeServerAccountIds, a.id),
-                    getPriority(req.body.activeIndexAccountIds, a.id),
-                    getPriority(req.body.activeProfilesAccountIds, a.id),
-                    getPriority(req.body.activeCheckerAccountIds, a.id),
-                    fingerprint
-                ]);
+                await db.run(`DELETE FROM keywords WHERE type = ?`, [type]);
+                for (const val of cleanItems) {
+                    await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, [type, val]);
+                }
+            };
+
+            await updateList('name', names);
+            await updateList('city', cities);
+            await updateList('niche', niches);
+
+            if (req.body.hasOwnProperty('donors')) {
+                const cleanDonors = (donors || []).map(d => d.trim()).filter(Boolean);
+
+                // Safeguard: if incoming is empty but DB has many, block it unless forceEmpty
+                const existingDonors = await StateManager.loadDonors();
+                if (existingDonors.length > 5 && cleanDonors.length === 0 && !req.body.forceEmpty) {
+                    console.warn('Blocked attempt to clear donors list without forceEmpty flag');
+                } else {
+                    await StateManager.saveDonors(cleanDonors);
+                }
             }
 
-            await db.run(`DELETE FROM keywords`);
-            for (const n of (names || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['name', n]);
-            for (const c of (cities || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['city', c]);
-            for (const n of (niches || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['niche', n]);
+            if (req.body.hasOwnProperty('showBrowser')) {
+                await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['showBrowser', showBrowser ? 'true' : 'false']);
+            }
 
-            await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['showBrowser', showBrowser ? 'true' : 'false']);
+            if (req.body.hasOwnProperty('concurrentProfiles')) {
+                await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['concurrentProfiles', req.body.concurrentProfiles.toString()]);
+            }
 
             await db.run('COMMIT');
         } catch (txErr) {
@@ -466,7 +511,7 @@ app.get('/api/logs', (req, res) => {
 });
 
 app.get('/api/live-view', (req, res) => {
-    const liveViewPath = path.join(__dirname, 'live_view.jpg');
+    const liveViewPath = path.join(__dirname, '..', 'data', 'screenshots', 'live_view.jpg');
     res.sendFile(liveViewPath, { headers: { 'Cache-Control': 'no-store' } }, err => {
         if (err) res.status(404).send('Not generated yet');
     });
@@ -475,14 +520,13 @@ app.get('/api/live-view', (req, res) => {
 app.get('/api/bot/status', (req, res) => {
     res.json({
         index: !!botProcesses.index,
-        parser: !!botProcesses.parser,
-        checker: !!botProcesses.checker
+        parser: !!botProcesses.parser
     });
 });
 
 app.post('/api/bot/start', (req, res) => {
     const { type } = req.body;
-    if (!['index', 'parser', 'checker'].includes(type)) {
+    if (!['index', 'parser'].includes(type)) {
         return res.status(400).json({ success: false, error: 'Invalid bot type' });
     }
 
@@ -531,9 +575,11 @@ app.post('/api/bot/stop', (req, res) => {
 
 app.post('/api/bot/skip-donor', (req, res) => {
     try {
+        console.log('📢 [API] Получен запрос на пропуск текущего донора...');
         fs.writeFileSync(path.join(__dirname, 'skip_donor.flag'), 'skip');
         res.json({ success: true, message: 'Сигнал пропуска донора отправлен' });
     } catch (e) {
+        console.error('❌ [API] Ошибка при создании skip_donor.flag:', e);
         res.json({ success: false, error: 'Ошибка при отправке сигнала' });
     }
 });
@@ -563,15 +609,6 @@ app.post('/api/dm', async (req, res) => {
         clearInterval(liveViewInterval);
 
         if (isSent) {
-            try {
-                const db = await getDB();
-                await db.run(
-                    `INSERT INTO messages_log (url, message_text, status, timestamp) VALUES (?, ?, ?, ?)`,
-                    [url, message, 'sent', new Date().toISOString()]
-                );
-            } catch (dbErr) {
-                console.error('Ошибка сохранения в messages_log:', dbErr);
-            }
             res.json({ success: true, message: 'Отправлено' });
         } else {
             res.json({ success: false, message: 'Не отправлено' });
@@ -586,25 +623,7 @@ app.post('/api/dm', async (req, res) => {
     }
 });
 
-app.get('/api/stats', async (req, res) => {
-    try {
-        const db = await getDB();
-        const rows = await db.all(`
-            SELECT 
-                message_text,
-                COUNT(*) as total_sent,
-                SUM(CASE WHEN status IN ('replied', 'continued') THEN 1 ELSE 0 END) as replies,
-                SUM(CASE WHEN status = 'continued' THEN 1 ELSE 0 END) as continuations
-            FROM messages_log
-            GROUP BY message_text
-            ORDER BY total_sent DESC
-        `);
-        res.json({ success: true, data: rows });
-    } catch (e) {
-        console.error('Ошибка получения статистики:', e);
-        res.status(500).json({ success: false, error: 'Ошибка сервера' });
-    }
-});
+// Stat endpoint removed
 
 app.listen(PORT, () => {
     console.log(`Сервер запущен: http://localhost:${PORT}`);
@@ -632,6 +651,7 @@ const sendMessageToProfile = async (context, url, message) => {
 
     try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: CONFIG.timeouts.pageLoad });
+        await takeLiveScreenshot(page);
         await wait(2000);
 
         let accessButton = null;
@@ -671,6 +691,7 @@ const sendMessageToProfile = async (context, url, message) => {
         }
 
         await accessButton.click();
+        await takeLiveScreenshot(page);
 
         try {
             await Promise.race([
@@ -724,6 +745,7 @@ const sendMessageToProfile = async (context, url, message) => {
         await humanType(page, CONFIG.selectors.chatInput, message, CONFIG.timeouts);
         await wait(1000);
         await page.keyboard.press('Enter');
+        await takeLiveScreenshot(page);
         console.log(`🚀 [SENT] Сообщение отправлено: ${url}`);
 
         await wait(3000);

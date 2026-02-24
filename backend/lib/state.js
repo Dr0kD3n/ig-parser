@@ -85,6 +85,20 @@ const StateManager = {
         } catch (e) {
             // Ignore if already exists in donor table
         }
+    },
+
+    async saveDonors(urls) {
+        const db = await getDB();
+        try {
+            await db.run(`DELETE FROM urls WHERE type = 'donor'`);
+            for (const url of urls) {
+                const normUrl = normalizeUrl(url);
+                await db.run(`INSERT INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
+            }
+        } catch (e) {
+            console.error('Ошибка при сохранении списка доноров:', e);
+            throw e;
+        }
     }
 };
 

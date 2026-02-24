@@ -3,7 +3,6 @@ import { t } from './i18n.js'
 import ProfilesTab from './components/ProfilesTab.jsx'
 import ControlsTab from './components/ControlsTab.jsx'
 import SettingsTab from './components/SettingsTab.jsx'
-import StatisticsTab from './components/StatisticsTab.jsx'
 
 const LANG = localStorage.getItem('ig_lang') || 'ru'
 const tr = (key) => t(LANG, key)
@@ -20,12 +19,13 @@ export default function App() {
     const [messagesText, setMessagesText] = useState('')
     const [settingsData, setSettingsData] = useState({
         accounts: [], activeParserAccountIds: [], activeServerAccountIds: [], activeIndexAccountIds: [], activeProfilesAccountIds: [],
-        names: [], cities: [], niches: [], showBrowser: false
+        names: [], cities: [], niches: [], donors: [], showBrowser: false
     })
     const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false })
     const [logs, setLogs] = useState([])
     const [activeTab, setActiveTab] = useState(() => localStorage.getItem('ig_active_tab') || 'main')
     const [isLoading, setIsLoading] = useState(true)
+    const [saveStatus, setSaveStatus] = useState('idle') // idle, saving, saved, error
 
     // Persist active tab
     useEffect(() => { localStorage.setItem('ig_active_tab', activeTab) }, [activeTab])
@@ -63,6 +63,7 @@ export default function App() {
                 names: data.names || [],
                 cities: data.cities || [],
                 niches: data.niches || [],
+                donors: data.donors || [],
                 showBrowser: data.showBrowser || false
             })
             settingsLoaded.current = true
@@ -169,7 +170,12 @@ export default function App() {
         fetchBotStatus()
     }, [fetchBotStatus])
 
+    const handleClearLogs = useCallback(() => {
+        setLogs([])
+    }, [])
+
     const handleSaveSettings = useCallback(async () => {
+        if (!settingsLoaded.current) return
         await fetch('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -182,6 +188,7 @@ export default function App() {
     const saveAbortRef = useRef(null)
     useEffect(() => {
         if (!settingsLoaded.current) return
+        setSaveStatus('saving')
         const timer = setTimeout(() => {
             if (saveAbortRef.current) saveAbortRef.current.abort()
             const controller = new AbortController()
@@ -191,8 +198,15 @@ export default function App() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(settingsData),
                 signal: controller.signal
-            }).catch(() => { })
-        }, 1500)
+            })
+                .then(() => {
+                    setSaveStatus('saved')
+                    setTimeout(() => setSaveStatus('idle'), 2000)
+                })
+                .catch((err) => {
+                    if (err.name !== 'AbortError') setSaveStatus('error')
+                })
+        }, 800)
         return () => clearTimeout(timer)
     }, [settingsData])
 
@@ -220,9 +234,23 @@ export default function App() {
                         <span>{tr('likes')} <b style={{ color: 'hsl(var(--success))' }}>{likesCount}</b></span>
                     </div>
                 </div>
-                <button className="btn-primary" onClick={() => setModalOpen(true)}>
-                    {tr('templates')}
-                </button>
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    {saveStatus !== 'idle' && (
+                        <div style={{
+                            fontSize: '12px',
+                            color: saveStatus === 'error' ? 'hsl(var(--danger))' : 'hsl(var(--text-muted))',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                        }}>
+                            {saveStatus === 'saving' && <div className="loader-ring" style={{ width: '12px', height: '12px', borderWidth: '2px' }} />}
+                            {saveStatus === 'saving' ? 'Сохранение...' : saveStatus === 'saved' ? '✓ Сохранено' : 'Ошибка сохранения'}
+                        </div>
+                    )}
+                    <button className="btn-primary" onClick={() => setModalOpen(true)}>
+                        {tr('templates')}
+                    </button>
+                </div>
             </header>
 
             <nav className="tabs-nav">
@@ -230,7 +258,6 @@ export default function App() {
                     {[
                         { id: 'main', label: tr('tab_profiles') },
                         { id: 'controls', label: tr('tab_execution') },
-                        { id: 'statistics', label: tr('tab_statistics') },
                         { id: 'settings', label: tr('tab_configuration') },
                     ].map(({ id, label }) => (
                         <button
@@ -273,6 +300,7 @@ export default function App() {
                 <ControlsTab
                     botStatus={botStatus}
                     onBotControl={handleBotControl}
+                    onClearLogs={handleClearLogs}
                     logs={logs}
                     tr={tr}
                 />
@@ -283,15 +311,6 @@ export default function App() {
                     settingsData={settingsData}
                     onSettingsChange={setSettingsData}
                     onSave={handleSaveSettings}
-                    tr={tr}
-                />
-            )}
-
-            {activeTab === 'statistics' && (
-                <StatisticsTab
-                    botStatus={botStatus}
-                    onBotControl={handleBotControl}
-                    logs={logs}
                     tr={tr}
                 />
             )}

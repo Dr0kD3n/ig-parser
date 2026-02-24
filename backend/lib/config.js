@@ -21,6 +21,7 @@ async function getProxy(type = '') {
         if (type === 'index') column = 'active_index';
         if (type === 'profiles') column = 'active_profiles';
         if (type === 'checker') column = 'active_checker';
+        if (type === 'parser') column = 'active_parser';
 
         const row = await db.get(`SELECT proxy FROM accounts WHERE ${column} > 0 ORDER BY ${column} ASC LIMIT 1`);
         if (!row || !row.proxy) return null;
@@ -46,6 +47,7 @@ async function getCookies(type = '') {
         if (type === 'index') column = 'active_index';
         if (type === 'profiles') column = 'active_profiles';
         if (type === 'checker') column = 'active_checker';
+        if (type === 'parser') column = 'active_parser';
 
         const row = await db.get(`SELECT cookies FROM accounts WHERE ${column} > 0 ORDER BY ${column} ASC LIMIT 1`);
         if (!row || !row.cookies) return [];
@@ -119,6 +121,7 @@ async function getAllAccounts(type = '') {
         if (type === 'index') column = 'active_index';
         if (type === 'profiles') column = 'active_profiles';
         if (type === 'checker') column = 'active_checker';
+        if (type === 'parser') column = 'active_parser';
 
         const rows = await db.all(`SELECT proxy, cookies, fingerprint FROM accounts WHERE ${column} > 0 ORDER BY ${column} ASC`);
         if (!rows || rows.length === 0) return [];

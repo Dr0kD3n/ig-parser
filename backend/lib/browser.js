@@ -75,21 +75,29 @@ function optimizeContextForScraping(context) {
 
 const path = require('path');
 
+const LIVE_VIEW_PATH = path.join(__dirname, '..', '..', 'data', 'screenshots', 'live_view.jpg');
+
+async function takeLiveScreenshot(page) {
+    if (!page || page.isClosed()) return;
+    try {
+        await page.screenshot({ path: LIVE_VIEW_PATH, type: 'jpeg', quality: 30 });
+    } catch (e) {
+        // Ignore screenshot errors
+    }
+}
+
 function startLiveView(context) {
-    const liveViewPath = path.join(__dirname, '..', '..', 'data', 'screenshots', 'live_view.jpg');
     const intervalId = setInterval(async () => {
         try {
             const pages = context.pages();
             if (pages.length > 0) {
                 const activePage = pages[pages.length - 1];
-                if (!activePage.isClosed()) {
-                    await activePage.screenshot({ path: liveViewPath, type: 'jpeg', quality: 30 });
-                }
+                await takeLiveScreenshot(activePage);
             }
         } catch (e) {
-            // Ignore screenshot errors (e.g. page closed midway)
+            // Ignore screenshot errors
         }
-    }, 2000);
+    }, 30000); // Reduce frequency to 30 seconds as a background fallback
     return intervalId;
 }
 
@@ -108,5 +116,6 @@ module.exports = {
     createBrowserContext,
     optimizeContextForScraping,
     startLiveView,
+    takeLiveScreenshot,
     checkLoginPage
 };

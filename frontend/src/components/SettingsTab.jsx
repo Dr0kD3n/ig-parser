@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { EditIcon, TrashIcon } from './Icons.jsx'
 
-export default function SettingsTab({ settingsData, onSettingsChange, onSave, tr }) {
+export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
     const [settingsTab, setSettingsTab] = useState('accounts')
     const [draggedItem, setDraggedItem] = useState(null)
     const [editingAccount, setEditingAccount] = useState(null)
@@ -132,13 +132,13 @@ export default function SettingsTab({ settingsData, onSettingsChange, onSave, tr
         <div className="settings-wrap tab-content-fade">
             <div className="settings-header">
                 <div className="settings-nested-tabs">
-                    {['accounts', 'names', 'cities', 'niches'].map(tab => (
+                    {['accounts', 'names', 'cities', 'niches', 'donors'].map(tab => (
                         <button
                             key={tab}
                             className={`tab-btn${settingsTab === tab ? ' active' : ''}`}
                             onClick={() => setSettingsTab(tab)}
                         >
-                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                            {tab === 'donors' ? tr('tab_donors') : tab.charAt(0).toUpperCase() + tab.slice(1)}
                         </button>
                     ))}
                 </div>
@@ -152,13 +152,26 @@ export default function SettingsTab({ settingsData, onSettingsChange, onSave, tr
                         />
                         Показывать браузер
                     </label>
-                    <button
-                        className="btn-primary"
-                        style={{ background: 'hsl(var(--success))', boxShadow: 'none' }}
-                        onClick={onSave}
-                    >
-                        {tr('save_all')}
-                    </button>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'hsl(var(--text-muted))' }}>
+                        Профилей:
+                        <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            value={settingsData.concurrentProfiles || 3}
+                            style={{
+                                width: '50px',
+                                height: '28px',
+                                background: 'hsl(var(--bg-elevated))',
+                                border: '1px solid hsl(var(--border))',
+                                borderRadius: '6px',
+                                color: 'hsl(var(--text))',
+                                textAlign: 'center',
+                                fontSize: '13px'
+                            }}
+                            onChange={e => onSettingsChange({ ...settingsData, concurrentProfiles: parseInt(e.target.value) || 1 })}
+                        />
+                    </label>
                 </div>
             </div>
 
@@ -318,6 +331,14 @@ export default function SettingsTab({ settingsData, onSettingsChange, onSave, tr
                     style={{ height: 500 }}
                     value={settingsData.niches.join('\n')}
                     onChange={e => onSettingsChange({ ...settingsData, niches: e.target.value.split('\n') })}
+                />
+            )}
+            {settingsTab === 'donors' && (
+                <textarea
+                    className="msg-textarea"
+                    style={{ height: 500 }}
+                    value={settingsData.donors.join('\n')}
+                    onChange={e => onSettingsChange({ ...settingsData, donors: e.target.value.split('\n') })}
                 />
             )}
         </div>
