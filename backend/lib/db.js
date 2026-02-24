@@ -32,7 +32,9 @@ async function getDB() {
             active_parser INTEGER DEFAULT 0,
             active_server INTEGER DEFAULT 0,
             active_index INTEGER DEFAULT 0,
-            active_profiles INTEGER DEFAULT 0
+            active_profiles INTEGER DEFAULT 0,
+            active_checker INTEGER DEFAULT 0,
+            fingerprint TEXT
         );
 
         CREATE TABLE IF NOT EXISTS keywords (
@@ -56,11 +58,38 @@ async function getDB() {
             timestamp TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS messages_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL,
+            message_text TEXT NOT NULL,
+            status TEXT DEFAULT 'sent', -- 'sent', 'replied', 'continued'
+            total_count INTEGER DEFAULT 0,
+            timestamp TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
         );
     `);
+
+    try {
+        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN active_checker INTEGER DEFAULT 0`);
+    } catch (e) {
+        // Ignore if column already exists
+    }
+
+    try {
+        await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN total_count INTEGER DEFAULT 0`);
+    } catch (e) {
+        // Ignore if column already exists
+    }
+
+    try {
+        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN fingerprint TEXT`);
+    } catch (e) {
+        // Ignore if column already exists
+    }
 
     return dbInstance;
 }

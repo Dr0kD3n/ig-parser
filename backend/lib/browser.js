@@ -1,11 +1,15 @@
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
+
+// Disable user-agent evasion so our custom fingerprints take effect
+stealth.enabledEvasions.delete('user-agent-override');
+
 chromium.use(stealth);
 
 let globalBrowser = null;
 
 async function getBrowser(headless) {
-    if (!globalBrowser) {
+    if (!globalBrowser || !globalBrowser.isConnected()) {
         globalBrowser = await chromium.launch({
             headless: headless,
             args: [
@@ -31,8 +35,11 @@ async function createBrowserContext(config, headless = true) {
     const browser = await getBrowser(headless);
 
     const contextOptions = {
-        viewport: config.viewport || { width: 1280, height: 900 },
-        userAgent: config.userAgent
+        viewport: (config.fingerprint && config.fingerprint.viewport) || config.viewport || { width: 1280, height: 900 },
+        userAgent: (config.fingerprint && config.fingerprint.userAgent) || config.userAgent,
+        timezoneId: (config.fingerprint && config.fingerprint.timezoneId),
+        locale: (config.fingerprint && config.fingerprint.locale),
+        deviceScaleFactor: (config.fingerprint && config.fingerprint.deviceScaleFactor),
     };
     if (config.proxy) {
         contextOptions.proxy = {
@@ -66,8 +73,40 @@ function optimizeContextForScraping(context) {
     });
 }
 
+const path = require('path');
+
+function startLiveView(context) {
+    const liveViewPath = path.join(__dirname, '..', '..', 'data', 'screenshots', 'live_view.jpg');
+    const intervalId = setInterval(async () => {
+        try {
+            const pages = context.pages();
+            if (pages.length > 0) {
+                const activePage = pages[pages.length - 1];
+                if (!activePage.isClosed()) {
+                    await activePage.screenshot({ path: liveViewPath, type: 'jpeg', quality: 30 });
+                }
+            }
+        } catch (e) {
+            // Ignore screenshot errors (e.g. page closed midway)
+        }
+    }, 2000);
+    return intervalId;
+}
+
+async function checkLoginPage(page) {
+    const url = page.url();
+    if (url.includes('/accounts/login/')) return true;
+
+    // Check for login form elements as backup
+    const loginInput = await page.$('input[name="username"], input[name="password"]');
+    if (loginInput) return true;
+
+    return false;
+}
 
 module.exports = {
     createBrowserContext,
-    optimizeContextForScraping
+    optimizeContextForScraping,
+    startLiveView,
+    checkLoginPage
 };

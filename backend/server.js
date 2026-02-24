@@ -3,18 +3,21 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
-const { createBrowserContext } = require('./lib/browser');
+const { createBrowserContext, startLiveView } = require('./lib/browser');
 const { humanType, wait } = require('./lib/utils');
 const { StateManager } = require('./lib/state');
 const { getDB } = require('./lib/db');
 const { spawn } = require('child_process');
 const { EventEmitter } = require('events');
+const { generateFingerprint } = require('./lib/fingerprint');
+const { saveCrashReport } = require('./lib/reporter');
 
 const logEmitter = new EventEmitter();
 const LOGS_FILE = path.join(__dirname, 'logs.json');
 let botProcesses = {
     index: null,
-    parser: null
+    parser: null,
+    checker: null
 };
 
 // Tracking sessions for log grouping
@@ -138,23 +141,29 @@ async function getSettings() {
     const db = await getDB();
     const rows = await db.all(`SELECT * FROM accounts`);
     const accounts = rows.map(r => ({
-        id: r.id, name: r.name, proxy: r.proxy, cookies: r.cookies
+        id: r.id, name: r.name, proxy: r.proxy, cookies: r.cookies, fingerprint: r.fingerprint
     }));
-    const activeParser = rows.find(r => r.active_parser)?.id || null;
-    const activeServer = rows.find(r => r.active_server)?.id || null;
-    const activeIndex = rows.find(r => r.active_index)?.id || null;
-    const activeProfiles = rows.find(r => r.active_profiles)?.id || null;
+    const activeParserIds = rows.filter(r => r.active_parser).sort((a, b) => a.active_parser - b.active_parser).map(r => r.id);
+    const activeServerIds = rows.filter(r => r.active_server).sort((a, b) => a.active_server - b.active_server).map(r => r.id);
+    const activeIndexIds = rows.filter(r => r.active_index).sort((a, b) => a.active_index - b.active_index).map(r => r.id);
+    const activeProfilesIds = rows.filter(r => r.active_profiles).sort((a, b) => a.active_profiles - b.active_profiles).map(r => r.id);
+    const activeCheckerIds = rows.filter(r => r.active_checker).sort((a, b) => a.active_checker - b.active_checker).map(r => r.id);
+
+    const showBrowserStr = await db.get(`SELECT value FROM settings WHERE key = 'showBrowser'`);
+    const showBrowser = showBrowserStr ? showBrowserStr.value === 'true' : false;
 
     return {
         accounts,
-        activeParserAccountId: activeParser,
-        activeServerAccountId: activeServer,
-        activeIndexAccountId: activeIndex,
-        activeProfilesAccountId: activeProfiles
+        activeParserAccountIds: activeParserIds,
+        activeServerAccountIds: activeServerIds,
+        activeIndexAccountIds: activeIndexIds,
+        activeProfilesAccountIds: activeProfilesIds,
+        activeCheckerAccountIds: activeCheckerIds,
+        showBrowser
     };
 }
 
-const { getProxy, getCookies, getList, getConfigPath } = require('./lib/config');
+const { getProxy, getCookies, getList, getConfigPath, getSetting } = require('./lib/config');
 
 app.use(express.json());
 
@@ -231,35 +240,110 @@ app.get('/api/settings', async (req, res) => {
     const names = await getList('names.txt');
     const cities = await getList('cityKeywords.txt');
     const niches = await getList('nicheKeywords.txt');
-    res.json({ accounts: settings.accounts || [], activeParserAccountId: settings.activeParserAccountId, activeServerAccountId: settings.activeServerAccountId, activeIndexAccountId: settings.activeIndexAccountId, activeProfilesAccountId: settings.activeProfilesAccountId, names, cities, niches });
+    res.json({
+        accounts: settings.accounts || [],
+        activeParserAccountIds: settings.activeParserAccountIds,
+        activeServerAccountIds: settings.activeServerAccountIds,
+        activeIndexAccountIds: settings.activeIndexAccountIds,
+        activeProfilesAccountIds: settings.activeProfilesAccountIds,
+        activeCheckerAccountIds: settings.activeCheckerAccountIds,
+        names,
+        cities,
+        niches,
+        showBrowser: settings.showBrowser
+    });
 });
 
 app.post('/api/settings', async (req, res) => {
-    const { accounts, activeParserAccountId, activeServerAccountId, activeIndexAccountId, activeProfilesAccountId, names, cities, niches } = req.body;
+    const { accounts, names, cities, niches, showBrowser } = req.body;
 
     try {
         const db = await getDB();
 
-        await db.run(`DELETE FROM accounts`);
-        for (const a of accounts) {
-            await db.run(`INSERT INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
-                a.id, a.name, a.proxy || '', a.cookies || '',
-                a.id === activeParserAccountId ? 1 : 0,
-                a.id === activeServerAccountId ? 1 : 0,
-                a.id === activeIndexAccountId ? 1 : 0,
-                a.id === activeProfilesAccountId ? 1 : 0
-            ]);
-        }
+        await db.run('BEGIN TRANSACTION');
+        try {
+            // Safe delete: only remove accounts NOT in the incoming list
+            const incomingIds = (accounts || []).map(a => a.id);
+            if (incomingIds.length > 0) {
+                const placeholders = incomingIds.map(() => '?').join(',');
+                await db.run(`DELETE FROM accounts WHERE id NOT IN (${placeholders})`, incomingIds);
+            } else {
+                await db.run(`DELETE FROM accounts`);
+            }
+            for (const a of (accounts || [])) {
+                const getPriority = (arr, id) => {
+                    const idx = (arr || []).indexOf(id);
+                    return idx === -1 ? 0 : idx + 1;
+                };
 
-        await db.run(`DELETE FROM keywords`);
-        for (const n of (names || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['name', n]);
-        for (const c of (cities || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['city', c]);
-        for (const n of (niches || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['niche', n]);
+                let fingerprint = a.fingerprint;
+                if (!fingerprint) {
+                    fingerprint = JSON.stringify(generateFingerprint());
+                }
+
+                await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, active_checker, fingerprint)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                    a.id, a.name, a.proxy || '', a.cookies || '',
+                    getPriority(req.body.activeParserAccountIds, a.id),
+                    getPriority(req.body.activeServerAccountIds, a.id),
+                    getPriority(req.body.activeIndexAccountIds, a.id),
+                    getPriority(req.body.activeProfilesAccountIds, a.id),
+                    getPriority(req.body.activeCheckerAccountIds, a.id),
+                    fingerprint
+                ]);
+            }
+
+            await db.run(`DELETE FROM keywords`);
+            for (const n of (names || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['name', n]);
+            for (const c of (cities || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['city', c]);
+            for (const n of (niches || [])) await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, ['niche', n]);
+
+            await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['showBrowser', showBrowser ? 'true' : 'false']);
+
+            await db.run('COMMIT');
+        } catch (txErr) {
+            await db.run('ROLLBACK');
+            throw txErr;
+        }
 
         res.json({ success: true });
     } catch (e) {
         console.error('Ошибка сохранения настроек:', e);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.put('/api/accounts/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, proxy, cookies, regenerateFingerprint } = req.body;
+
+    try {
+        const db = await getDB();
+        const existing = await db.get('SELECT id FROM accounts WHERE id = ?', [id]);
+        if (!existing) {
+            return res.status(404).json({ success: false, error: 'Account not found' });
+        }
+
+        const updates = [];
+        const values = [];
+        if (name !== undefined) { updates.push('name = ?'); values.push(name); }
+        if (proxy !== undefined) { updates.push('proxy = ?'); values.push(proxy); }
+        if (cookies !== undefined) { updates.push('cookies = ?'); values.push(cookies); }
+        if (regenerateFingerprint) {
+            updates.push('fingerprint = ?');
+            values.push(JSON.stringify(generateFingerprint()));
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ success: false, error: 'No fields to update' });
+        }
+
+        values.push(id);
+        await db.run(`UPDATE accounts SET ${updates.join(', ')} WHERE id = ?`, values);
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Ошибка обновления аккаунта:', e);
         res.status(500).json({ success: false });
     }
 });
@@ -381,16 +465,24 @@ app.get('/api/logs', (req, res) => {
     });
 });
 
+app.get('/api/live-view', (req, res) => {
+    const liveViewPath = path.join(__dirname, 'live_view.jpg');
+    res.sendFile(liveViewPath, { headers: { 'Cache-Control': 'no-store' } }, err => {
+        if (err) res.status(404).send('Not generated yet');
+    });
+});
+
 app.get('/api/bot/status', (req, res) => {
     res.json({
         index: !!botProcesses.index,
-        parser: !!botProcesses.parser
+        parser: !!botProcesses.parser,
+        checker: !!botProcesses.checker
     });
 });
 
 app.post('/api/bot/start', (req, res) => {
     const { type } = req.body;
-    if (!['index', 'parser'].includes(type)) {
+    if (!['index', 'parser', 'checker'].includes(type)) {
         return res.status(400).json({ success: false, error: 'Invalid bot type' });
     }
 
@@ -437,25 +529,49 @@ app.post('/api/bot/stop', (req, res) => {
     }
 });
 
+app.post('/api/bot/skip-donor', (req, res) => {
+    try {
+        fs.writeFileSync(path.join(__dirname, 'skip_donor.flag'), 'skip');
+        res.json({ success: true, message: 'Сигнал пропуска донора отправлен' });
+    } catch (e) {
+        res.json({ success: false, error: 'Ошибка при отправке сигнала' });
+    }
+});
+
 app.post('/api/dm', async (req, res) => {
     const { url, message } = req.body;
     console.log({ url, message })
 
     let currentContext = null;
     try {
-        const reqConfig = { ...CONFIG };
-        reqConfig.proxy = await getProxy('server');
-        reqConfig.cookies = await getCookies('server');
+        const accountsData = await getAllAccounts('server');
+        const firstAccount = accountsData[0] || {};
+        reqConfig.proxy = firstAccount.proxy;
+        reqConfig.cookies = firstAccount.cookies;
+        reqConfig.fingerprint = firstAccount.fingerprint;
+
+        const showBrowser = await getSetting('showBrowser');
 
         refreshSession();
-        const { browser, context } = await createBrowserContext(reqConfig, false);
+        const { browser, context } = await createBrowserContext(reqConfig, !(showBrowser === 'true' || showBrowser === true));
         console.log(`📡 [SENDER] Используется прокси: ${reqConfig.proxy ? reqConfig.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
         console.log(`🍪 [SENDER] Загружено куки: ${reqConfig.cookies.length}`);
         currentContext = context;
 
+        const liveViewInterval = startLiveView(context);
         const isSent = await sendMessageToProfile(context, url, message);
+        clearInterval(liveViewInterval);
 
         if (isSent) {
+            try {
+                const db = await getDB();
+                await db.run(
+                    `INSERT INTO messages_log (url, message_text, status, timestamp) VALUES (?, ?, ?, ?)`,
+                    [url, message, 'sent', new Date().toISOString()]
+                );
+            } catch (dbErr) {
+                console.error('Ошибка сохранения в messages_log:', dbErr);
+            }
             res.json({ success: true, message: 'Отправлено' });
         } else {
             res.json({ success: false, message: 'Не отправлено' });
@@ -467,6 +583,26 @@ app.post('/api/dm', async (req, res) => {
     } finally {
         if (currentContext) await currentContext.close();
         // Do NOT close browser, so we reuse the global instance
+    }
+});
+
+app.get('/api/stats', async (req, res) => {
+    try {
+        const db = await getDB();
+        const rows = await db.all(`
+            SELECT 
+                message_text,
+                COUNT(*) as total_sent,
+                SUM(CASE WHEN status IN ('replied', 'continued') THEN 1 ELSE 0 END) as replies,
+                SUM(CASE WHEN status = 'continued' THEN 1 ELSE 0 END) as continuations
+            FROM messages_log
+            GROUP BY message_text
+            ORDER BY total_sent DESC
+        `);
+        res.json({ success: true, data: rows });
+    } catch (e) {
+        console.error('Ошибка получения статистики:', e);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
     }
 });
 
@@ -595,7 +731,7 @@ const sendMessageToProfile = async (context, url, message) => {
 
     } catch (error) {
         console.error(`💥 Ошибка: ${error.message}`);
-        await page.screenshot({ path: path.join(__dirname, 'crash_error.png') });
+        await saveCrashReport(page, error, 'sender');
         return false;
     } finally {
         await page.close();

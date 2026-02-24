@@ -45,6 +45,14 @@ const StateManager = {
 
     async addDonor(url) {
         await this.add(url);
+        const normUrl = normalizeUrl(url);
+        const db = await getDB();
+        try {
+            await db.run('DELETE FROM urls WHERE type = ? AND url = ?', ['donor', normUrl]);
+            console.log(`🗑️ Донор удален из списка рассылки: ${normUrl}`);
+        } catch (e) {
+            console.error('Ошибка при удалении отработанного донора:', e);
+        }
     },
 
     async saveResult(profileData) {

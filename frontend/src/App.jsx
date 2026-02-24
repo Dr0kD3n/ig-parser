@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { t } from './i18n.js'
 import ProfilesTab from './components/ProfilesTab.jsx'
 import ControlsTab from './components/ControlsTab.jsx'
 import SettingsTab from './components/SettingsTab.jsx'
+import StatisticsTab from './components/StatisticsTab.jsx'
 
 const LANG = localStorage.getItem('ig_lang') || 'ru'
 const tr = (key) => t(LANG, key)
@@ -18,10 +19,10 @@ export default function App() {
     const [modalOpen, setModalOpen] = useState(false)
     const [messagesText, setMessagesText] = useState('')
     const [settingsData, setSettingsData] = useState({
-        accounts: [], activeParserAccountId: null, activeServerAccountId: null, activeIndexAccountId: null, activeProfilesAccountId: null,
-        names: [], cities: [], niches: []
+        accounts: [], activeParserAccountIds: [], activeServerAccountIds: [], activeIndexAccountIds: [], activeProfilesAccountIds: [],
+        names: [], cities: [], niches: [], showBrowser: false
     })
-    const [botStatus, setBotStatus] = useState({ index: false, parser: false })
+    const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false })
     const [logs, setLogs] = useState([])
     const [activeTab, setActiveTab] = useState(() => localStorage.getItem('ig_active_tab') || 'main')
     const [isLoading, setIsLoading] = useState(true)
@@ -55,14 +56,16 @@ export default function App() {
             const data = await res.json()
             setSettingsData({
                 accounts: data.accounts || [],
-                activeParserAccountId: data.activeParserAccountId || null,
-                activeServerAccountId: data.activeServerAccountId || null,
-                activeIndexAccountId: data.activeIndexAccountId || null,
-                activeProfilesAccountId: data.activeProfilesAccountId || null,
+                activeParserAccountIds: data.activeParserAccountIds || [],
+                activeServerAccountIds: data.activeServerAccountIds || [],
+                activeIndexAccountIds: data.activeIndexAccountIds || [],
+                activeProfilesAccountIds: data.activeProfilesAccountIds || [],
                 names: data.names || [],
                 cities: data.cities || [],
-                niches: data.niches || []
+                niches: data.niches || [],
+                showBrowser: data.showBrowser || false
             })
+            settingsLoaded.current = true
         } catch (e) { console.error('Error fetching settings', e) }
     }, [])
 
@@ -174,6 +177,25 @@ export default function App() {
         })
     }, [settingsData])
 
+    // Auto-save settings on change (debounced, skip initial load)
+    const settingsLoaded = useRef(false)
+    const saveAbortRef = useRef(null)
+    useEffect(() => {
+        if (!settingsLoaded.current) return
+        const timer = setTimeout(() => {
+            if (saveAbortRef.current) saveAbortRef.current.abort()
+            const controller = new AbortController()
+            saveAbortRef.current = controller
+            fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settingsData),
+                signal: controller.signal
+            }).catch(() => { })
+        }, 1500)
+        return () => clearTimeout(timer)
+    }, [settingsData])
+
     // Header stats (memoized-ish via inline)
     const unopenedCount = girls.filter(g => !g.viewed).length
     const likesCount = Object.values(votes).filter(v => v === 'like').length
@@ -188,14 +210,14 @@ export default function App() {
             )}
 
             <header className="header">
-                <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                <div className="header-left">
                     <div className="logo">{tr('logo')}</div>
                     <div className="stats">
                         <span>{tr('unopened')} <b>{unopenedCount}</b></span>
                         <span>{tr('viewed')} <b>{viewed.length}</b></span>
-                        <span>{tr('dm_sent')} <b style={{ color: 'var(--accent)' }}>{sentDM.length}</b></span>
+                        <span>{tr('dm_sent')} <b style={{ color: 'hsl(var(--accent))' }}>{sentDM.length}</b></span>
                         <div className="stats-divider" />
-                        <span>{tr('likes')} <b style={{ color: 'var(--success)' }}>{likesCount}</b></span>
+                        <span>{tr('likes')} <b style={{ color: 'hsl(var(--success))' }}>{likesCount}</b></span>
                     </div>
                 </div>
                 <button className="btn-primary" onClick={() => setModalOpen(true)}>
@@ -203,11 +225,12 @@ export default function App() {
                 </button>
             </header>
 
-            <nav className="tabs-nav" style={{ display: 'flex', alignItems: 'center' }}>
-                <div style={{ display: 'flex' }}>
+            <nav className="tabs-nav">
+                <div style={{ display: 'flex', gap: '8px' }}>
                     {[
                         { id: 'main', label: tr('tab_profiles') },
                         { id: 'controls', label: tr('tab_execution') },
+                        { id: 'statistics', label: tr('tab_statistics') },
                         { id: 'settings', label: tr('tab_configuration') },
                     ].map(({ id, label }) => (
                         <button
@@ -221,7 +244,7 @@ export default function App() {
                 </div>
                 <button
                     className="btn-primary"
-                    style={{ marginLeft: 'auto', background: '#2196F3', borderColor: '#2196F3', color: '#fff' }}
+                    style={{ marginLeft: 'auto', background: 'hsl(210 100% 50%)', borderColor: 'transparent' }}
                     onClick={fetchData}
                     title={tr('btn_update')}
                 >
@@ -241,7 +264,7 @@ export default function App() {
                     onSendDM={handleSendDM}
                     onImageError={handleImageError}
                     onRefresh={fetchData}
-                    useProxyImages={!!settingsData.activeProfilesAccountId}
+                    useProxyImages={(settingsData.activeProfilesAccountIds || []).length > 0}
                     tr={tr}
                 />
             )}
@@ -260,6 +283,15 @@ export default function App() {
                     settingsData={settingsData}
                     onSettingsChange={setSettingsData}
                     onSave={handleSaveSettings}
+                    tr={tr}
+                />
+            )}
+
+            {activeTab === 'statistics' && (
+                <StatisticsTab
+                    botStatus={botStatus}
+                    onBotControl={handleBotControl}
+                    logs={logs}
                     tr={tr}
                 />
             )}

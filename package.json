@@ -1,5 +1,9 @@
 {
     "name": "ig-bot",
+    "version": "1.0.0",
+    "scripts": {
+        "dev": "concurrently \"npm run dev --workspace=frontend\" \"node backend/server.js\""
+    },
     "private": true,
     "workspaces": [
         "backend",
@@ -10,14 +14,17 @@
         "playwright": "^1.58.1",
         "playwright-extra": "^4.3.6",
         "puppeteer-extra-plugin-stealth": "^2.11.2",
-        "sqlite": "^5.1.1",
-        "sqlite3": "^5.1.7",
         "react": "^18.3.1",
-        "react-dom": "^18.3.1"
+        "react-dom": "^18.3.1",
+        "sqlite": "^5.1.1",
+        "sqlite3": "^5.1.7"
     },
     "devDependencies": {
-        "vite": "^6.1.0",
         "@vitejs/plugin-react": "^4.3.4",
-        "pkg": "^5.8.1"
+        "concurrently": "^8.2.2",
+        "pkg": "^5.8.1",
+        "supertest": "^7.2.2",
+        "vite": "^6.1.0",
+        "vitest": "^4.0.18"
     }
 }

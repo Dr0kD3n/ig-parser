@@ -1,9 +1,10 @@
 const fs = require('fs/promises');
 const path = require('path');
-const { getProxy, getCookies, getList, normalizeUrl } = require('./lib/config');
+const { getProxy, getCookies, getList, normalizeUrl, getSetting } = require('./lib/config');
 const { StateManager } = require('./lib/state');
-const { createBrowserContext, optimizeContextForScraping } = require('./lib/browser');
+const { createBrowserContext, optimizeContextForScraping, startLiveView } = require('./lib/browser');
 const { wait } = require('./lib/utils');
+const { saveCrashReport } = require('./lib/reporter');
 
 const getDynamicConfig = async () => {
     // Небольшая рандомизация размера окна
@@ -59,7 +60,12 @@ const run = async () => {
     console.log(`📡 Прокси: ${CONFIG.proxy ? CONFIG.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
     console.log(`🍪 Загружено куки: ${CONFIG.cookies.length}`);
 
-    const { browser, context } = await createBrowserContext(CONFIG, false);
+    const showBrowserStr = await getSetting('showBrowser');
+    const showBrowser = showBrowserStr === 'true' || showBrowserStr === true;
+    const isHeadless = !showBrowser;
+
+    const { browser, context } = await createBrowserContext(CONFIG, isHeadless);
+    const liveViewInterval = startLiveView(context);
 
     // Оптимизируем загрузку, если нужно (блокируем лишние картинки)
     await optimizeContextForScraping(context);
@@ -145,7 +151,9 @@ const run = async () => {
     } catch (e) {
         console.error(`\n❌ Критическая ошибка во время выполнения парсера:`);
         console.error(e.message);
+        await saveCrashReport(page, e, 'parser');
     } finally {
+        if (typeof liveViewInterval !== 'undefined') clearInterval(liveViewInterval);
         await page.close();
         await browser.close();
         console.log('\n✅ ========================================== ✅');

@@ -1,9 +1,20 @@
 const fs = require('fs/promises');
 const path = require('path');
-const { getProxy, getCookies, getList, normalizeUrl } = require('./lib/config');
+const { getProxy, getCookies, getList, normalizeUrl, getSetting, getAllAccounts } = require('./lib/config');
 const { StateManager } = require('./lib/state');
-const { createBrowserContext, optimizeContextForScraping } = require('./lib/browser');
+const { createBrowserContext, optimizeContextForScraping, startLiveView, checkLoginPage } = require('./lib/browser');
 const { shuffleArray, wait } = require('./lib/utils');
+const logger = require('./lib/logger');
+const { saveCrashReport } = require('./lib/reporter');
+
+class RotateAccountError extends Error {
+    constructor(reason, remainingNames) {
+        super(`Rotate Account: ${reason}`);
+        this.name = 'RotateAccountError';
+        this.reason = reason;
+        this.remainingNames = remainingNames;
+    }
+}
 
 const getDynamicConfig = async () => {
     const width = 1280 + Math.floor(Math.random() * 150);
@@ -15,10 +26,8 @@ const getDynamicConfig = async () => {
     return {
         viewport: { width, height },
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        timeouts: { pageLoad: 25000, element: 10000, inputWait: 5000 },
+        timeouts: { pageLoad: 25000, element: 15000, inputWait: 15000 },
         scroll: { maxAttempts: 15, maxRetries: 3 },
-        proxy: await getProxy('index'),
-        cookies: await getCookies('index'),
         target: {
             cityKeywords: await getList('cityKeywords.txt'),
             names: shuffledNames
@@ -30,7 +39,7 @@ const SELECTORS = {
     HEADER: 'header',
     DIALOG: 'div[role="dialog"]',
     SEARCH_INPUT: 'div[role="dialog"] input',
-    FOLLOWERS_LINK: 'a[href*="/followers/"]',
+    FOLLOWERS_LINK: 'a[href$="/followers/"]',
     LOADER: 'div[role="dialog"] [role="progressbar"], div[role="dialog"] svg[aria-label="Loading..."], div[role="dialog"] svg[aria-label="Загрузка..."]'
 };
 
@@ -64,7 +73,7 @@ const scrollAndCollectUrls = async (page, config) => {
     let previousHeight = 0;
     let sameHeightCount = 0;
 
-    console.log(`      🔽 Начинаем скролл списка...`);
+    logger.info(`      🔽 Начинаем скролл списка...`);
 
     for (let i = 0; i < config.scroll.maxAttempts; i++) {
         const visible = await page.evaluate(extractVisibleCandidates);
@@ -102,7 +111,7 @@ const scrollAndCollectUrls = async (page, config) => {
         if (newHeight === previousHeight) {
             sameHeightCount++;
             if (sameHeightCount >= config.scroll.maxRetries) {
-                console.log(`      🛑 Достигнут конец списка (или лимит подгрузки).`);
+                logger.info(`      🛑 Достигнут конец списка (или лимит подгрузки).`);
                 break;
             }
             await wait(250);
@@ -112,7 +121,7 @@ const scrollAndCollectUrls = async (page, config) => {
         previousHeight = newHeight;
 
         if ((i + 1) % 3 === 0) {
-            console.log(`      🔄 Скролл ${i + 1}/${config.scroll.maxAttempts} | Собрано профилей: ${collectedUrls.size}`);
+            logger.info(`      🔄 Скролл ${i + 1}/${config.scroll.maxAttempts} | Собрано профилей: ${collectedUrls.size}`);
         }
     }
     return Array.from(collectedUrls);
@@ -123,7 +132,7 @@ const analyzeProfile = async (context, url, config) => {
     await StateManager.add(url);
 
     const page = await context.newPage();
-    console.log(`      👀 Открываем профиль: ${url}`);
+    logger.info(`      👀 Открываем профиль: ${url}`);
 
     try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: config.timeouts.pageLoad });
@@ -167,8 +176,44 @@ const analyzeProfile = async (context, url, config) => {
         const isTarget = config.target.cityKeywords.some(kw => searchString.includes(kw.toLowerCase()));
 
         if (isTarget) {
-            console.log(`         ✅ Целевой профиль! Парсим данные (ищем фото)...`);
+            logger.info(`         ✅ Целевой профиль! Парсим данные (ищем фото)...`);
             const name = await page.locator('header h2, header h1, header span[dir="auto"]').first().innerText().catch(() => username);
+            const photoUrl = await page.evaluate(async (uname) => {
+                let pUrl = '';
+                try {
+                    const res = await fetch(`/api/v1/users/web_profile_info/?username=${uname}`, {
+                        headers: { 'X-IG-App-ID': '936619743392459' }
+                    });
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json?.data?.user?.profile_pic_url_hd) {
+                            pUrl = json.data.user.profile_pic_url_hd;
+                        }
+                    }
+                } catch (e) { }
+
+                if (!pUrl) {
+                    const html = document.documentElement.innerHTML;
+                    const matches = [...html.matchAll(/"profile_pic_url_hd":"([^"]+)"/g)];
+                    if (matches.length > 0) {
+                        const rawUrl = matches[matches.length - 1][1];
+                        try {
+                            pUrl = JSON.parse('"' + rawUrl + '"');
+                        } catch (e) {
+                            pUrl = rawUrl.replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+                        }
+                    }
+                }
+
+                if (!pUrl) {
+                    const header = document.querySelector('header');
+                    if (header) {
+                        const img = header.querySelector('img');
+                        if (img) pUrl = img.getAttribute('src') || img.src || '';
+                    }
+                }
+                return pUrl;
+            }, username).catch(() => '');
 
             const bio = extracted.bioClean;
 
@@ -176,40 +221,85 @@ const analyzeProfile = async (context, url, config) => {
 
             await StateManager.saveResult(profileData);
         } else {
-            console.log(`         ➖ Пропуск: нет целевых слов.`);
+            logger.info(`         ➖ Пропуск: нет целевых слов.`);
         }
     } catch (e) {
         if (!e.message.includes('Timeout')) {
-            console.error(`         ❌ Ошибка анализа профиля: ${e.message.split('\n')[0]}`);
+            logger.error(`         ❌ Ошибка анализа профиля: ${e.message.split('\n')[0]}`);
         } else {
-            console.error(`         ❌ Ошибка: Timeout при загрузке профиля.`);
+            logger.error(`         ❌ Ошибка: Timeout при загрузке профиля.`);
         }
+        await saveCrashReport(page, e, `analyze_profile_${url.split('/').filter(Boolean).pop()}`);
     } finally {
         await page.close();
     }
 };
 
 const processDonor = async (context, donorUrl, config) => {
-    console.log(`\n==============================================`);
-    console.log(`📂 ОТКРЫВАЕМ ДОНОРА: ${donorUrl}`);
-    console.log(`==============================================`);
+    logger.info(`\n==============================================`);
+    logger.info(`📂 ОТКРЫВАЕМ ДОНОРА: ${donorUrl}`);
+    logger.info(`==============================================`);
     const page = await context.newPage();
+    let shouldSkipDonor = false;
     try {
         await page.goto(donorUrl, { waitUntil: 'domcontentloaded' });
-        console.log(`   ✅ Страница донора загружена. Ищем кнопку подписчиков...`);
+
+        // 1. Проверка на страницу логина
+        if (await checkLoginPage(page)) {
+            throw new RotateAccountError('Session expired (login page)', config.target.names);
+        }
+
+        // 2. Проверка на приватный аккаунт
+        const isPrivate = await page.evaluate(() => {
+            const privateText = ['Это закрытый аккаунт', 'This account is private', 'This Account is Private'];
+            return privateText.some(text => document.body.innerText.includes(text));
+        });
+
+        if (isPrivate) {
+            logger.info(`   🔒 Пропуск: ${donorUrl} — закрытый аккаунт.`);
+            return;
+        }
+
+        // 3. Проверка на Action Blocked
+        const isBlocked = await page.evaluate(() => {
+            const blockText = ['попробуйте еще раз позже', 'try again later', 'Action Blocked', 'Действие заблокировано'];
+            return blockText.some(text => document.body.innerText.includes(text));
+        });
+
+        if (isBlocked) {
+            throw new RotateAccountError('Action Blocked / Shadowban detected', config.target.names);
+        }
+
+        logger.info(`   ✅ Страница донора загружена. Ищем кнопку подписчиков...`);
 
         const followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK);
-        await followersBtn.waitFor({ state: 'visible' });
+        await followersBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
+
+        if (!await followersBtn.isVisible()) {
+            logger.warn(`   ⚠️ Кнопка подписчиков не найдена (возможно, аккаунт пуст или скрыт).`);
+            return;
+        }
+
         await followersBtn.click();
 
-        await page.waitForSelector('div[role="dialog"]');
-        console.log(`   ✅ Список подписчиков открыт.`);
+        await page.waitForSelector('div[role="dialog"]', { timeout: 10000 });
+        logger.info(`   ✅ Список подписчиков открыт.`);
 
         const searchInput = page.locator(SELECTORS.SEARCH_INPUT).first();
         await searchInput.waitFor({ state: 'visible', timeout: config.timeouts.inputWait });
 
-        for (const name of config.target.names) {
-            console.log(`\n   🔎 ПОИСК ПО ИМЕНИ: "${name}"`);
+        let emptyResultsCount = 0;
+        let namesToSearch = config.target.names;
+
+        for (let nameIdx = 0; nameIdx < namesToSearch.length; nameIdx++) {
+            const name = namesToSearch[nameIdx];
+            logger.info(`\n   🔎 ПОИСК ПО ИМЕНИ: "${name}"`);
+
+            if (require('fs').existsSync(path.join(__dirname, 'skip_donor.flag'))) {
+                console.log(`\n⏭️ [СИГНАЛ] Получен сигнал пропуска. Завершаем работу с донором ${donorUrl}...`);
+                require('fs').unlinkSync(path.join(__dirname, 'skip_donor.flag'));
+                break;
+            }
 
             await searchInput.click({ clickCount: 3 });
             await page.keyboard.press('Backspace');
@@ -219,7 +309,7 @@ const processDonor = async (context, donorUrl, config) => {
             const typeDelay = Math.floor(Math.random() * (60 - 20 + 1) + 20);
             await searchInput.pressSequentially(name, { delay: typeDelay });
 
-            console.log(`      ⏳ Ждем выдачу результатов от Инстаграма...`);
+            logger.info(`      ⏳ Ждем выдачу результатов от Инстаграма...`);
             try { await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 }); } catch (e) { }
             await wait(50);
 
@@ -228,66 +318,146 @@ const processDonor = async (context, donorUrl, config) => {
             const newCandidates = candidates.filter(url => !StateManager.has(url));
             const skippedCount = candidates.length - newCandidates.length;
 
-            console.log(`      📊 ИТОГИ СБОРА ССЫЛОК:`);
-            console.log(`         • Всего найдено (со сторис): ${candidates.length}`);
-            console.log(`         • Пропущено (уже в истории): ${skippedCount}`);
-            console.log(`         • Идем проверять: ${newCandidates.length}`);
+            logger.info(`      📊 ИТОГИ СБОРА ССЫЛОК:`);
+            logger.info(`         • Всего найдено (со сторис): ${candidates.length}`);
+            logger.info(`         • Пропущено (уже в истории): ${skippedCount}`);
+            logger.info(`         • Идем проверять: ${newCandidates.length}`);
 
             if (newCandidates.length === 0) {
-                console.log(`      ⏭️ Новых профилей нет, переходим к следующему имени.`);
+                emptyResultsCount++;
+                logger.info(`      ⏭️ Новых профилей нет (${emptyResultsCount}/3 подряд).`);
+                if (emptyResultsCount >= 3) {
+                    logger.warn(`⚠️ 3 ПУСТЫХ РЕЗУЛЬТАТА ПОДРЯД. СКОРЕЕ ВСЕГО ШЕДОУБАН. ИНИЦИИРУЕМ СМЕНУ ПРОФИЛЯ...`);
+                    throw new RotateAccountError('Shadowban (3 empty results)', namesToSearch.slice(nameIdx + 1));
+                }
                 continue;
+            } else {
+                emptyResultsCount = 0;
             }
 
-            console.log(`      🚀 Обрабатываем новые профили пачками по 3 штуки (экономия ОЗУ)...`);
+            logger.info(`      🚀 Обрабатываем новые профили пачками по 3 штуки (экономия ОЗУ)...`);
             const CHUNK_SIZE = 3;
             for (let i = 0; i < newCandidates.length; i += CHUNK_SIZE) {
+                if (require('fs').existsSync(path.join(__dirname, 'skip_donor.flag'))) {
+                    console.log(`\n⏭️ [СИГНАЛ] Получен сигнал пропуска в процессе анализа профилей...`);
+                    require('fs').unlinkSync(path.join(__dirname, 'skip_donor.flag'));
+                    shouldSkipDonor = true;
+                    break;
+                }
                 const chunk = newCandidates.slice(i, i + CHUNK_SIZE);
                 await Promise.all(chunk.map(url => analyzeProfile(context, url, config)));
                 await randomDelay(100, 300);
             }
+            if (shouldSkipDonor) break;
         }
     } catch (e) {
-        console.error(`   ❌ КРИТИЧЕСКАЯ ОШИБКА ДОНОРА: ${e.message}`);
+        if (e.name === 'RotateAccountError') {
+            throw e;
+        }
+        logger.error(`   ❌ КРИТИЧЕСКАЯ ОШИБКА ДОНОРА: ${e.message}`);
+        await saveCrashReport(page, e, `donor_${donorUrl.split('/').filter(Boolean).pop()}`);
+        throw e;
     } finally {
         await page.close();
-        console.log(`   🚪 Донор закрыт.`);
+        logger.info(`   🚪 Донор закрыт.`);
     }
 };
 
 const run = async () => {
-    console.log('🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...');
-    console.log('----------------------------------------------');
-    const CONFIG = await getDynamicConfig();
+    logger.info('🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...');
+    logger.info('----------------------------------------------');
+    let CONFIG = await getDynamicConfig();
+    const accounts = await getAllAccounts('index');
+    let currentAccountIndex = 0;
 
     await StateManager.init();
     const donors = await StateManager.loadDonors();
 
     if (!donors.length) {
-        console.log('⚠️ [ОШИБКА] Список доноров в config/profiles.txt пуст.');
+        logger.warn('⚠️ [ОШИБКА] Список доноров в config/profiles.txt пуст.');
         return;
     }
-    console.log(`🎯 Загружено доноров: ${donors.length}`);
+    logger.info(`🎯 Загружено доноров: ${donors.length}`);
 
-    console.log('🌐 Запуск браузера (Фоновый режим / Headless)...');
-    console.log(`📡 Прокси: ${CONFIG.proxy ? CONFIG.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
-    console.log(`🍪 Загружено куки: ${CONFIG.cookies.length}`);
+    const setupBrowser = async () => {
+        let proxy = null;
+        let cookies = [];
+        if (accounts.length > 0) {
+            proxy = accounts[currentAccountIndex].proxy;
+            cookies = accounts[currentAccountIndex].cookies;
+            fingerprint = accounts[currentAccountIndex].fingerprint;
+        } else {
+            logger.warn('⚠️ Нет выбранных аккаунтов для парсера. Прямое соединение без кук.');
+        }
 
-    const { browser, context } = await createBrowserContext(CONFIG, true);
+        logger.info(`🌐 Запуск браузера (Фоновый режим / Headless)...`);
+        logger.info(`📡 Прокси: ${proxy ? proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
+        logger.info(`🍪 Загружено куки: ${cookies.length}`);
+        if (fingerprint) {
+            logger.info(`🎭 Применен уникальный отпечаток браузера: ${fingerprint.userAgent.substring(0, 50)}...`);
+        }
+
+        const configWithCreds = { ...CONFIG, proxy, cookies, fingerprint };
+        const showBrowserStr = await getSetting('showBrowser');
+        const showBrowser = showBrowserStr === 'true' || showBrowserStr === true;
+        const isHeadless = !showBrowser;
+
+        return await createBrowserContext(configWithCreds, isHeadless);
+    };
+
+    let { browser, context } = await setupBrowser();
     await optimizeContextForScraping(context);
+    let liveViewInterval = startLiveView(context);
 
-    for (const donorUrl of donors) {
+    let donorIdx = 0;
+    while (donorIdx < donors.length) {
+        const donorUrl = donors[donorIdx];
         if (StateManager.hasDonor(donorUrl)) {
-            console.log(`\n⏭️ Донор ${donorUrl} уже был обработан ранее, пропускаем.`);
+            logger.info(`\n⏭️ Донор ${donorUrl} уже был обработан ранее, пропускаем.`);
+            donorIdx++;
             continue;
         }
-        await processDonor(context, donorUrl, CONFIG);
-        await StateManager.addDonor(donorUrl);
+
+        try {
+            await processDonor(context, donorUrl, CONFIG);
+            await StateManager.addDonor(donorUrl);
+            donorIdx++; // Move to next donor on success
+            // Reset to full names list for next donor
+            CONFIG.target.names = shuffleArray(await getList('names.txt'));
+        } catch (e) {
+            if (e.name === 'RotateAccountError') {
+                logger.info(`🔄 ПЕРЕКЛЮЧЕНИЕ ПРОФИЛЯ: ${e.reason}`);
+                clearInterval(liveViewInterval);
+                await browser.close();
+
+                if (accounts.length > 1) {
+                    currentAccountIndex = (currentAccountIndex + 1) % accounts.length;
+                    logger.info(`🔀 Переключились на аккаунт #${currentAccountIndex + 1} из ${accounts.length}`);
+                } else {
+                    logger.warn(`⚠️ Только один аккаунт доступен. Ждем 30 сек перед повторной попыткой...`);
+                    await wait(30000);
+                }
+
+                const setup = await setupBrowser();
+                browser = setup.browser;
+                context = setup.context;
+                await optimizeContextForScraping(context);
+                liveViewInterval = startLiveView(context);
+
+                // Update CONFIG names with remainings and don't increment donorIdx so it retries
+                CONFIG.target.names = e.remainingNames.length > 0 ? e.remainingNames : shuffleArray(await getList('names.txt'));
+            } else {
+                logger.error(`❌ Непредвиденная ошибка: ${e.message}`);
+                donorIdx++; // Skip this donor on other errors
+            }
+        }
     }
 
+    clearInterval(liveViewInterval);
     await browser.close();
-    console.log('\n✅ ========================================== ✅');
-    console.log('👋 РАБОТА ПОЛНОСТЬЮ ЗАВЕРШЕНА! Все результаты сохранены.');
-    console.log('✅ ========================================== ✅');
+    logger.info('\n✅ ========================================== ✅');
+    logger.info('👋 РАБОТА ПОЛНОСТЬЮ ЗАВЕРШЕНА! Все результаты сохранены.');
+    logger.info('✅ ========================================== ✅');
 };
 
 run().catch(console.error);

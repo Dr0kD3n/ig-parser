@@ -3,13 +3,38 @@ import { HeartIcon, XIcon, InstagramIcon, TelegramIcon, SendIcon } from './Icons
 
 function parseSmartBio(text, username) {
     if (!text) return { bio: ' ', stats: [] }
-    let clean = text.replace(new RegExp(`^${username}\\s*`, 'i'), '')
+
+    // 1. Remove mentions of the username and pipes
+    let clean = text.replace(new RegExp(`^${username}\\s*`, 'i'), '').replace(/\|/g, ' ')
+
+    // 2. Extract stats (followers/posts)
+    const stats = []
     const followersMatch = clean.match(/(\d[\d\s]*\s*подписчиков)/i)
     const postsMatch = clean.match(/(\d[\d\s]*\s*публикаций)/i)
-    const stats = []
     if (followersMatch) stats.push(followersMatch[0])
     if (postsMatch) stats.push(postsMatch[0])
-    const bio = clean.replace(/(\d[\d\s]*\s*(подписчиков|публикаций|подписок))/gi, '').trim()
+
+    // 3. Remove "more", stats, and redundant pipes/junk
+    let bio = clean
+        .replace(/(\d[\d\s]*\s*(подписчиков|публикаций|подписок|посты))/gi, '')
+        .replace(/more\s*\|\s*\w+/gi, '')
+        .replace(/\.\.\.\s*more\s*\w*/gi, '')
+        .replace(new RegExp(`${username}$`, 'i'), '')
+        .replace(/\s+/g, ' ') // Collapse spaces
+        .trim()
+
+    // 4. Forceful Deduplication: split by common separators and check for repetitions
+    const segments = bio.split(/[\.!\?]\s+/)
+    if (segments.length > 2) {
+        const unique = []
+        segments.forEach(s => {
+            if (!unique.some(u => u.includes(s.substring(0, 20)) || s.includes(u.substring(0, 20)))) {
+                unique.push(s)
+            }
+        })
+        bio = unique.join('. ')
+    }
+
     return { bio: bio || ' ', stats }
 }
 
@@ -44,7 +69,7 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
                 <div className="overlay" />
                 <div className="statusStack">
                     {g.matchScore !== undefined && (
-                        <div className="badge matchTag" style={{ background: g.matchScore > 80 ? 'var(--primary-color)' : 'var(--bg-lighter)' }}>
+                        <div className="badge matchTag" style={{ background: g.matchScore > 80 ? 'hsla(var(--primary), 0.8)' : 'hsla(var(--text-dim), 0.2)' }}>
                             🎯 {g.matchScore}%
                         </div>
                     )}
@@ -69,7 +94,9 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
                 </div>
                 <div className="bio-container">
                     <div className="bio-text" title={g.bio}>{bio}</div>
-                    {stats.map((s, i) => <span key={i} className="followers-text">{s}</span>)}
+                    <div style={{ marginTop: 'auto' }}>
+                        {stats.map((s, i) => <span key={i} className="followers-text">{s}</span>)}
+                    </div>
                 </div>
                 <div className="actions">
                     <button
@@ -79,7 +106,11 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
                     >
                         <HeartIcon filled={isLiked} />
                     </button>
-                    <button className="actionBtn dislikeBtn" onClick={() => onVote(g, 'dislike')} title={tr('badge_skip')}>
+                    <button
+                        className={`actionBtn dislikeBtn${isDisliked ? ' active' : ''}`}
+                        onClick={() => onVote(g, 'dislike')}
+                        title={tr('badge_skip')}
+                    >
                         <XIcon />
                     </button>
                     <button className="actionBtn sendBtn" onClick={() => onSendDM(g)} title="Send DM">
@@ -107,9 +138,12 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
         else if (filterStatus === 'like') matchesStatus = votes[g.url] === 'like'
         else if (filterStatus === 'like_no_dm') matchesStatus = votes[g.url] === 'like' && !g.dmSent
         else if (filterStatus === 'dislike') matchesStatus = votes[g.url] === 'dislike'
+        else if (filterStatus === 'no_status') matchesStatus = !votes[g.url]
+        else if (filterStatus === 'dm_sent') matchesStatus = g.dmSent
         const imgOk = !hideNoImage || (g.photo && !failedImages.has(g.url))
         return matchesName && matchesStatus && imgOk
     }).sort((a, b) => {
+        if (sortOption === 'oldest') return new Date(a.timestamp) - new Date(b.timestamp)
         if (sortOption === 'match') {
             const scoreA = a.matchScore !== undefined ? a.matchScore : 50;
             const scoreB = b.matchScore !== undefined ? b.matchScore : 50;
@@ -138,20 +172,23 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
                 />
                 <select className="select-input" value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setCurrentPage(1) }}>
                     <option value="all">{tr('filter_all')}</option>
-                    <option value="unopened">{tr('filter_unopened')}</option>
+                    <option value="no_status">{tr('filter_no_status')}</option>
                     <option value="like">{tr('filter_like')}</option>
                     <option value="like_no_dm">{tr('filter_like_no_dm')}</option>
                     <option value="dislike">{tr('filter_dislike')}</option>
+                    <option value="dm_sent">{tr('filter_dm_sent')}</option>
+                    <option value="unopened">{tr('filter_unopened')}</option>
                 </select>
                 <select className="select-input" value={sortOption} onChange={e => { setSortOption(e.target.value); setCurrentPage(1) }}>
-                    <option value="newest">Сначала новые</option>
-                    <option value="match">По совпадению (%)</option>
+                    <option value="newest">{tr('sort_newest')}</option>
+                    <option value="oldest">{tr('sort_oldest')}</option>
+                    <option value="match">{tr('sort_match')}</option>
                 </select>
-                <label className="checkbox-label">
-                    <input type="checkbox" checked={hideNoImage} onChange={e => { setHideNoImage(e.target.checked); setCurrentPage(1) }} />
+                <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: 'hsl(var(--text-muted))' }}>
+                    <input type="checkbox" checked={hideNoImage} onChange={e => { setHideNoImage(e.target.checked); setCurrentPage(1) }} style={{ width: '16px', height: '16px', accentColor: 'hsl(var(--primary))' }} />
                     {tr('hide_no_photo')}
                 </label>
-                <span style={{ fontSize: 13, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                <span style={{ fontSize: 13, color: 'hsl(var(--text-dim))', marginLeft: 'auto', fontWeight: 600 }}>
                     {filtered.length} профилей
                 </span>
             </div>
@@ -172,7 +209,7 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
                     />
                 ))}
                 {pageData.length === 0 && (
-                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
+                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '100px 0', color: 'hsl(var(--text-dim))', fontSize: '16px' }}>
                         Нет профилей по выбранным фильтрам
                     </div>
                 )}
