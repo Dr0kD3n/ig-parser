@@ -842,57 +842,72 @@ body::before {
   color: hsl(var(--text-dim));
 }
 
-/* Loader */
-.loader-overlay {
-  position: fixed;
-  inset: 0;
-  background: hsl(var(--bg-deep) / 0.8);
-  backdrop-filter: blur(12px);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
-  gap: 24px;
+
+/* Skeleton Loading */
+.skeleton {
+  background: linear-gradient(90deg,
+      hsl(var(--bg-elevated)) 25%,
+      hsl(var(--bg-card)) 50%,
+      hsl(var(--bg-elevated)) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite linear;
+  border-radius: var(--radius-sm);
+  display: block;
 }
 
-.loader-ring {
-  width: 60px;
-  height: 60px;
-  border: 4px solid hsl(var(--primary) / 0.1);
-  border-left-color: hsl(var(--primary));
-  border-radius: 50%;
-  animation: spin 1s cubic-bezier(0.5, 0, 0.5, 1) infinite;
-  filter: drop-shadow(0 0 10px hsla(var(--primary), 0.5));
-}
-
-.loader-text {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: hsl(var(--text-main));
-  text-transform: uppercase;
-  animation: pulse-text 2s ease-in-out infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
   }
 
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes pulse-text {
-
-  0%,
   100% {
-    opacity: 0.5;
+    background-position: -200% 0;
   }
+}
 
-  50% {
-    opacity: 1;
-  }
+.skeleton-card {
+  height: 100%;
+  padding: 0;
+  border: 1px solid hsl(var(--border)) !important;
+  box-shadow: none !important;
+}
+
+.skeleton-card .skeleton-img {
+  width: 100%;
+  aspect-ratio: 4/5;
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+}
+
+.skeleton-card .skeleton-body {
+  padding: 20px;
+}
+
+.skeleton-card .skeleton-line {
+  height: 20px;
+  width: 80%;
+  margin-bottom: 12px;
+}
+
+.skeleton-card .skeleton-line.short {
+  width: 50%;
+}
+
+.skeleton-card .skeleton-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 50px;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.skeleton-card .skeleton-btn {
+  height: 40px;
+  border-radius: 12px;
+}
+
+.skeleton-item {
+  height: 40px;
+  width: 100%;
+  margin-bottom: 12px;
+  border-radius: 10px;
 }

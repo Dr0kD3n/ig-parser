@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, memo } from 'react'
 import { FileIcon } from './Icons.jsx'
 
-const LogGroup = memo(function LogGroup({ group }) {
+const LogGroup = memo(function LogGroup({ group, tr }) {
     const [collapsed, setCollapsed] = useState(false)
     const source = group.source.split('-')[0].toUpperCase()
     const time = group.timestamp ? group.timestamp.split('T')[1].split('.')[0] : ''
@@ -45,7 +45,30 @@ const useCollapsed = (key, defaultVal = false) => {
     return [collapsed, () => setCollapsed(c => !c)]
 }
 
-export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs, tr }) {
+const SkeletonControls = memo(function SkeletonControls() {
+    return (
+        <div className="controls-panel">
+            <div className="control-card">
+                <div className="skeleton skeleton-line" style={{ width: '40%' }} />
+                <div className="skeleton skeleton-line" style={{ height: 60 }} />
+                <div className="skeleton skeleton-btn" style={{ width: 120 }} />
+            </div>
+            <div className="control-card">
+                <div className="skeleton skeleton-line" style={{ width: '40%' }} />
+                <div className="skeleton skeleton-line" style={{ height: 60 }} />
+                <div className="skeleton skeleton-btn" style={{ width: 120 }} />
+            </div>
+            <div className="control-card logs-card" style={{ height: 400 }}>
+                <div className="skeleton" style={{ height: '100%' }} />
+            </div>
+            <div className="stream-card" style={{ height: 400 }}>
+                <div className="skeleton" style={{ height: '100%' }} />
+            </div>
+        </div>
+    )
+})
+
+export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs, tr, isLoading }) {
     const logBoxRef = useRef(null)
     const [scraperCollapsed, toggleScraper] = useCollapsed('ig_scraper_collapsed', false)
     const [parserCollapsed, toggleParser] = useCollapsed('ig_parser_collapsed', false)
@@ -78,6 +101,8 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
             requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
         }
     }, [logs])
+
+    if (isLoading) return <SkeletonControls />
 
     return (
         <div className="controls-panel tab-content-fade">
@@ -184,7 +209,7 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
                             <div style={{ color: 'hsl(var(--text-dim))', textAlign: 'center', padding: '40px' }}>{tr('no_logs')}</div>
                         )}
                         {groups.map((group, idx) => (
-                            <LogGroup key={group.sessionId + group.source + idx} group={group} />
+                            <LogGroup key={group.sessionId + group.source + idx} group={group} tr={tr} />
                         ))}
                         {logs.length > 0 && <span className="terminal-cursor" style={{ marginLeft: 18, background: 'hsl(var(--primary))' }} />}
                     </div>

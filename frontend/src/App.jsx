@@ -3,6 +3,8 @@ import { t } from './i18n.js'
 import ProfilesTab from './components/ProfilesTab.jsx'
 import ControlsTab from './components/ControlsTab.jsx'
 import SettingsTab from './components/SettingsTab.jsx'
+import { Toaster } from 'react-hot-toast'
+
 
 const LOG_BUFFER = 200
 
@@ -112,7 +114,7 @@ export default function App() {
         const statusInterval = setInterval(fetchBotStatus, 10000)
 
         // Remove loader after a tick (no artificial delay)
-        const loaderTimer = setTimeout(() => setIsLoading(false), 600)
+        const loaderTimer = setTimeout(() => setIsLoading(false), 50)
 
         return () => {
             es.close()
@@ -225,12 +227,6 @@ export default function App() {
 
     return (
         <div className="app">
-            {isLoading && (
-                <div className="loader-overlay">
-                    <div className="loader-ring" />
-                    <div className="loader-text">InstaPanel • LOADING</div>
-                </div>
-            )}
 
             <header className="header">
                 <div className="header-left">
@@ -315,6 +311,7 @@ export default function App() {
                     useProxyImages={(settingsData.activeProfilesAccountIds || []).length > 0}
                     tr={tr}
                     onTgCheck={handleTgCheck}
+                    isLoading={isLoading}
                 />
             )}
 
@@ -325,6 +322,7 @@ export default function App() {
                     onClearLogs={handleClearLogs}
                     logs={logs}
                     tr={tr}
+                    isLoading={isLoading}
                 />
             )}
 
@@ -334,6 +332,7 @@ export default function App() {
                     onSettingsChange={setSettingsData}
                     onSave={handleSaveSettings}
                     tr={tr}
+                    isLoading={isLoading}
                 />
             )}
 
@@ -365,6 +364,12 @@ export default function App() {
                     </div>
                 </div>
             )}
+            <Toaster position="bottom-right" toastOptions={{
+                style: {
+                    background: '#333',
+                    color: '#fff',
+                }
+            }} />
         </div>
     )
 }

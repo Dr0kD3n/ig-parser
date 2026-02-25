@@ -1,5 +1,7 @@
 import { useState, useCallback, memo } from 'react'
 import { HeartIcon, XIcon, InstagramIcon, TelegramIcon, SendIcon, HelpIcon } from './Icons.jsx'
+import { toast } from 'react-hot-toast'
+
 
 function parseSmartBio(text, username) {
     if (!text) return { bio: ' ', stats: [] }
@@ -37,6 +39,23 @@ function parseSmartBio(text, username) {
 
     return { bio: bio || ' ', stats }
 }
+
+const SkeletonCard = memo(function SkeletonCard() {
+    return (
+        <div className="card skeleton-card">
+            <div className="skeleton skeleton-img" />
+            <div className="skeleton-body">
+                <div className="skeleton skeleton-line" />
+                <div className="skeleton skeleton-line short" />
+                <div className="skeleton-actions">
+                    <div className="skeleton skeleton-btn" />
+                    <div className="skeleton skeleton-btn" />
+                    <div className="skeleton skeleton-btn" />
+                </div>
+            </div>
+        </div>
+    )
+})
 
 const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, onOpen, onSendDM, onImageError, useProxyImages, tr, onTgCheck }) {
     const { bio, stats } = parseSmartBio(g.bio, g.name)
@@ -167,7 +186,7 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
     )
 })
 
-export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onImageError, onRefresh, useProxyImages, tr, lang, onTgCheck }) {
+export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onImageError, onRefresh, useProxyImages, tr, lang, onTgCheck, isLoading }) {
     const [filterText, setFilterText] = useState('')
     const [filterStatus, setFilterStatus] = useState('all')
     const [filterTgStatus, setFilterTgStatus] = useState('all')
@@ -180,7 +199,7 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
     const handleCheckAllTg = async () => {
         const toCheck = girls.filter(g => !g.tg_status).map(g => g.name);
         if (toCheck.length === 0) {
-            alert('Нет профилей без статуса для проверки');
+            toast.error('Нет профилей без статуса для проверки');
             return;
         }
 
@@ -307,22 +326,26 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
             </div>
 
             <main className="grid">
-                {pageData.map(g => (
-                    <ProfileCard
-                        key={g.url}
-                        g={g}
-                        votes={votes}
-                        failedImages={failedImages}
-                        onVote={onVote}
-                        onOpen={onOpen}
-                        onSendDM={onSendDM}
-                        onImageError={onImageError}
-                        useProxyImages={useProxyImages}
-                        tr={tr}
-                        onTgCheck={onTgCheck}
-                    />
-                ))}
-                {pageData.length === 0 && (
+                {isLoading ? (
+                    Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
+                ) : (
+                    pageData.map(g => (
+                        <ProfileCard
+                            key={g.url}
+                            g={g}
+                            votes={votes}
+                            failedImages={failedImages}
+                            onVote={onVote}
+                            onOpen={onOpen}
+                            onSendDM={onSendDM}
+                            onImageError={onImageError}
+                            useProxyImages={useProxyImages}
+                            tr={tr}
+                            onTgCheck={onTgCheck}
+                        />
+                    ))
+                )}
+                {!isLoading && pageData.length === 0 && (
                     <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '100px 0', color: 'hsl(var(--text-dim))', fontSize: '16px' }}>
                         Нет профилей по выбранным фильтрам
                     </div>

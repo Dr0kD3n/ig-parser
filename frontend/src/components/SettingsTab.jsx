@@ -1,7 +1,28 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { EditIcon, TrashIcon } from './Icons.jsx'
+import { toast } from 'react-hot-toast'
 
-export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
+
+const SkeletonSettings = memo(function SkeletonSettings() {
+    return (
+        <div className="settings-wrap tab-content-fade">
+            <div className="settings-header">
+                <div className="skeleton" style={{ width: 400, height: 40, borderRadius: 12 }} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '32px', padding: '0 32px' }}>
+                <div>
+                    <div className="skeleton-item skeleton" style={{ height: 200 }} />
+                    <div className="skeleton-item skeleton" style={{ height: 200 }} />
+                </div>
+                <div>
+                    <div className="skeleton-item skeleton" style={{ height: 400 }} />
+                </div>
+            </div>
+        </div>
+    )
+})
+
+export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoading }) {
     const [settingsTab, setSettingsTab] = useState('accounts')
     const [draggedItem, setDraggedItem] = useState(null)
     const [editingAccount, setEditingAccount] = useState(null)
@@ -15,7 +36,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
         const cookiesEl = document.getElementById('new-acc-cookies')
         const name = nameEl.value.trim()
         const cookies = cookiesEl.value.trim()
-        if (!name || !cookies) { alert(tr('error_name_cookies_required')); return }
+        if (!name || !cookies) { toast.error(tr('error_name_cookies_required')); return }
         setAccounts([...settingsData.accounts, { id: Date.now().toString(), name, proxy: proxyEl.value.trim(), cookies }])
         nameEl.value = ''; proxyEl.value = ''; cookiesEl.value = ''
     }
@@ -127,6 +148,8 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
             </div>
         )
     }
+
+    if (isLoading) return <SkeletonSettings />
 
     return (
         <div className="settings-wrap tab-content-fade">
