@@ -2,7 +2,7 @@
     "name": "ig-bot",
     "version": "1.0.0",
     "scripts": {
-        "dev": "concurrently \"npm run dev --workspace=frontend\" \"node backend/server.js\""
+        "dev": "concurrently \"node scripts/wait.js 10000 && npm run dev --workspace=frontend\" \"ts-node backend/server.ts\""
     },
     "private": true,
     "workspaces": [

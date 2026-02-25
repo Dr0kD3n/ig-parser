@@ -1,0 +1,14 @@
+[0] [eval]:1
+[0] setTimeout(() =, 10000)
+[0]             ^
+[0] Parenthesized expression cannot be empty
+[0] 
+[0] SyntaxError: Unexpected token ')'
+[0]     at makeContextifyScript (node:internal/vm:194:14)
+[0]     at compileScript (node:internal/process/execution:388:10)
+[0]     at evalTypeScript (node:internal/process/execution:260:22)
+[0]     at node:internal/main/eval_string:71:3
+[0] 
+[0] Node.js v24.12.0
+[0] node -e "setTimeout(() =, 10000)" && npm run dev --workspace=frontend exited with code 1
+[1] [server] Сервер запущен: http://localhost:1337

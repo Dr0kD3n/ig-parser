@@ -1,20 +1,20 @@
-const sqlite3 = require('sqlite3');
-const { open } = require('sqlite');
-const path = require('path');
-const fs = require('fs/promises');
+import sqlite3 from 'sqlite3';
+import { open, Database } from 'sqlite';
+import path from 'path';
+import fs from 'fs/promises';
 
 const DB_PATH = path.join(__dirname, '..', '..', 'config', 'database.sqlite');
 const CONFIG_DIR = path.dirname(DB_PATH);
 
-let dbInstance = null;
+let dbInstance: Database | null = null;
 
-async function getDB() {
+export async function getDB(): Promise<Database> {
     if (dbInstance) return dbInstance;
 
     // Обеспечиваем существование папки config
     try {
         await fs.mkdir(CONFIG_DIR, { recursive: true });
-    } catch (e) {
+    } catch (e: any) {
         // Игнорируем ошибку, если папка уже существует
     }
 
@@ -66,17 +66,15 @@ async function getDB() {
 
     try {
         await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN tg_status TEXT`);
-    } catch (e) {
+    } catch (e: any) {
         // Ignore if column already exists
     }
 
     try {
         await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN fingerprint TEXT`);
-    } catch (e) {
+    } catch (e: any) {
         // Ignore if column already exists
     }
 
     return dbInstance;
 }
-
-module.exports = { getDB };

@@ -1,12 +1,21 @@
-const { getDB } = require('./db');
-const { normalizeUrl } = require('./config');
+import { getDB } from './db';
+import { normalizeUrl } from './config';
 
-const StateManager = {
-    processed: new Set(),
-    processedDonors: new Set(),
-    resultsCache: [], // Used for fast memory lookups if needed elsewhere
+export interface ProfileData {
+    url: string;
+    name?: string;
+    bio?: string;
+    photo?: string;
+    vote?: string;
+    tg_status?: string;
+}
 
-    async init() {
+export const StateManager = {
+    processed: new Set<string>(),
+    processedDonors: new Set<string>(),
+    resultsCache: [] as any[], // Used for fast memory lookups if needed elsewhere
+
+    async init(): Promise<void> {
         const db = await getDB();
 
         // В urls с type 'history' лежат как processed_profiles, так и processed_donors. 
@@ -24,39 +33,39 @@ const StateManager = {
         this.resultsCache = profiles;
     },
 
-    has(url) {
+    has(url: string): boolean {
         return this.processed.has(normalizeUrl(url));
     },
 
-    async add(url) {
+    async add(url: string): Promise<void> {
         const normUrl = normalizeUrl(url);
         if (this.processed.has(normUrl)) return;
         this.processed.add(normUrl);
         const db = await getDB();
         try {
             await db.run(`INSERT INTO urls (type, url) VALUES (?, ?)`, ['history', normUrl]);
-        } catch (e) {
+        } catch (e: any) {
             // Already exists constraint
         }
     },
 
-    hasDonor(url) {
+    hasDonor(url: string): boolean {
         return this.processedDonors.has(normalizeUrl(url));
     },
 
-    async addDonor(url) {
+    async addDonor(url: string): Promise<void> {
         await this.add(url);
         const normUrl = normalizeUrl(url);
         const db = await getDB();
         try {
             await db.run('DELETE FROM urls WHERE type = ? AND url = ?', ['donor', normUrl]);
             console.log(`🗑️ Донор удален из списка рассылки: ${normUrl}`);
-        } catch (e) {
+        } catch (e: any) {
             console.error('Ошибка при удалении отработанного донора:', e);
         }
     },
 
-    async saveResult(profileData) {
+    async saveResult(profileData: ProfileData): Promise<void> {
         const db = await getDB();
         const existing = await db.get(`SELECT * FROM profiles WHERE url = ?`, [profileData.url]);
         const ts = new Date().toISOString();
@@ -71,24 +80,24 @@ const StateManager = {
         console.log(`   🏆 [НАЙДЕНА] ${profileData.name || profileData.url} -> сохранена в базу!`);
     },
 
-    async loadDonors() {
+    async loadDonors(): Promise<string[]> {
         const db = await getDB();
         const rows = await db.all(`SELECT url FROM urls WHERE type = 'donor'`);
         return rows.map(r => r.url);
     },
 
-    async saveDonor(url) {
+    async saveDonor(url: string): Promise<void> {
         const normUrl = normalizeUrl(url);
         const db = await getDB();
         try {
             await db.run(`INSERT OR REPLACE INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
             console.log(`✅ Сохранен новый донор: ${normUrl}`);
-        } catch (e) {
+        } catch (e: any) {
             // Ignore if already exists in donor table
         }
     },
 
-    async saveDonors(urls) {
+    async saveDonors(urls: string[]): Promise<void> {
         const db = await getDB();
         try {
             await db.run(`DELETE FROM urls WHERE type = 'donor'`);
@@ -96,11 +105,11 @@ const StateManager = {
                 const normUrl = normalizeUrl(url);
                 await db.run(`INSERT OR REPLACE INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error('Ошибка при сохранении списка доноров:', e);
             throw e;
         }
     }
 };
 
-module.exports = { StateManager, PATHS: {} };
+export const PATHS = {};

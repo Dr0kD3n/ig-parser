@@ -1,11 +1,11 @@
-const path = require('path');
-const { getDB } = require('./db');
+import path from 'path';
+import { getDB } from './db';
 
 // Оставляем для совместимости, хотя новые методы используют БД
-const getConfigPath = (fileName) => path.join(__dirname, '..', '..', 'config', fileName);
+export const getConfigPath = (fileName: string): string => path.join(__dirname, '..', '..', 'config', fileName);
 
 // Нормализация ссылок (убирает слэши на конце и параметры)
-const normalizeUrl = (url) => {
+export const normalizeUrl = (url: string): string => {
     try {
         return new URL(url).href.split('?')[0].replace(/\/$/, '');
     } catch {
@@ -13,20 +13,28 @@ const normalizeUrl = (url) => {
     }
 };
 
-async function getProxy(type = '') {
+export interface ProxyConfig {
+    server: string;
+    username: string;
+    password: string;
+}
+
+export async function getProxy(type: string = ''): Promise<ProxyConfig | null> {
     try {
         const db = await getDB();
-        let column;
+        let column: string | undefined;
         if (type === 'server') column = 'active_server';
-        if (type === 'index') column = 'active_index';
-        if (type === 'profiles') column = 'active_profiles';
-        if (type === 'checker') column = 'active_checker';
-        if (type === 'parser') column = 'active_parser';
+        else if (type === 'index') column = 'active_index';
+        else if (type === 'profiles') column = 'active_profiles';
+        else if (type === 'checker') column = 'active_checker';
+        else if (type === 'parser') column = 'active_parser';
+
+        if (!column) return null;
 
         const row = await db.get(`SELECT proxy FROM accounts WHERE ${column} > 0 ORDER BY ${column} ASC LIMIT 1`);
         if (!row || !row.proxy) return null;
 
-        const proxyStr = row.proxy;
+        const proxyStr: string = row.proxy;
         const parts = proxyStr.trim().split(':');
         if (parts.length < 4) return null;
         return {
@@ -34,26 +42,37 @@ async function getProxy(type = '') {
             username: parts[2],
             password: parts[3]
         };
-    } catch (e) {
+    } catch (e: any) {
         return null;
     }
 }
 
-async function getCookies(type = '') {
+export interface Cookie {
+    name: string;
+    value: string;
+    domain: string;
+    path: string;
+    secure: boolean;
+    sameSite: 'None' | 'Lax' | 'Strict';
+}
+
+export async function getCookies(type: string = ''): Promise<Cookie[]> {
     try {
         const db = await getDB();
-        let column;
+        let column: string | undefined;
         if (type === 'server') column = 'active_server';
-        if (type === 'index') column = 'active_index';
-        if (type === 'profiles') column = 'active_profiles';
-        if (type === 'checker') column = 'active_checker';
-        if (type === 'parser') column = 'active_parser';
+        else if (type === 'index') column = 'active_index';
+        else if (type === 'profiles') column = 'active_profiles';
+        else if (type === 'checker') column = 'active_checker';
+        else if (type === 'parser') column = 'active_parser';
+
+        if (!column) return [];
 
         const row = await db.get(`SELECT cookies FROM accounts WHERE ${column} > 0 ORDER BY ${column} ASC LIMIT 1`);
         if (!row || !row.cookies) return [];
 
-        const raw = row.cookies;
-        const cookies = [];
+        const raw: string = row.cookies;
+        const cookies: Cookie[] = [];
         const names = ['csrftoken', 'datr', 'ds_user_id', 'ig_did', 'mid', 'sessionid', 'rur', 'wd', 'ig_nrcb'];
 
         try {
@@ -61,7 +80,7 @@ async function getCookies(type = '') {
             if (Array.isArray(parsed)) {
                 return parsed.filter(c => names.includes(c.name));
             }
-        } catch (e) { }
+        } catch (e: any) { }
 
         names.forEach(name => {
             const regex = new RegExp(`(?:^|\\s|;|:)${name}(?:\\s*[:=]\\s*|\\s+)([^;\\n\\r]+)`, 'i');
@@ -74,18 +93,23 @@ async function getCookies(type = '') {
 
                 if (value) {
                     cookies.push({
-                        name: name, value: value, domain: '.instagram.com', path: '/', secure: true, sameSite: 'None'
+                        name: name,
+                        value: value,
+                        domain: '.instagram.com',
+                        path: '/',
+                        secure: true,
+                        sameSite: 'None'
                     });
                 }
             }
         });
         return cookies;
-    } catch (e) {
+    } catch (e: any) {
         return [];
     }
 }
 
-async function getList(fileName) {
+export async function getList(fileName: string): Promise<string[]> {
     try {
         const db = await getDB();
         let type = '';
@@ -96,38 +120,46 @@ async function getList(fileName) {
 
         const rows = await db.all(`SELECT value FROM keywords WHERE type = ?`, [type]);
         return rows.map(r => r.value);
-    } catch (e) {
+    } catch (e: any) {
         console.error("getList error:", e);
         return [];
     }
 }
 
-async function getSetting(key) {
+export async function getSetting<T = any>(key: string): Promise<T | null> {
     try {
         const db = await getDB();
         const row = await db.get(`SELECT value FROM settings WHERE key = ?`, [key]);
         if (!row) return null;
-        try { return JSON.parse(row.value); } catch { return row.value; }
-    } catch (e) {
+        try { return JSON.parse(row.value); } catch { return row.value as unknown as T; }
+    } catch (e: any) {
         return null;
     }
 }
 
-async function getAllAccounts(type = '') {
+export interface AccountInfo {
+    proxy: ProxyConfig | null;
+    cookies: Cookie[];
+    fingerprint: any | null;
+}
+
+export async function getAllAccounts(type: string = ''): Promise<AccountInfo[]> {
     try {
         const db = await getDB();
-        let column;
+        let column: string | undefined;
         if (type === 'server') column = 'active_server';
-        if (type === 'index') column = 'active_index';
-        if (type === 'profiles') column = 'active_profiles';
-        if (type === 'checker') column = 'active_checker';
-        if (type === 'parser') column = 'active_parser';
+        else if (type === 'index') column = 'active_index';
+        else if (type === 'profiles') column = 'active_profiles';
+        else if (type === 'checker') column = 'active_checker';
+        else if (type === 'parser') column = 'active_parser';
+
+        if (!column) return [];
 
         const rows = await db.all(`SELECT proxy, cookies, fingerprint FROM accounts WHERE ${column} > 0 ORDER BY ${column} ASC`);
         if (!rows || rows.length === 0) return [];
 
         return rows.map(row => {
-            let proxyObj = null;
+            let proxyObj: ProxyConfig | null = null;
             if (row.proxy) {
                 const parts = row.proxy.trim().split(':');
                 if (parts.length >= 4) {
@@ -139,16 +171,16 @@ async function getAllAccounts(type = '') {
                 }
             }
 
-            let cookiesArr = [];
+            let cookiesArr: Cookie[] = [];
             if (row.cookies) {
-                const raw = row.cookies;
+                const raw: string = row.cookies;
                 const names = ['csrftoken', 'datr', 'ds_user_id', 'ig_did', 'mid', 'sessionid', 'rur', 'wd', 'ig_nrcb'];
                 try {
                     const parsed = JSON.parse(raw);
                     if (Array.isArray(parsed)) {
                         cookiesArr = parsed.filter(c => names.includes(c.name));
                     }
-                } catch (e) {
+                } catch (e: any) {
                     names.forEach(name => {
                         const regex = new RegExp(`(?:^|\\s|;|:)${name}(?:\\s*[:=]\\s*|\\s+)([^;\\n\\r]+)`, 'i');
                         const match = raw.match(regex);
@@ -158,34 +190,29 @@ async function getAllAccounts(type = '') {
                             if (value.includes(' ')) value = value.split(' ')[0].trim();
                             if (value) {
                                 cookiesArr.push({
-                                    name: name, value: value, domain: '.instagram.com', path: '/', secure: true, sameSite: 'None'
+                                    name: name,
+                                    value: value,
+                                    domain: '.instagram.com',
+                                    path: '/',
+                                    secure: true,
+                                    sameSite: 'None'
                                 });
                             }
                         }
                     });
                 }
             }
-            let fingerprintObj = null;
+            let fingerprintObj: any = null;
             if (row.fingerprint) {
                 try {
                     fingerprintObj = JSON.parse(row.fingerprint);
-                } catch (e) {
+                } catch (e: any) {
                     console.error('Error parsing fingerprint:', e);
                 }
             }
             return { proxy: proxyObj, cookies: cookiesArr, fingerprint: fingerprintObj };
         });
-    } catch (e) {
+    } catch (e: any) {
         return [];
     }
 }
-
-module.exports = {
-    getConfigPath,
-    normalizeUrl,
-    getProxy,
-    getCookies,
-    getList,
-    getSetting,
-    getAllAccounts
-};

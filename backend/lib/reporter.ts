@@ -1,14 +1,15 @@
-const fs = require('fs');
-const path = require('path');
-const logger = require('./logger');
+import fs from 'fs';
+import path from 'path';
+import * as logger from './logger';
+import { Page } from 'playwright';
 
 /**
  * Saves a crash report including screenshot, HTML, and logs.
- * @param {import('playwright').Page} page - Playwright page object
- * @param {Error} error - The error that triggered the report
- * @param {string} contextName - Name of the context (e.g., 'checker', 'sender')
+ * @param page - Playwright page object
+ * @param error - The error that triggered the report
+ * @param contextName - Name of the context (e.g., 'checker', 'sender')
  */
-async function saveCrashReport(page, error, contextName = 'crash') {
+export async function saveCrashReport(page: Page | null, error: Error, contextName: string = 'crash'): Promise<void> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const reportDirName = `crash_${timestamp}_${contextName}`;
     const reportPath = path.join(__dirname, '..', '..', 'data', 'reports', reportDirName);
@@ -25,14 +26,14 @@ async function saveCrashReport(page, error, contextName = 'crash') {
 
         // 1. Capture Screenshot
         if (page && !page.isClosed()) {
-            await page.screenshot({ path: screenshotPath, type: 'jpeg', quality: 60 }).catch(e => {
+            await page.screenshot({ path: screenshotPath, type: 'jpeg', quality: 60 }).catch((e: any) => {
                 logger.error(`[REPORTER] Failed to save screenshot: ${e.message}`);
             });
         }
 
         // 2. Capture HTML
         if (page && !page.isClosed()) {
-            const html = await page.content().catch(e => {
+            const html = await page.content().catch((e: any) => {
                 logger.error(`[REPORTER] Failed to get page content: ${e.message}`);
                 return '';
             });
@@ -55,15 +56,13 @@ async function saveCrashReport(page, error, contextName = 'crash') {
                 // Read last 100 lines of logs or just copy everything if small
                 const logs = fs.readFileSync(logger.logFile, 'utf8');
                 fs.writeFileSync(logsSnapshotPath, logs);
-            } catch (e) {
+            } catch (e: any) {
                 logger.error(`[REPORTER] Failed to snapshot logs: ${e.message}`);
             }
         }
 
         logger.info(`🚨 [REPORTER] Crash report saved to: ${reportPath}`);
-    } catch (e) {
+    } catch (e: any) {
         logger.error(`💥 [REPORTER] FAILED TO GENERATE CRASH REPORT: ${e.message}`);
     }
 }
-
-module.exports = { saveCrashReport };

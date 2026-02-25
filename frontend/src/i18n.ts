@@ -1,4 +1,4 @@
-export const TRANSLATIONS = {
+export const TRANSLATIONS: Record<string, Record<string, string>> = {
     ru: {
         logo: 'InstaPanel 3.0',
         unopened: 'Ранее не открыты:',
@@ -9,7 +9,6 @@ export const TRANSLATIONS = {
         tab_profiles: 'Профили',
         tab_execution: 'Управление',
         tab_configuration: 'Настройки',
-        tab_donors: 'Доноры',
         search_placeholder: 'Поиск профилей...',
         filter_all: 'Все профили',
         filter_unopened: 'Только скрытые',
@@ -37,10 +36,10 @@ export const TRANSLATIONS = {
         parser_title: 'Фарм доноров',
         parser_desc: 'Поиск активных доноров.',
         btn_start_scraper: 'Запустить',
-        btn_stop_scraper: 'Остановить',
+        btn_stop_scraper: 'Остановити',
         btn_skip_donor: 'Пропустить донора',
         btn_start_parser: 'Запустить',
-        btn_stop_parser: 'Остановить',
+        btn_stop_parser: 'Остановити',
         no_logs: 'Логи пусты. Запустите ботов...',
         add_account: 'Добавить аккаунт',
         delete: 'Удалить',
@@ -92,7 +91,6 @@ export const TRANSLATIONS = {
         tab_profiles: 'Profiles',
         tab_execution: 'Execution',
         tab_configuration: 'Settings',
-        tab_donors: 'Donors',
         search_placeholder: 'Search profiles...',
         filter_all: 'All profiles',
         filter_unopened: 'Hidden only',
@@ -167,4 +165,4 @@ export const TRANSLATIONS = {
     }
 }
 
-export const t = (lang, key) => TRANSLATIONS[lang]?.[key] ?? key
+export const t = (lang: string, key: string): string => TRANSLATIONS[lang]?.[key] ?? key

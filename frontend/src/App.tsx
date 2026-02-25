@@ -1,41 +1,43 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { t } from './i18n.js'
-import ProfilesTab from './components/ProfilesTab.jsx'
-import ControlsTab from './components/ControlsTab.jsx'
-import SettingsTab from './components/SettingsTab.jsx'
+import { t } from './i18n'
+import ProfilesTab from './components/ProfilesTab'
+import ControlsTab from './components/ControlsTab'
+import SettingsTab from './components/SettingsTab'
 import { Toaster } from 'react-hot-toast'
-
+import { Girl, SettingsData, BotStatus, LogEntry } from './types'
 
 const LOG_BUFFER = 200
 
 export default function App() {
-    const [lang, setLang] = useState(() => localStorage.getItem('ig_lang') || 'ru')
-    const tr = (key) => t(lang, key)
+    const [lang, setLang] = useState<string>(() => localStorage.getItem('ig_lang') || 'ru')
+    const tr = (key: string) => t(lang, key)
 
     const toggleLang = () => {
         const next = lang === 'ru' ? 'en' : 'ru'
         setLang(next)
         localStorage.setItem('ig_lang', next)
     }
-    const [girls, setGirls] = useState([])
-    const [votes, setVotes] = useState({})
-    const [viewed, setViewed] = useState(() => JSON.parse(localStorage.getItem('ig_viewed_profiles') || '[]'))
-    const [sentDM, setSentDM] = useState(() => JSON.parse(localStorage.getItem('ig_sent_dm') || '[]'))
-    const [failedImages, setFailedImages] = useState(new Set())
+    const [girls, setGirls] = useState<Girl[]>([])
+    const [votes, setVotes] = useState<Record<string, string>>({})
+    const [viewed, setViewed] = useState<string[]>(() => JSON.parse(localStorage.getItem('ig_viewed_profiles') || '[]'))
+    const [sentDM, setSentDM] = useState<string[]>(() => JSON.parse(localStorage.getItem('ig_sent_dm') || '[]'))
+    const [failedImages, setFailedImages] = useState<Set<string>>(new Set())
     const [modalOpen, setModalOpen] = useState(false)
     const [messagesText, setMessagesText] = useState('')
-    const [settingsData, setSettingsData] = useState({
+    const [settingsData, setSettingsData] = useState<SettingsData>({
         accounts: [], activeParserAccountIds: [], activeServerAccountIds: [], activeIndexAccountIds: [], activeProfilesAccountIds: [],
         names: [], cities: [], niches: [], donors: [], showBrowser: false
     })
-    const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false })
-    const [logs, setLogs] = useState([])
+    const [botStatus, setBotStatus] = useState<BotStatus>({ index: false, parser: false, checker: false })
+    const [logs, setLogs] = useState<LogEntry[]>([])
     const [activeTab, setActiveTab] = useState(() => localStorage.getItem('ig_active_tab') || 'main')
     const [isLoading, setIsLoading] = useState(true)
-    const [saveStatus, setSaveStatus] = useState('idle') // idle, saving, saved, error
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
     // Persist active tab
     useEffect(() => { localStorage.setItem('ig_active_tab', activeTab) }, [activeTab])
+
+    const settingsLoaded = useRef(false)
 
     // Fetch profiles + votes
     const fetchData = useCallback(async () => {
@@ -44,10 +46,10 @@ export default function App() {
                 fetch('/api/girls', { cache: 'no-store' }),
                 fetch('/api/votes', { cache: 'no-store' })
             ])
-            const girlsData = await girlsRes.json()
-            const votesData = await votesRes.json()
-            const viewedArr = JSON.parse(localStorage.getItem('ig_viewed_profiles') || '[]')
-            const sentArr = JSON.parse(localStorage.getItem('ig_sent_dm') || '[]')
+            const girlsData: Girl[] = await girlsRes.json()
+            const votesData: Record<string, string> = await votesRes.json()
+            const viewedArr: string[] = JSON.parse(localStorage.getItem('ig_viewed_profiles') || '[]')
+            const sentArr: string[] = JSON.parse(localStorage.getItem('ig_sent_dm') || '[]')
             girlsData.forEach(g => {
                 g.viewed = viewedArr.includes(g.url)
                 g.dmSent = sentArr.includes(g.url)
@@ -71,7 +73,8 @@ export default function App() {
                 cities: data.cities || [],
                 niches: data.niches || [],
                 donors: data.donors || [],
-                showBrowser: data.showBrowser || false
+                showBrowser: data.showBrowser || false,
+                concurrentProfiles: data.concurrentProfiles
             })
             settingsLoaded.current = true
         } catch (e) { console.error('Error fetching settings', e) }
@@ -91,7 +94,7 @@ export default function App() {
         fetchSettings()
         fetchBotStatus()
 
-        const saved = JSON.parse(localStorage.getItem('ig_first_messages') || '[]')
+        const saved: string[] = JSON.parse(localStorage.getItem('ig_first_messages') || '[]')
         setMessagesText(saved.join('\n'))
 
         // SSE log stream
@@ -101,13 +104,8 @@ export default function App() {
 
         es.onmessage = (ev) => {
             const log = JSON.parse(ev.data)
-            const entry = { ...log, id: Math.random().toString(36).slice(2, 9) }
-            if (initialBurst) {
-                // Bulk-load history without animation
-                setLogs(prev => [...prev, entry].slice(-LOG_BUFFER))
-            } else {
-                setLogs(prev => [...prev, entry].slice(-LOG_BUFFER))
-            }
+            const entry: LogEntry = { ...log, id: Math.random().toString(36).slice(2, 9) }
+            setLogs(prev => [...prev, entry].slice(-LOG_BUFFER))
         }
 
         // Poll bot status every 10s (instead of 3s)
@@ -122,11 +120,11 @@ export default function App() {
             clearTimeout(burstTimer)
             clearTimeout(loaderTimer)
         }
-    }, [])
+    }, [fetchData, fetchSettings, fetchBotStatus])
 
     // Actions
-    const handleVote = useCallback(async (g, status) => {
-        setVotes(prev => ({ ...prev, [g.url]: status }))
+    const handleVote = useCallback(async (g: Girl, status: string | undefined) => {
+        setVotes(prev => ({ ...prev, [g.url]: status || '' }))
         setGirls(prev => prev.map(p => p.url === g.url ? { ...p, status } : p))
         fetch('/api/vote', {
             method: 'POST',
@@ -135,7 +133,7 @@ export default function App() {
         })
     }, [])
 
-    const handleOpen = useCallback(async (g) => {
+    const handleOpen = useCallback(async (g: Girl) => {
         if (!viewed.includes(g.url)) {
             const newV = [...viewed, g.url]
             setViewed(newV)
@@ -150,8 +148,8 @@ export default function App() {
         window.open(g.url, '_blank')
     }, [viewed])
 
-    const handleSendDM = useCallback(async (g) => {
-        const msgs = JSON.parse(localStorage.getItem('ig_first_messages') || '[]')
+    const handleSendDM = useCallback(async (g: Girl) => {
+        const msgs: string[] = JSON.parse(localStorage.getItem('ig_first_messages') || '[]')
         const m = msgs[Math.floor(Math.random() * msgs.length)] || 'Hello!'
         const newSent = [...sentDM, g.url]
         setSentDM(newSent)
@@ -164,15 +162,15 @@ export default function App() {
         })
     }, [sentDM])
 
-    const handleTgCheck = useCallback((url, status) => {
+    const handleTgCheck = useCallback((url: string, status: string) => {
         setGirls(prev => prev.map(p => p.url === url ? { ...p, tg_status: status } : p))
     }, [])
 
-    const handleImageError = useCallback((url) => {
+    const handleImageError = useCallback((url: string) => {
         setFailedImages(prev => new Set([...prev, url]))
     }, [])
 
-    const handleBotControl = useCallback(async (type, action) => {
+    const handleBotControl = useCallback(async (type: string, action: string) => {
         await fetch(`/api/bot/${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -195,8 +193,7 @@ export default function App() {
     }, [settingsData])
 
     // Auto-save settings on change (debounced, skip initial load)
-    const settingsLoaded = useRef(false)
-    const saveAbortRef = useRef(null)
+    const saveAbortRef = useRef<AbortController | null>(null)
     useEffect(() => {
         if (!settingsLoaded.current) return
         setSaveStatus('saving')
@@ -272,11 +269,13 @@ export default function App() {
 
             <nav className="tabs-nav">
                 <div style={{ display: 'flex', gap: '8px' }}>
-                    {[
-                        { id: 'main', label: tr('tab_profiles') },
-                        { id: 'controls', label: tr('tab_execution') },
-                        { id: 'settings', label: tr('tab_configuration') },
-                    ].map(({ id, label }) => (
+                    {(
+                        [
+                            { id: 'main', label: tr('tab_profiles') },
+                            { id: 'controls', label: tr('tab_execution') },
+                            { id: 'settings', label: tr('tab_configuration') },
+                        ] as const
+                    ).map(({ id, label }) => (
                         <button
                             key={id}
                             className={`tab-btn${activeTab === id ? ' active' : ''}`}

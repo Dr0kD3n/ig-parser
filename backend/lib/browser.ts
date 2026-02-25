@@ -1,14 +1,17 @@
-const { firefox } = require('playwright-extra');
+import { chromium, Browser, BrowserContext, Page } from 'playwright';
+// @ts-ignore
+import { firefox } from 'playwright-extra';
 const stealth = require('puppeteer-extra-plugin-stealth')();
+import path from 'path';
 
 // Disable user-agent evasion so our custom fingerprints take effect
 stealth.enabledEvasions.delete('user-agent-override');
 
 firefox.use(stealth);
 
-let globalBrowser = null;
+let globalBrowser: Browser | null = null;
 
-async function getBrowser(headless, extraPrefs = {}) {
+async function getBrowser(headless: boolean, extraPrefs: any = {}): Promise<Browser> {
     if (!globalBrowser || !globalBrowser.isConnected()) {
         const firefoxUserPrefs = {
             'network.proxy.type': 0,
@@ -22,10 +25,16 @@ async function getBrowser(headless, extraPrefs = {}) {
             firefoxUserPrefs
         });
     }
-    return globalBrowser;
+    return globalBrowser!;
 }
 
-const REGIONAL_PROFILES = [
+interface RegionalProfile {
+    locale: string;
+    timezoneId: string;
+    acceptLang: string;
+}
+
+const REGIONAL_PROFILES: RegionalProfile[] = [
     { locale: 'en-US', timezoneId: 'America/New_York', acceptLang: 'en-US,en;q=0.9' },
     { locale: 'en-GB', timezoneId: 'Europe/London', acceptLang: 'en-GB,en;q=0.9' },
     { locale: 'ru-RU', timezoneId: 'Europe/Moscow', acceptLang: 'ru-RU,ru;q=0.9' },
@@ -34,7 +43,7 @@ const REGIONAL_PROFILES = [
     { locale: 'de-DE', timezoneId: 'Europe/Berlin', acceptLang: 'de-DE,de;q=0.9,en;q=0.8' }
 ];
 
-function getRegionalProfile(locale) {
+function getRegionalProfile(locale?: string): RegionalProfile {
     if (locale) {
         const profile = REGIONAL_PROFILES.find(p => p.locale === locale);
         if (profile) return profile;
@@ -42,7 +51,7 @@ function getRegionalProfile(locale) {
     return REGIONAL_PROFILES[Math.floor(Math.random() * REGIONAL_PROFILES.length)];
 }
 
-async function createBrowserContext(config, headless = true) {
+export async function createBrowserContext(config: any, headless: boolean = true): Promise<{ browser: Browser, context: BrowserContext }> {
     // Determine the target locale first
     const targetLocale = (config.fingerprint && config.fingerprint.locale) || config.locale;
     const reg = getRegionalProfile(targetLocale);
@@ -51,7 +60,7 @@ async function createBrowserContext(config, headless = true) {
         'intl.accept_languages': reg.acceptLang
     });
 
-    const contextOptions = {
+    const contextOptions: any = {
         viewport: (config.fingerprint && config.fingerprint.viewport) || config.viewport || { width: 1280, height: 720 },
         userAgent: (config.fingerprint && config.fingerprint.userAgent) || config.userAgent,
         timezoneId: (config.fingerprint && config.fingerprint.timezoneId) || config.timezoneId || reg.timezoneId,
@@ -83,7 +92,7 @@ async function createBrowserContext(config, headless = true) {
     return { browser, context };
 }
 
-function optimizeContextForScraping(context) {
+export function optimizeContextForScraping(context: BrowserContext) {
     // Блокируем только картинки и медиа для скорости
     return context.route('**/*', (route) => {
         const type = route.request().resourceType();
@@ -95,20 +104,18 @@ function optimizeContextForScraping(context) {
     });
 }
 
-const path = require('path');
-
 const LIVE_VIEW_PATH = path.join(__dirname, '..', '..', 'data', 'screenshots', 'live_view.jpg');
 
-async function takeLiveScreenshot(page) {
+export async function takeLiveScreenshot(page: Page): Promise<void> {
     if (!page || page.isClosed()) return;
     try {
         await page.screenshot({ path: LIVE_VIEW_PATH, type: 'jpeg', quality: 30 });
-    } catch (e) {
+    } catch (e: any) {
         // Ignore screenshot errors
     }
 }
 
-function startLiveView(context) {
+export function startLiveView(context: BrowserContext): NodeJS.Timeout {
     const intervalId = setInterval(async () => {
         try {
             const pages = context.pages();
@@ -116,14 +123,14 @@ function startLiveView(context) {
                 const activePage = pages[pages.length - 1];
                 await takeLiveScreenshot(activePage);
             }
-        } catch (e) {
+        } catch (e: any) {
             // Ignore screenshot errors
         }
     }, 30000); // Reduce frequency to 30 seconds as a background fallback
     return intervalId;
 }
 
-async function checkLoginPage(page) {
+export async function checkLoginPage(page: Page): Promise<boolean> {
     const url = page.url();
     if (url.includes('/accounts/login/')) return true;
 
@@ -133,11 +140,3 @@ async function checkLoginPage(page) {
 
     return false;
 }
-
-module.exports = {
-    createBrowserContext,
-    optimizeContextForScraping,
-    startLiveView,
-    takeLiveScreenshot,
-    checkLoginPage
-};

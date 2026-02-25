@@ -1,12 +1,24 @@
-const fs = require('fs/promises');
-const path = require('path');
-const { getProxy, getCookies, getList, normalizeUrl, getSetting } = require('./lib/config');
-const { StateManager } = require('./lib/state');
-const { createBrowserContext, optimizeContextForScraping, startLiveView, takeLiveScreenshot } = require('./lib/browser');
-const { wait } = require('./lib/utils');
-const { saveCrashReport } = require('./lib/reporter');
+import fs from 'fs';
+import fsp from 'fs/promises';
+import path from 'path';
+import { getProxy, getCookies, getList, normalizeUrl, getSetting, ProxyConfig, Cookie } from './lib/config';
+import { StateManager } from './lib/state';
+import { createBrowserContext, optimizeContextForScraping, startLiveView, takeLiveScreenshot } from './lib/browser';
+import { wait } from './lib/utils';
+import { saveCrashReport } from './lib/reporter';
+import { Page, Browser, BrowserContext } from 'playwright';
 
-const getDynamicConfig = async () => {
+interface ParserConfig {
+    viewport: { width: number; height: number };
+    userAgent: string;
+    timeouts: { pageLoad: number; element: number; inputWait: number };
+    proxy: ProxyConfig | null;
+    cookies: Cookie[];
+    cities: string[];
+    niches: string[];
+}
+
+const getDynamicConfig = async (): Promise<ParserConfig> => {
     // Небольшая рандомизация размера окна
     const width = 1280 + Math.floor(Math.random() * 150);
     const height = 900 + Math.floor(Math.random() * 100);
@@ -22,19 +34,20 @@ const getDynamicConfig = async () => {
     };
 };
 
-const shuffleArray = (array) => {
-    for (let i = array.length - 1; i > 0; i--) {
+const shuffleArray = <T>(array: T[]): T[] => {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
+        [arr[i], arr[j]] = [arr[j], arr[i]];
     }
-    return array;
+    return arr;
 };
 
-const getCombinedKeywords = (cities, niches) => {
+const getCombinedKeywords = (cities: string[], niches: string[]): string[] => {
     if (!niches || niches.length === 0) return shuffleArray([...(cities || [])]);
     if (!cities || cities.length === 0) return shuffleArray([...(niches || [])]);
 
-    const combined = [];
+    const combined: string[] = [];
     for (const city of cities) {
         for (const niche of niches) {
             combined.push(`${city} ${niche}`);
@@ -43,7 +56,7 @@ const getCombinedKeywords = (cities, niches) => {
     return shuffleArray(combined);
 };
 
-const run = async () => {
+const run = async (): Promise<void> => {
     console.log('🚀 ЗАПУСК ПАРСЕРА ДОНОРОВ (STEALTH MODE + LOGS)...');
     console.log('----------------------------------------------');
 
@@ -123,8 +136,8 @@ const run = async () => {
                 await takeLiveScreenshot(page);
 
                 // Парсим результаты из выпадающего списка
-                const links = await page.evaluate(() => {
-                    const results = [];
+                const links = await page.evaluate((): string[] => {
+                    const results: string[] = [];
                     document.querySelectorAll('a[href]').forEach(a => {
                         const href = a.getAttribute('href');
                         // Ищем ссылки, которые ведут на конкретного пользователя (/username/)
@@ -159,7 +172,7 @@ const run = async () => {
             console.error('❌ Не удалось найти поле ввода для поиска. Возможно, изменилась верстка Instagram или требуется капча/логин.');
         }
 
-    } catch (e) {
+    } catch (e: any) {
         console.error(`\n❌ Критическая ошибка во время выполнения парсера:`);
         console.error(e.message);
         await saveCrashReport(page, e, 'parser');

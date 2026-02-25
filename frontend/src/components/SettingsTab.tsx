@@ -1,7 +1,7 @@
-import { useState, memo } from 'react'
-import { EditIcon, TrashIcon } from './Icons.jsx'
+import React, { useState, memo } from 'react'
+import { EditIcon, TrashIcon } from './Icons'
 import { toast } from 'react-hot-toast'
-
+import { SettingsData, Account } from '../types'
 
 const SkeletonSettings = memo(function SkeletonSettings() {
     return (
@@ -22,18 +22,26 @@ const SkeletonSettings = memo(function SkeletonSettings() {
     )
 })
 
-export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoading }) {
+interface SettingsTabProps {
+    settingsData: SettingsData;
+    onSettingsChange: (data: SettingsData) => void;
+    onSave: () => void;
+    tr: (key: string) => string;
+    isLoading: boolean;
+}
+
+export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoading }: SettingsTabProps) {
     const [settingsTab, setSettingsTab] = useState('accounts')
-    const [draggedItem, setDraggedItem] = useState(null)
-    const [editingAccount, setEditingAccount] = useState(null)
+    const [draggedItem, setDraggedItem] = useState<{ index: number, field: keyof SettingsData } | null>(null)
+    const [editingAccount, setEditingAccount] = useState<string | null>(null)
     const [editForm, setEditForm] = useState({ name: '', proxy: '', cookies: '' })
 
-    const setAccounts = (accounts) => onSettingsChange({ ...settingsData, accounts })
+    const setAccounts = (accounts: Account[]) => onSettingsChange({ ...settingsData, accounts })
 
     const handleAdd = () => {
-        const nameEl = document.getElementById('new-acc-name')
-        const proxyEl = document.getElementById('new-acc-proxy')
-        const cookiesEl = document.getElementById('new-acc-cookies')
+        const nameEl = document.getElementById('new-acc-name') as HTMLInputElement
+        const proxyEl = document.getElementById('new-acc-proxy') as HTMLInputElement
+        const cookiesEl = document.getElementById('new-acc-cookies') as HTMLTextAreaElement
         const name = nameEl.value.trim()
         const cookies = cookiesEl.value.trim()
         if (!name || !cookies) { toast.error(tr('error_name_cookies_required')); return }
@@ -41,33 +49,38 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
         nameEl.value = ''; proxyEl.value = ''; cookiesEl.value = ''
     }
 
-    const handleDelete = (id) => {
+    const handleDelete = (id: string) => {
         const newAccs = settingsData.accounts.filter(a => a.id !== id)
-        const updateArr = (field) => (settingsData[field] || []).filter(aid => aid !== id)
+        const updateArr = (field: keyof SettingsData) => {
+            const arr = settingsData[field]
+            if (Array.isArray(arr)) {
+                return (arr as string[]).filter(aid => aid !== id)
+            }
+            return arr
+        }
 
         onSettingsChange({
             ...settingsData,
             accounts: newAccs,
-            activeParserAccountIds: updateArr('activeParserAccountIds'),
-            activeServerAccountIds: updateArr('activeServerAccountIds'),
-            activeIndexAccountIds: updateArr('activeIndexAccountIds'),
-            activeProfilesAccountIds: updateArr('activeProfilesAccountIds'),
-            activeCheckerAccountIds: updateArr('activeCheckerAccountIds')
-        })
+            activeParserAccountIds: updateArr('activeParserAccountIds') as string[],
+            activeServerAccountIds: updateArr('activeServerAccountIds') as string[],
+            activeIndexAccountIds: updateArr('activeIndexAccountIds') as string[],
+            activeProfilesAccountIds: updateArr('activeProfilesAccountIds') as string[],
+        } as SettingsData)
     }
 
-    const toggleAccountForTask = (field, id) => {
-        const arr = settingsData[field] || []
+    const toggleAccountForTask = (field: keyof SettingsData, id: string) => {
+        const arr = (settingsData[field] as string[]) || []
         const newArr = arr.includes(id) ? arr.filter(aid => aid !== id) : [...arr, id]
         onSettingsChange({ ...settingsData, [field]: newArr })
     }
 
-    const handleStartEdit = (acc) => {
+    const handleStartEdit = (acc: Account) => {
         setEditingAccount(acc.id)
         setEditForm({ name: acc.name, proxy: acc.proxy || '', cookies: acc.cookies || '' })
     }
 
-    const handleSaveEdit = async (id) => {
+    const handleSaveEdit = async (id: string) => {
         try {
             await fetch(`/api/accounts/${id}`, {
                 method: 'PUT',
@@ -85,17 +98,17 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
         }
     }
 
-    const onDragStart = (e, index, field) => {
+    const onDragStart = (e: React.DragEvent, index: number, field: keyof SettingsData) => {
         setDraggedItem({ index, field })
         e.dataTransfer.effectAllowed = 'move'
     }
 
-    const onDragOver = (e, index, field) => {
+    const onDragOver = (e: React.DragEvent, index: number, field: keyof SettingsData) => {
         e.preventDefault()
         if (!draggedItem || draggedItem.field !== field) return
         if (draggedItem.index === index) return
 
-        const arr = [...settingsData[field]]
+        const arr = [...(settingsData[field] as any[])]
         const item = arr.splice(draggedItem.index, 1)[0]
         arr.splice(index, 0, item)
 
@@ -103,9 +116,9 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
         setDraggedItem({ ...draggedItem, index })
     }
 
-    const renderTaskSection = (field, label) => {
-        const activeIds = settingsData[field] || []
-        const activeAccounts = activeIds.map(id => settingsData.accounts.find(a => a.id === id)).filter(Boolean)
+    const renderTaskSection = (field: keyof SettingsData, label: string) => {
+        const activeIds = (settingsData[field] as string[]) || []
+        const activeAccounts = activeIds.map(id => settingsData.accounts.find(a => a.id === id)).filter((a): a is Account => !!a)
 
         return (
             <div className="task-setup-section" style={{ marginBottom: '24px', padding: '20px', background: 'hsl(var(--bg-card))', borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))' }}>
@@ -137,8 +150,8 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                             <button
                                 onClick={() => toggleAccountForTask(field, acc.id)}
                                 style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'hsl(var(--danger))', cursor: 'pointer', padding: '4px', opacity: 0.7, transition: 'opacity 0.2s' }}
-                                onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                                onMouseLeave={(e) => e.currentTarget.style.opacity = 0.7}
+                                onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                                onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
                             >
                                 ✕
                             </button>
@@ -155,7 +168,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
         <div className="settings-wrap tab-content-fade">
             <div className="settings-header">
                 <div className="settings-nested-tabs">
-                    {['accounts', 'names', 'cities', 'niches', 'donors'].map(tab => (
+                    {(['accounts', 'names', 'cities', 'niches', 'donors'] as const).map(tab => (
                         <button
                             key={tab}
                             className={`tab-btn${settingsTab === tab ? ' active' : ''}`}
@@ -209,10 +222,6 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                             {renderTaskSection('activeServerAccountIds', tr('task_sender'))}
                             {renderTaskSection('activeProfilesAccountIds', tr('task_profiles'))}
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '24px' }}>
-                            {renderTaskSection('activeCheckerAccountIds', tr('task_checker'))}
-                        </div>
-
                         <div className="add-account-form" style={{ marginTop: '32px', padding: '24px', background: 'hsl(var(--bg-card))', borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))' }}>
                             <h4 style={{ margin: '0 0 20px 0', fontSize: '18px' }}>{tr('add_account')}</h4>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -289,14 +298,15 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                                                 {acc.proxy || 'Direct Connection'}
                                             </div>
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                                {[
-                                                    { field: 'activeParserAccountIds', label: tr('task_parser') },
-                                                    { field: 'activeIndexAccountIds', label: tr('task_scraper') },
-                                                    { field: 'activeServerAccountIds', label: tr('task_sender') },
-                                                    { field: 'activeProfilesAccountIds', label: tr('task_profiles') },
-                                                    { field: 'activeCheckerAccountIds', label: tr('task_checker') }
-                                                ].map(t => {
-                                                    const isActive = (settingsData[t.field] || []).includes(acc.id)
+                                                {(
+                                                    [
+                                                        { field: 'activeParserAccountIds', label: tr('task_parser') },
+                                                        { field: 'activeIndexAccountIds', label: tr('task_scraper') },
+                                                        { field: 'activeServerAccountIds', label: tr('task_sender') },
+                                                        { field: 'activeProfilesAccountIds', label: tr('task_profiles') },
+                                                    ] as const
+                                                ).map(t => {
+                                                    const isActive = (settingsData[t.field] as string[] || []).includes(acc.id)
                                                     return (
                                                         <button
                                                             key={t.field}
@@ -336,7 +346,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                 <textarea
                     className="msg-textarea"
                     style={{ height: 500 }}
-                    value={settingsData.names.join('\n')}
+                    value={(settingsData.names || []).join('\n')}
                     onChange={e => onSettingsChange({ ...settingsData, names: e.target.value.split('\n') })}
                 />
             )}
@@ -344,7 +354,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                 <textarea
                     className="msg-textarea"
                     style={{ height: 500 }}
-                    value={settingsData.cities.join('\n')}
+                    value={(settingsData.cities || []).join('\n')}
                     onChange={e => onSettingsChange({ ...settingsData, cities: e.target.value.split('\n') })}
                 />
             )}
@@ -352,7 +362,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                 <textarea
                     className="msg-textarea"
                     style={{ height: 500 }}
-                    value={settingsData.niches.join('\n')}
+                    value={(settingsData.niches || []).join('\n')}
                     onChange={e => onSettingsChange({ ...settingsData, niches: e.target.value.split('\n') })}
                 />
             )}
@@ -360,11 +370,10 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                 <textarea
                     className="msg-textarea"
                     style={{ height: 500 }}
-                    value={settingsData.donors.join('\n')}
+                    value={(settingsData.donors || []).join('\n')}
                     onChange={e => onSettingsChange({ ...settingsData, donors: e.target.value.split('\n') })}
                 />
             )}
         </div>
     )
 }
-

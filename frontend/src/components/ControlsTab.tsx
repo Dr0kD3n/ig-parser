@@ -1,7 +1,15 @@
-import { useState, useEffect, useRef, memo } from 'react'
-import { FileIcon } from './Icons.jsx'
+import React, { useState, useEffect, useRef, memo, useCallback } from 'react'
+import { FileIcon } from './Icons'
+import { LogEntry, BotStatus } from '../types'
 
-const LogGroup = memo(function LogGroup({ group, tr }) {
+interface LogGroupData {
+    sessionId: string;
+    source: string;
+    timestamp: string;
+    logs: LogEntry[];
+}
+
+const LogGroup = memo(function LogGroup({ group, tr }: { group: LogGroupData, tr: (key: string) => string }) {
     const [collapsed, setCollapsed] = useState(false)
     const source = group.source.split('-')[0].toUpperCase()
     const time = group.timestamp ? group.timestamp.split('T')[1].split('.')[0] : ''
@@ -12,7 +20,7 @@ const LogGroup = memo(function LogGroup({ group, tr }) {
                 <div className="group-info">
                     <span className={`log-source source-${group.source.split('-')[0]}`}>{source}</span>
                     <span className="log-time">{time}</span>
-                    <span className="group-label">{tr('batch_entries').replace('{count}', group.logs.length)}</span>
+                    <span className="group-label">{tr('batch_entries').replace('{count}', String(group.logs.length))}</span>
                 </div>
                 <div className="group-toggle">{collapsed ? '+' : '−'}</div>
             </div>
@@ -20,7 +28,7 @@ const LogGroup = memo(function LogGroup({ group, tr }) {
                 <div className="log-group-content">
                     {group.logs.map((log, i) => (
                         <div className="log-entry" key={log.id || i}>
-                            <div className="log-time">{log.timestamp.split('T')[1].split('.')[0]}</div>
+                            <div className="log-time">{log.timestamp ? log.timestamp.split('T')[1].split('.')[0] : ''}</div>
                             <div className="log-message">{log.message}</div>
                         </div>
                     ))}
@@ -30,7 +38,7 @@ const LogGroup = memo(function LogGroup({ group, tr }) {
     )
 })
 
-const useCollapsed = (key, defaultVal = false) => {
+const useCollapsed = (key: string, defaultVal = false): [boolean, () => void] => {
     const [collapsed, setCollapsed] = useState(() => {
         try {
             const item = localStorage.getItem(key)
@@ -42,7 +50,7 @@ const useCollapsed = (key, defaultVal = false) => {
     useEffect(() => {
         localStorage.setItem(key, JSON.stringify(collapsed))
     }, [key, collapsed])
-    return [collapsed, () => setCollapsed(c => !c)]
+    return [collapsed, () => setCollapsed((c: boolean) => !c)]
 }
 
 const SkeletonControls = memo(function SkeletonControls() {
@@ -68,8 +76,17 @@ const SkeletonControls = memo(function SkeletonControls() {
     )
 })
 
-export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs, tr, isLoading }) {
-    const logBoxRef = useRef(null)
+interface ControlsTabProps {
+    botStatus: BotStatus;
+    onBotControl: (type: string, action: string) => Promise<void>;
+    onClearLogs: () => void;
+    logs: LogEntry[];
+    tr: (key: string) => string;
+    isLoading: boolean;
+}
+
+export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs, tr, isLoading }: ControlsTabProps) {
+    const logBoxRef = useRef<HTMLDivElement>(null)
     const [scraperCollapsed, toggleScraper] = useCollapsed('ig_scraper_collapsed', false)
     const [parserCollapsed, toggleParser] = useCollapsed('ig_parser_collapsed', false)
     const [logsCollapsed, toggleLogs] = useCollapsed('ig_logs_collapsed', false)
@@ -85,8 +102,8 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
     }, [])
 
     // Group logs by session+source
-    const groups = []
-    let current = null
+    const groups: LogGroupData[] = []
+    let current: LogGroupData | null = null
     for (const log of logs) {
         if (!current || current.sessionId !== log.sessionId || current.source !== log.source) {
             current = { sessionId: log.sessionId, source: log.source, timestamp: log.timestamp, logs: [] }
@@ -126,7 +143,7 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
                                     <button
                                         className="btn-primary"
                                         style={{ background: 'hsl(var(--warning))', boxShadow: 'none' }}
-                                        onClick={async (e) => {
+                                        onClick={async (e: React.MouseEvent<HTMLButtonElement>) => {
                                             const btn = e.currentTarget;
                                             const originalText = btn.innerText;
                                             btn.innerText = '⌛...';
@@ -188,7 +205,7 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
                                 color: 'hsl(var(--text-muted))',
                                 height: 'auto'
                             }}
-                            onClick={(e) => {
+                            onClick={(e: React.MouseEvent) => {
                                 e.stopPropagation();
                                 onClearLogs();
                             }}
@@ -231,8 +248,8 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
                             src={`/api/live-view?t=${liveViewTimestamp}`}
                             style={{ display: (botStatus.index || botStatus.parser) ? 'block' : 'none' }}
                             alt="Live View"
-                            onError={(e) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'block'; }}
-                            onLoad={(e) => { e.target.style.display = 'block'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'none'; }}
+                            onError={(e: any) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'block'; }}
+                            onLoad={(e: any) => { e.target.style.display = 'block'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'none'; }}
                         />
                         <div style={{ color: 'hsl(var(--text-dim))', fontFamily: 'monospace', fontSize: '12px', padding: 20, textAlign: 'center' }}>
                             {(botStatus.index || botStatus.parser) ? tr('waiting_stream') : tr('browser_not_started')}

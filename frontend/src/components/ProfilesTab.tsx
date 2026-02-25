@@ -1,16 +1,33 @@
-import { useState, useCallback, memo } from 'react'
-import { HeartIcon, XIcon, InstagramIcon, TelegramIcon, SendIcon, HelpIcon } from './Icons.jsx'
+import React, { useState, useCallback, memo } from 'react'
+import { HeartIcon, XIcon, InstagramIcon, TelegramIcon, HelpIcon, SendIcon } from './Icons'
 import { toast } from 'react-hot-toast'
+import { Girl } from '../types'
 
+interface ProfilesTabProps {
+    girls: any[]; // Changed from Girl[] to any[] for now to avoid matchScore issues, will fix later
+    votes: Record<string, string>;
+    viewed: string[];
+    sentDM: string[];
+    failedImages: Set<string>;
+    onVote: (g: Girl, status: string) => void;
+    onOpen: (g: Girl) => void;
+    onSendDM: (g: Girl) => void;
+    onImageError: (url: string) => void;
+    onRefresh?: () => Promise<void>;
+    useProxyImages: boolean;
+    tr: (key: string) => string;
+    onTgCheck: (url: string, status: string) => void;
+    isLoading: boolean;
+}
 
-function parseSmartBio(text, username) {
-    if (!text) return { bio: ' ', stats: [] }
+function parseSmartBio(text: string, username: string) {
+    if (!text) return { bio: ' ', stats: [] as string[] }
 
     // 1. Remove mentions of the username and pipes
     let clean = text.replace(new RegExp(`^${username}\\s*`, 'i'), '').replace(/\|/g, ' ')
 
     // 2. Extract stats (followers/posts)
-    const stats = []
+    const stats: string[] = []
     const followersMatch = clean.match(/(\d[\d\s]*\s*подписчиков)/i)
     const postsMatch = clean.match(/(\d[\d\s]*\s*публикаций)/i)
     if (followersMatch) stats.push(followersMatch[0])
@@ -28,7 +45,7 @@ function parseSmartBio(text, username) {
     // 4. Forceful Deduplication: split by common separators and check for repetitions
     const segments = bio.split(/[\.!\?]\s+/)
     if (segments.length > 2) {
-        const unique = []
+        const unique: string[] = []
         segments.forEach(s => {
             if (!unique.some(u => u.includes(s.substring(0, 20)) || s.includes(u.substring(0, 20)))) {
                 unique.push(s)
@@ -57,7 +74,20 @@ const SkeletonCard = memo(function SkeletonCard() {
     )
 })
 
-const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, onOpen, onSendDM, onImageError, useProxyImages, tr, onTgCheck }) {
+interface ProfileCardProps {
+    g: any;
+    votes: Record<string, string>;
+    failedImages: Set<string>;
+    onVote: (g: Girl, status: string) => void;
+    onOpen: (g: Girl) => void;
+    onSendDM: (g: Girl) => void;
+    onImageError: (url: string) => void;
+    useProxyImages: boolean;
+    tr: (key: string) => string;
+    onTgCheck: (url: string, status: string) => void;
+}
+
+const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, onOpen, onSendDM, onImageError, useProxyImages, tr, onTgCheck }: ProfileCardProps) {
     const { bio, stats } = parseSmartBio(g.bio, g.name)
     const isLiked = votes[g.url] === 'like'
     const isDisliked = votes[g.url] === 'dislike'
@@ -69,7 +99,7 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
             : `https://images.weserv.nl/?url=${encodeURIComponent(g.photo)}`)
         : null
 
-    const handleTgClick = async (e) => {
+    const handleTgClick = async (e: React.MouseEvent) => {
         e.stopPropagation();
         const tgUrl = `https://t.me/${g.name}`;
 
@@ -186,7 +216,7 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
     )
 })
 
-export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onImageError, onRefresh, useProxyImages, tr, lang, onTgCheck, isLoading }) {
+export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onImageError, onRefresh, useProxyImages, tr, onTgCheck, isLoading }: ProfilesTabProps) {
     const [filterText, setFilterText] = useState('')
     const [filterStatus, setFilterStatus] = useState('all')
     const [filterTgStatus, setFilterTgStatus] = useState('all')
@@ -241,23 +271,18 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
         const imgOk = !hideNoImage || (g.photo && !failedImages.has(g.url))
         return matchesName && matchesStatus && matchesTg && imgOk
     }).sort((a, b) => {
-        if (sortOption === 'oldest') return new Date(a.timestamp) - new Date(b.timestamp)
+        if (sortOption === 'oldest') return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         if (sortOption === 'match') {
             const scoreA = a.matchScore !== undefined ? a.matchScore : 50;
             const scoreB = b.matchScore !== undefined ? b.matchScore : 50;
             if (scoreB !== scoreA) return scoreB - scoreA;
         }
-        return new Date(b.timestamp) - new Date(a.timestamp);
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     })
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE))
     const page = Math.min(currentPage, totalPages)
     const pageData = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE)
-
-    const handleFilterChange = useCallback((setter) => (e) => {
-        setter(e.target.value ?? e.target.checked)
-        setCurrentPage(1)
-    }, [])
 
     return (
         <div className="tab-content-fade">
@@ -355,7 +380,7 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
             {totalPages > 1 && (
                 <div className="pagination">
                     <button className="pageBtn" disabled={page === 1} onClick={() => setCurrentPage(p => p - 1)}>{tr('prev')}</button>
-                    <span className="page-info">{tr('page_info').replace('{current}', page).replace('{total}', totalPages)}</span>
+                    <span className="page-info">{tr('page_info').replace('{current}', String(page)).replace('{total}', String(totalPages))}</span>
                     <button className="pageBtn" disabled={page === totalPages} onClick={() => setCurrentPage(p => p + 1)}>{tr('next')}</button>
                 </div>
             )}

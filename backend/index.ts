@@ -1,14 +1,18 @@
-const fs = require('fs/promises');
-const path = require('path');
-const { getProxy, getCookies, getList, normalizeUrl, getSetting, getAllAccounts } = require('./lib/config');
-const { StateManager } = require('./lib/state');
-const { createBrowserContext, optimizeContextForScraping, startLiveView, checkLoginPage, takeLiveScreenshot } = require('./lib/browser');
-const { shuffleArray, wait } = require('./lib/utils');
-const logger = require('./lib/logger');
-const { saveCrashReport } = require('./lib/reporter');
+import fsp from 'fs/promises';
+import fs from 'fs';
+import path from 'path';
+import { getProxy, getCookies, getList, normalizeUrl, getSetting, getAllAccounts, ProxyConfig, Cookie, AccountInfo } from './lib/config';
+import { StateManager } from './lib/state';
+import { createBrowserContext, optimizeContextForScraping, startLiveView, checkLoginPage, takeLiveScreenshot } from './lib/browser';
+import { shuffleArray, wait } from './lib/utils';
+import * as logger from './lib/logger';
+import { saveCrashReport } from './lib/reporter';
+import { Page, Browser, BrowserContext } from 'playwright';
 
 class RotateAccountError extends Error {
-    constructor(reason, remainingNames) {
+    reason: string;
+    remainingNames: string[];
+    constructor(reason: string, remainingNames: string[]) {
         super(`Rotate Account: ${reason}`);
         this.name = 'RotateAccountError';
         this.reason = reason;
@@ -16,7 +20,18 @@ class RotateAccountError extends Error {
     }
 }
 
-const getDynamicConfig = async () => {
+interface DynamicConfig {
+    viewport: { width: number; height: number };
+    userAgent: string;
+    timeouts: { pageLoad: number; element: number; inputWait: number };
+    scroll: { maxAttempts: number; maxRetries: number };
+    target: {
+        cityKeywords: string[];
+        names: string[];
+    };
+}
+
+const getDynamicConfig = async (): Promise<DynamicConfig> => {
     const width = 1280 + Math.floor(Math.random() * 150);
     const height = 900 + Math.floor(Math.random() * 100);
 
@@ -43,23 +58,23 @@ const SELECTORS = {
     LOADER: 'div[role="dialog"] [role="progressbar"], div[role="dialog"] svg[aria-label="Loading..."], div[role="dialog"] svg[aria-label="Загрузка..."]'
 };
 
-const checkSkipSignal = () => {
+const checkSkipSignal = (): boolean => {
     const flagPath = path.join(__dirname, 'skip_donor.flag');
-    if (require('fs').existsSync(flagPath)) {
+    if (fs.existsSync(flagPath)) {
         try {
-            require('fs').unlinkSync(flagPath);
+            fs.unlinkSync(flagPath);
             return true;
-        } catch (e) { }
+        } catch (e: any) { }
     }
     return false;
 };
 
-const randomDelay = (min = 100, max = 300) => wait(min + Math.random() * (max - min));
+const randomDelay = (min = 100, max = 300): Promise<void> => wait(min + Math.random() * (max - min));
 
-const extractVisibleCandidates = () => {
+const extractVisibleCandidates = (): string[] => {
     const dialog = document.querySelector('div[role="dialog"]');
     if (!dialog) return [];
-    const results = [];
+    const results: string[] = [];
     const canvases = dialog.querySelectorAll('canvas');
     canvases.forEach(canvas => {
         const storyBtn = canvas.closest('div[role="button"]');
@@ -67,7 +82,7 @@ const extractVisibleCandidates = () => {
         let parent = storyBtn.parentElement;
         for (let i = 0; i < 6; i++) {
             if (!parent) break;
-            const link = parent.querySelector('a[href^="/"]:not([role="button"])');
+            const link = parent.querySelector('a[href^="/"]:not([role="button"])') as HTMLElement;
             if (link && link.innerText.trim().length > 0) {
                 const href = link.getAttribute('href');
                 if (href && !href.includes('followers')) results.push(`https://www.instagram.com${href}`);
@@ -79,8 +94,8 @@ const extractVisibleCandidates = () => {
     return results;
 };
 
-const scrollAndCollectUrls = async (page, config) => {
-    const collectedUrls = new Set();
+const scrollAndCollectUrls = async (page: Page, config: DynamicConfig): Promise<string[]> => {
+    const collectedUrls = new Set<string>();
     let previousHeight = 0;
     let sameHeightCount = 0;
 
@@ -92,7 +107,7 @@ const scrollAndCollectUrls = async (page, config) => {
         const visible = await page.evaluate(extractVisibleCandidates);
         visible.forEach(url => collectedUrls.add(url));
 
-        const scrolledHeight = await page.evaluate(() => {
+        const scrolledHeight = await page.evaluate((): number | false => {
             const dialog = document.querySelector('div[role="dialog"]');
             const scrollable = dialog ? Array.from(dialog.querySelectorAll('div')).find(el => {
                 const s = window.getComputedStyle(el);
@@ -108,11 +123,11 @@ const scrollAndCollectUrls = async (page, config) => {
         if (!scrolledHeight) await page.mouse.wheel(0, 600);
         await wait(50);
 
-        try { await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 }); } catch (e) { }
+        try { await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 }); } catch (e: any) { }
 
         await wait(50);
 
-        const newHeight = await page.evaluate(() => {
+        const newHeight = await page.evaluate((): number | false => {
             const dialog = document.querySelector('div[role="dialog"]');
             const scrollable = dialog ? Array.from(dialog.querySelectorAll('div')).find(el => {
                 const s = window.getComputedStyle(el);
@@ -131,7 +146,7 @@ const scrollAndCollectUrls = async (page, config) => {
         } else {
             sameHeightCount = 0;
         }
-        previousHeight = newHeight;
+        previousHeight = (newHeight as number) || 0;
 
         if ((i + 1) % 3 === 0) {
             logger.info(`      🔄 Скролл ${i + 1}/${config.scroll.maxAttempts} | Собрано профилей: ${collectedUrls.size}`);
@@ -140,7 +155,7 @@ const scrollAndCollectUrls = async (page, config) => {
     return Array.from(collectedUrls);
 };
 
-const analyzeProfile = async (context, url, config) => {
+const analyzeProfile = async (context: BrowserContext, url: string, config: DynamicConfig): Promise<void> => {
     if (StateManager.has(url)) return;
     await StateManager.add(url);
 
@@ -156,20 +171,20 @@ const analyzeProfile = async (context, url, config) => {
 
         const username = url.split('/').filter(Boolean).pop() || '';
 
-        const extracted = await page.evaluate(() => {
+        const extracted = await page.evaluate((): { fullSearchText: string, bioClean: string } => {
             let bioClean = '';
             let fullSearchText = '';
 
             const header = document.querySelector('header');
             if (header) {
-                fullSearchText = header.innerText || '';
+                fullSearchText = (header as HTMLElement).innerText || '';
 
                 const ulList = header.querySelector('ul');
                 if (ulList && ulList.nextElementSibling) {
-                    bioClean = ulList.nextElementSibling.innerText || '';
+                    bioClean = (ulList.nextElementSibling as HTMLElement).innerText || '';
                 } else {
                     const autoSpans = Array.from(header.querySelectorAll('span[dir="auto"]'));
-                    const spanTexts = autoSpans.map(s => s.innerText.trim()).filter(Boolean);
+                    const spanTexts = autoSpans.map(s => (s as HTMLElement).innerText.trim()).filter(Boolean);
                     if (spanTexts.length > 0) {
                         bioClean = spanTexts.join(' | ');
                     }
@@ -177,7 +192,7 @@ const analyzeProfile = async (context, url, config) => {
 
                 const highlightsBlock = header.nextElementSibling;
                 if (highlightsBlock) {
-                    fullSearchText += ' ' + (highlightsBlock.innerText || '');
+                    fullSearchText += ' ' + ((highlightsBlock as HTMLElement).innerText || '');
                 }
             }
 
@@ -193,7 +208,7 @@ const analyzeProfile = async (context, url, config) => {
         if (isTarget) {
             logger.info(`         ✅ Целевой профиль! Парсим данные (ищем фото)...`);
             const name = await page.locator('header h2, header h1, header span[dir="auto"]').first().innerText().catch(() => username);
-            const photoUrl = await page.evaluate(async (uname) => {
+            const photoUrl = await page.evaluate(async (uname: string): Promise<string> => {
                 let pUrl = '';
                 try {
                     const res = await fetch(`/api/v1/users/web_profile_info/?username=${uname}`, {
@@ -205,7 +220,7 @@ const analyzeProfile = async (context, url, config) => {
                             pUrl = json.data.user.profile_pic_url_hd;
                         }
                     }
-                } catch (e) { }
+                } catch (e: any) { }
 
                 if (!pUrl) {
                     const html = document.documentElement.innerHTML;
@@ -214,7 +229,7 @@ const analyzeProfile = async (context, url, config) => {
                         const rawUrl = matches[matches.length - 1][1];
                         try {
                             pUrl = JSON.parse('"' + rawUrl + '"');
-                        } catch (e) {
+                        } catch (e: any) {
                             pUrl = rawUrl.replace(/\\u0026/g, '&').replace(/\\\//g, '/');
                         }
                     }
@@ -224,7 +239,7 @@ const analyzeProfile = async (context, url, config) => {
                     const header = document.querySelector('header');
                     if (header) {
                         const img = header.querySelector('img');
-                        if (img) pUrl = img.getAttribute('src') || img.src || '';
+                        if (img) pUrl = img.getAttribute('src') || (img as any).src || '';
                     }
                 }
                 return pUrl;
@@ -238,7 +253,7 @@ const analyzeProfile = async (context, url, config) => {
         } else {
             logger.info(`         ➖ Пропуск: нет целевых слов.`);
         }
-    } catch (e) {
+    } catch (e: any) {
         if (!e.message.includes('Timeout')) {
             logger.error(`         ❌ Ошибка анализа профиля: ${e.message.split('\n')[0]}`);
         } else {
@@ -250,7 +265,7 @@ const analyzeProfile = async (context, url, config) => {
     }
 };
 
-const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
+const processDonor = async (context: BrowserContext, donorUrl: string, config: DynamicConfig, totalAccounts = 0): Promise<void> => {
     logger.info(`\n==============================================`);
     logger.info(`📂 ОТКРЫВАЕМ ДОНОРА: ${donorUrl}`);
     logger.info(`==============================================`);
@@ -297,13 +312,14 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         }
 
         // 4. Проверка количества подписчиков
-        const { parsedCount, rawValue } = await page.evaluate(() => {
+        const { parsedCount, rawValue } = await page.evaluate((): { parsedCount: number, rawValue: string } => {
             const link = document.querySelector('a[href$="/followers/"]');
             if (!link) return { parsedCount: 0, rawValue: 'NOT_FOUND' };
             const span = link.querySelector('span[title]');
-            const rawValue = span ? span.getAttribute('title') : link.innerText;
+            const rawValue = span ? span.getAttribute('title') : (link as HTMLElement).innerText;
 
-            const parseFollowers = (str) => {
+            const parseFollowers = (str: string | null): number => {
+                if (!str) return 0;
                 // 1. Normalize: handle localized comma as decimal if it seems like a ratio (e.g. 10,3M)
                 // but since we force en-GB, we primarily treat dot as decimal and remove commas as thousands.
                 let clean = str.replace(/,/g, '').replace(/\s+/g, '');
@@ -327,7 +343,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
                 return isNaN(val) ? 0 : Math.floor(val * multiplier);
             };
 
-            return { parsedCount: parseFollowers(rawValue), rawValue };
+            return { parsedCount: parseFollowers(rawValue), rawValue: rawValue || '' };
         }).catch(() => ({ parsedCount: 0, rawValue: 'ERROR' }));
 
         if (parsedCount < 1000) {
@@ -359,13 +375,13 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
             await searchInput.click({ clickCount: 3 });
             await page.keyboard.press('Backspace');
 
-            try { await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 2000 }); } catch (e) { }
+            try { await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 2000 }); } catch (e: any) { }
 
             const typeDelay = Math.floor(Math.random() * (60 - 20 + 1) + 20);
             await searchInput.pressSequentially(name, { delay: typeDelay });
 
             logger.info(`      ⏳ Ждем выдачу результатов от Инстаграма...`);
-            try { await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 }); } catch (e) { }
+            try { await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 }); } catch (e: any) { }
             await takeLiveScreenshot(page);
             await wait(50);
 
@@ -419,7 +435,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
             }
             if (shouldSkipDonor) break;
         }
-    } catch (e) {
+    } catch (e: any) {
         if (e.name === 'RotateAccountError') {
             throw e;
         }
@@ -432,7 +448,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     }
 };
 
-const run = async () => {
+const run = async (): Promise<void> => {
     logger.info('🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...');
     logger.info('----------------------------------------------');
     let CONFIG = await getDynamicConfig();
@@ -448,9 +464,10 @@ const run = async () => {
     }
     logger.info(`🎯 Загружено доноров: ${donors.length}`);
 
-    const setupBrowser = async () => {
-        let proxy = null;
-        let cookies = [];
+    const setupBrowser = async (): Promise<{ browser: Browser, context: BrowserContext }> => {
+        let proxy: ProxyConfig | null = null;
+        let cookies: Cookie[] = [];
+        let fingerprint: any = null;
         if (accounts.length > 0) {
             proxy = accounts[currentAccountIndex].proxy;
             cookies = accounts[currentAccountIndex].cookies;
@@ -493,7 +510,7 @@ const run = async () => {
             donorIdx++; // Move to next donor on success
             // Reset to full names list for next donor
             CONFIG.target.names = shuffleArray(await getList('names.txt'));
-        } catch (e) {
+        } catch (e: any) {
             if (e.name === 'RotateAccountError') {
                 const isRotationNeeded = accounts.length > 1;
                 if (isRotationNeeded) {

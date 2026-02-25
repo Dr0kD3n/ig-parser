@@ -1,20 +1,28 @@
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const http = require('http');
-const https = require('https');
-const { createBrowserContext, startLiveView, takeLiveScreenshot } = require('./lib/browser');
-const { humanType, wait } = require('./lib/utils');
-const { StateManager } = require('./lib/state');
-const { getDB } = require('./lib/db');
-const { spawn } = require('child_process');
-const { EventEmitter } = require('events');
-const { generateFingerprint } = require('./lib/fingerprint');
-const { saveCrashReport } = require('./lib/reporter');
+import express, { Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
+import http from 'http';
+import https from 'https';
+import { createBrowserContext, startLiveView, takeLiveScreenshot } from './lib/browser';
+import { humanType, wait } from './lib/utils';
+import { StateManager } from './lib/state';
+import { getDB } from './lib/db';
+import { spawn, ChildProcess } from 'child_process';
+import { EventEmitter } from 'events';
+import { generateFingerprint } from './lib/fingerprint';
+import { saveCrashReport } from './lib/reporter';
+import { getProxy, getCookies, getList, getConfigPath, getSetting, getAllAccounts, ProxyConfig, Cookie } from './lib/config';
 
 const logEmitter = new EventEmitter();
 const LOGS_FILE = path.join(__dirname, 'logs.json');
-let botProcesses = {
+
+interface BotProcesses {
+    index: ChildProcess | null;
+    parser: ChildProcess | null;
+    [key: string]: ChildProcess | null;
+}
+
+let botProcesses: BotProcesses = {
     index: null,
     parser: null
 };
@@ -26,7 +34,18 @@ function refreshSession() {
 }
 
 // Load historical logs
-let historicalLogs = [];
+interface LogEntry {
+    timestamp: string;
+    source: string;
+    message: string;
+    sessionId: string;
+}
+
+let historicalLogs: LogEntry[] = [];
+const originalLog = console.log;
+const originalError = console.error;
+const originalWarn = console.warn;
+
 try {
     if (fs.existsSync(LOGS_FILE)) {
         historicalLogs = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf8'));
@@ -38,12 +57,12 @@ try {
 function saveLogs() {
     try {
         fs.writeFileSync(LOGS_FILE, JSON.stringify(historicalLogs.slice(-1000)));
-    } catch (e) {
+    } catch (e: any) {
         originalLog('Error saving logs:', e);
     }
 }
 
-let saveLogsTimer = null;
+let saveLogsTimer: NodeJS.Timeout | null = null;
 function debouncedSaveLogs() {
     if (saveLogsTimer) return;
     saveLogsTimer = setTimeout(() => {
@@ -52,8 +71,8 @@ function debouncedSaveLogs() {
     }, 2000);
 }
 
-function broadcastLog(source, message) {
-    const logEntry = {
+function broadcastLog(source: string, message: any) {
+    const logEntry: LogEntry = {
         timestamp: new Date().toISOString(),
         source,
         message: message.toString().trim(),
@@ -69,21 +88,16 @@ function broadcastLog(source, message) {
     logEmitter.emit('log', logEntry);
 }
 
-// Save original console methods
-const originalLog = console.log;
-const originalError = console.error;
-const originalWarn = console.warn;
-
 // Override console methods to broadcast logs
-console.log = (...args) => {
+console.log = (...args: any[]) => {
     broadcastLog('server', args.join(' '));
 };
 
-console.error = (...args) => {
+console.error = (...args: any[]) => {
     broadcastLog('server-error', args.join(' '));
 };
 
-console.warn = (...args) => {
+console.warn = (...args: any[]) => {
     broadcastLog('server-warn', args.join(' '));
 };
 
@@ -164,8 +178,6 @@ async function getSettings() {
     };
 }
 
-const { getProxy, getCookies, getList, getConfigPath, getSetting } = require('./lib/config');
-
 app.use(express.json());
 
 // --- Static frontend (production build from frontend/) ---
@@ -179,7 +191,7 @@ if (fs.existsSync(publicDir)) {
 }
 
 // --- In-memory cache for profiles ---
-let girlsCache = null;
+let girlsCache: any[] | null = null;
 let girlsCacheTime = 0;
 const CACHE_TTL = 5000; // 5 seconds
 
@@ -192,7 +204,7 @@ async function getGirlsCached() {
 
         girlsCache = profiles;
         girlsCacheTime = now;
-    } catch (e) {
+    } catch (e: any) {
         girlsCache = [];
     }
     return girlsCache;
@@ -209,14 +221,14 @@ app.get('/api/girls', async (req, res) => {
 
 app.get('/api/votes', async (req, res) => {
     const profiles = await getGirlsCached();
-    const votes = {};
-    profiles.forEach(p => {
+    const votes: Record<string, string> = {};
+    profiles?.forEach(p => {
         if (p.vote) votes[p.url] = p.vote;
     });
     res.json(votes);
 });
 
-app.post('/api/vote', async (req, res) => {
+app.post('/api/vote', async (req: Request, res: Response) => {
     const { url, status } = req.body;
 
     if (!url || !status) {
@@ -230,20 +242,20 @@ app.post('/api/vote', async (req, res) => {
         invalidateGirlsCache();
         console.log(`[GOLOS] ${status} -> добавлен в профиль: ${url}`);
         res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
         console.log(`[GOLOS ERROR] Ошибка при голосовании: ${e.message}`);
         res.status(500).json({ success: false, error: 'Ошибка сервера при сохранении' });
     }
 });
 
-async function checkTelegramProfile(url) {
+async function checkTelegramProfile(url: string): Promise<string> {
     const fetchUrl = url.startsWith('http') ? url : `https://t.me/${url}`;
     return new Promise((resolve, reject) => {
         const req = https.get(fetchUrl, {
             headers: { 'User-Agent': CONFIG.userAgent }
         }, (res) => {
             // Follow redirects manually if needed for t.me
-            if ([301, 302].includes(res.statusCode) && res.headers.location) {
+            if ([301, 302].includes(res.statusCode || 0) && res.headers.location) {
                 if (res.headers.location.includes('telegram.org') && !res.headers.location.includes('t.me')) {
                     return resolve('invalid');
                 }
@@ -275,7 +287,7 @@ async function checkTelegramProfile(url) {
 }
 
 app.get('/api/check-telegram', async (req, res) => {
-    const { url } = req.query;
+    const { url } = req.query as { url?: string };
     if (!url) return res.status(400).json({ success: false, error: 'Missing url' });
 
     console.log(`[TG CHECK] Checking: ${url}`);
@@ -290,7 +302,7 @@ app.get('/api/check-telegram', async (req, res) => {
 
         invalidateGirlsCache();
         res.json({ success: true, status });
-    } catch (e) {
+    } catch (e: any) {
         console.error(`[TG CHECK ERROR] ${e.message}`);
         res.status(500).json({ success: false, error: e.message });
     }
@@ -302,7 +314,7 @@ app.post('/api/check-telegram-batch', async (req, res) => {
 
     console.log(`[TG BATCH CHECK] Starting for ${urls.length} profiles`);
 
-    const results = [];
+    const results: any[] = [];
     const BATCH_SIZE = 10;
     const db = await getDB();
 
@@ -315,7 +327,7 @@ app.post('/api/check-telegram-batch', async (req, res) => {
                 const status = await checkTelegramProfile(url);
                 await db.run(`UPDATE profiles SET tg_status = ? WHERE url = ? OR name = ?`, [status, url, url.replace('https://t.me/', '')]);
                 return { url, status, success: true };
-            } catch (e) {
+            } catch (e: any) {
                 console.error(`[TG BATCH CHECK ERROR] Failed ${url}: ${e.message}`);
                 return { url, success: false, error: e.message };
             }
@@ -370,7 +382,7 @@ app.post('/api/settings', async (req, res) => {
                 if (existingAccounts.length > 0 && (!accounts || accounts.length === 0) && !req.body.forceEmpty) {
                     console.warn('Blocked attempt to clear accounts list without forceEmpty flag');
                 } else {
-                    const incomingIds = (accounts || []).map(a => a.id);
+                    const incomingIds = (accounts || []).map((a: any) => a.id);
                     if (incomingIds.length > 0) {
                         const placeholders = incomingIds.map(() => '?').join(',');
                         await db.run(`DELETE FROM accounts WHERE id NOT IN (${placeholders})`, incomingIds);
@@ -378,7 +390,7 @@ app.post('/api/settings', async (req, res) => {
                         await db.run(`DELETE FROM accounts`);
                     }
                     for (const a of (accounts || [])) {
-                        const getPriority = (arr, id) => {
+                        const getPriority = (arr: any[], id: string) => {
                             const idx = (arr || []).indexOf(id);
                             return idx === -1 ? 0 : idx + 1;
                         };
@@ -386,6 +398,8 @@ app.post('/api/settings', async (req, res) => {
                         let fingerprint = a.fingerprint;
                         if (!fingerprint) {
                             fingerprint = JSON.stringify(generateFingerprint());
+                        } else if (typeof fingerprint !== 'string') {
+                            fingerprint = JSON.stringify(fingerprint);
                         }
 
                         await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, fingerprint)
@@ -402,7 +416,7 @@ app.post('/api/settings', async (req, res) => {
             }
 
             // Only update keywords if they are explicitly provided in the request
-            const updateList = async (type, items) => {
+            const updateList = async (type: string, items: string[]) => {
                 if (!req.body.hasOwnProperty(type + 's')) return;
                 const cleanItems = (items || []).map(i => i.trim()).filter(Boolean);
 
@@ -424,7 +438,7 @@ app.post('/api/settings', async (req, res) => {
             await updateList('niche', niches);
 
             if (req.body.hasOwnProperty('donors')) {
-                const cleanDonors = (donors || []).map(d => d.trim()).filter(Boolean);
+                const cleanDonors = (donors || []).map((d: string) => d.trim()).filter(Boolean);
 
                 // Safeguard: if incoming is empty but DB has many, block it unless forceEmpty
                 const existingDonors = await StateManager.loadDonors();
@@ -450,7 +464,7 @@ app.post('/api/settings', async (req, res) => {
         }
 
         res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
         console.error('Ошибка сохранения настроек:', e);
         res.status(500).json({ success: false });
     }
@@ -467,8 +481,8 @@ app.put('/api/accounts/:id', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Account not found' });
         }
 
-        const updates = [];
-        const values = [];
+        const updates: string[] = [];
+        const values: any[] = [];
         if (name !== undefined) { updates.push('name = ?'); values.push(name); }
         if (proxy !== undefined) { updates.push('proxy = ?'); values.push(proxy); }
         if (cookies !== undefined) { updates.push('cookies = ?'); values.push(cookies); }
@@ -485,7 +499,7 @@ app.put('/api/accounts/:id', async (req, res) => {
         await db.run(`UPDATE accounts SET ${updates.join(', ')} WHERE id = ?`, values);
 
         res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
         console.error('Ошибка обновления аккаунта:', e);
         res.status(500).json({ success: false });
     }
@@ -493,7 +507,7 @@ app.put('/api/accounts/:id', async (req, res) => {
 
 // --- Proxy image endpoint: fetches images through configured account proxy ---
 app.get('/api/proxy-image', async (req, res) => {
-    const imageUrl = req.query.url;
+    const imageUrl = req.query.url as string;
     if (!imageUrl) return res.status(400).send('Missing url parameter');
 
     try {
@@ -501,7 +515,7 @@ app.get('/api/proxy-image', async (req, res) => {
         const parsedUrl = new URL(imageUrl);
         const transport = parsedUrl.protocol === 'https:' ? https : http;
 
-        const fetchOptions = {
+        const fetchOptions: any = {
             hostname: parsedUrl.hostname,
             path: parsedUrl.pathname + parsedUrl.search,
             headers: {
@@ -562,7 +576,7 @@ app.get('/api/proxy-image', async (req, res) => {
             directReq.end();
         }
 
-        function handleImageResponse(imgRes) {
+        function handleImageResponse(imgRes: any) {
             // Follow redirects (Instagram CDN does 301/302)
             if ([301, 302, 307, 308].includes(imgRes.statusCode) && imgRes.headers.location) {
                 // Redirect — fetch again without proxy (CDN URLs are public)
@@ -581,7 +595,7 @@ app.get('/api/proxy-image', async (req, res) => {
             res.setHeader('Cache-Control', 'public, max-age=86400');
             imgRes.pipe(res);
         }
-    } catch (e) {
+    } catch (e: any) {
         res.status(500).send('Proxy image error');
     }
 });
@@ -590,14 +604,14 @@ app.get('/api/logs', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+    // res.flushHeaders(); // Not available in some Express versions without compression middleware
 
     // Send historical logs first
     historicalLogs.forEach(log => {
         res.write(`data: ${JSON.stringify(log)}\n\n`);
     });
 
-    const onLog = (log) => {
+    const onLog = (log: LogEntry) => {
         res.write(`data: ${JSON.stringify(log)}\n\n`);
     };
 
@@ -623,7 +637,7 @@ app.get('/api/bot/status', (req, res) => {
 });
 
 app.post('/api/bot/start', (req, res) => {
-    const { type } = req.body;
+    const { type } = req.body as { type: string };
     if (!['index', 'parser'].includes(type)) {
         return res.status(400).json({ success: false, error: 'Invalid bot type' });
     }
@@ -633,25 +647,24 @@ app.post('/api/bot/start', (req, res) => {
     }
 
     refreshSession();
-    const scriptPath = path.join(__dirname, `${type}.js`);
+    const scriptPath = path.join(__dirname, `${type}.ts`);
 
-    // Используем process.execPath вместо 'node' для надежности на Windows
-    // и устанавливаем shell: true если необходимо (хотя для прямой ноды не обязательно)
-    const child = spawn(process.execPath, [scriptPath], {
+    const child = spawn('npx', ['ts-node', scriptPath], {
         cwd: __dirname,
-        env: { ...process.env, FORCE_COLOR: '1' }
+        env: { ...process.env, FORCE_COLOR: '1' },
+        shell: true
     });
 
     botProcesses[type] = child;
 
-    // Обработка ошибки запуска самого процесса (например, если файл не найден или нет прав)
+    // Обработка ошибки запуска самого процесса
     child.on('error', (err) => {
         broadcastLog(`${type}-error`, `Failed to start process: ${err.message}`);
         botProcesses[type] = null;
     });
 
-    child.stdout.on('data', (data) => broadcastLog(type, data));
-    child.stderr.on('data', (data) => broadcastLog(`${type}-error`, data));
+    child.stdout?.on('data', (data) => broadcastLog(type, data));
+    child.stderr?.on('data', (data) => broadcastLog(`${type}-error`, data));
 
     child.on('close', (code) => {
         broadcastLog('system', `${type} bot exited with code ${code}`);
@@ -662,9 +675,9 @@ app.post('/api/bot/start', (req, res) => {
 });
 
 app.post('/api/bot/stop', (req, res) => {
-    const { type } = req.body;
+    const { type } = req.body as { type: string };
     if (botProcesses[type]) {
-        botProcesses[type].kill();
+        botProcesses[type]!.kill();
         res.json({ success: true });
     } else {
         res.json({ success: false, error: 'Bot not running' });
@@ -676,7 +689,7 @@ app.post('/api/bot/skip-donor', (req, res) => {
         console.log('📢 [API] Получен запрос на пропуск текущего донора...');
         fs.writeFileSync(path.join(__dirname, 'skip_donor.flag'), 'skip');
         res.json({ success: true, message: 'Сигнал пропуска донора отправлен' });
-    } catch (e) {
+    } catch (e: any) {
         console.error('❌ [API] Ошибка при создании skip_donor.flag:', e);
         res.json({ success: false, error: 'Ошибка при отправке сигнала' });
     }
@@ -686,13 +699,15 @@ app.post('/api/dm', async (req, res) => {
     const { url, message } = req.body;
     console.log({ url, message })
 
-    let currentContext = null;
+    let currentContext: any = null;
     try {
         const accountsData = await getAllAccounts('server');
         const firstAccount = accountsData[0] || {};
-        reqConfig.proxy = firstAccount.proxy;
-        reqConfig.cookies = firstAccount.cookies;
-        reqConfig.fingerprint = firstAccount.fingerprint;
+        const reqConfig: any = {
+            proxy: firstAccount.proxy,
+            cookies: firstAccount.cookies,
+            fingerprint: firstAccount.fingerprint
+        };
 
         const showBrowser = await getSetting('showBrowser');
 
@@ -712,29 +727,28 @@ app.post('/api/dm', async (req, res) => {
             res.json({ success: false, message: 'Не отправлено' });
         }
 
-    } catch (e) {
+    } catch (e: any) {
         console.error('Ошибка запуска:', e);
         res.status(500).json({ success: false });
     } finally {
         if (currentContext) await currentContext.close();
-        // Do NOT close browser, so we reuse the global instance
     }
 });
-
-// Stat endpoint removed
 
 app.listen(PORT, () => {
     console.log(`Сервер запущен: http://localhost:${PORT}`);
 });
 
 // SPA catch-all (must be after all API routes)
-if (fs.existsSync(publicDir)) {
-    app.get('{*path}', (req, res) => {
+app.use((req, res) => {
+    if (fs.existsSync(publicDir)) {
         res.sendFile(path.join(publicDir, 'index.html'));
-    });
-}
+    } else {
+        res.status(404).send('Not Found');
+    }
+});
 
-const getSelectorString = (key) => {
+const getSelectorString = (key: keyof typeof CONFIG.selectors) => {
     const val = CONFIG.selectors[key];
     return Array.isArray(val) ? val.join(',') : val;
 }
@@ -743,7 +757,7 @@ const getSelectorString = (key) => {
 // MAIN LOGIC
 // ==========================================
 
-const sendMessageToProfile = async (context, url, message) => {
+const sendMessageToProfile = async (context: any, url: string, message: string) => {
     const page = await context.newPage();
     console.log(`\n📨 [SENDER] Начало обработки: ${url}`);
 
@@ -752,7 +766,7 @@ const sendMessageToProfile = async (context, url, message) => {
         await takeLiveScreenshot(page);
         await wait(2000);
 
-        let accessButton = null;
+        let accessButton: any = null;
         const directBtnSelector = getSelectorString('directMessageBtn');
         const directBtn = page.locator(directBtnSelector).first();
 
@@ -762,7 +776,7 @@ const sendMessageToProfile = async (context, url, message) => {
                 console.log('✅ Кнопка "Написать" (или аналог) найдена в профиле.');
                 accessButton = directBtn;
             }
-        } catch (e) { }
+        } catch (e: any) { }
 
         if (!accessButton) {
             console.log('⚠️ Прямая кнопка не найдена. Проверяем "3 точки"...');
@@ -776,7 +790,7 @@ const sendMessageToProfile = async (context, url, message) => {
                     await menuMsgBtn.waitFor({ state: 'visible', timeout: 3000 });
                     console.log('✅ Кнопка "Написать" найдена в меню.');
                     accessButton = menuMsgBtn;
-                } catch (e) {
+                } catch (e: any) {
                     console.log('❌ В меню нет пункта отправки сообщения.');
                 }
             }
@@ -796,7 +810,7 @@ const sendMessageToProfile = async (context, url, message) => {
                 page.waitForSelector(CONFIG.selectors.chatInput, { state: 'visible', timeout: 15000 }),
                 page.waitForSelector(getSelectorString('notNowBtn'), { state: 'visible', timeout: 15000 })
             ]);
-        } catch (e) {
+        } catch (e: any) {
             console.log('❌ Тайм-аут: чат не открылся.');
             return false;
         }
@@ -849,7 +863,7 @@ const sendMessageToProfile = async (context, url, message) => {
         await wait(3000);
         return true;
 
-    } catch (error) {
+    } catch (error: any) {
         console.error(`💥 Ошибка: ${error.message}`);
         await saveCrashReport(page, error, 'sender');
         return false;
