@@ -4,12 +4,17 @@ import ProfilesTab from './components/ProfilesTab.jsx'
 import ControlsTab from './components/ControlsTab.jsx'
 import SettingsTab from './components/SettingsTab.jsx'
 
-const LANG = localStorage.getItem('ig_lang') || 'ru'
-const tr = (key) => t(LANG, key)
-
 const LOG_BUFFER = 200
 
 export default function App() {
+    const [lang, setLang] = useState(() => localStorage.getItem('ig_lang') || 'ru')
+    const tr = (key) => t(lang, key)
+
+    const toggleLang = () => {
+        const next = lang === 'ru' ? 'en' : 'ru'
+        setLang(next)
+        localStorage.setItem('ig_lang', next)
+    }
     const [girls, setGirls] = useState([])
     const [votes, setVotes] = useState({})
     const [viewed, setViewed] = useState(() => JSON.parse(localStorage.getItem('ig_viewed_profiles') || '[]'))
@@ -157,6 +162,10 @@ export default function App() {
         })
     }, [sentDM])
 
+    const handleTgCheck = useCallback((url, status) => {
+        setGirls(prev => prev.map(p => p.url === url ? { ...p, tg_status: status } : p))
+    }, [])
+
     const handleImageError = useCallback((url) => {
         setFailedImages(prev => new Set([...prev, url]))
     }, [])
@@ -247,6 +256,18 @@ export default function App() {
                             {saveStatus === 'saving' ? 'Сохранение...' : saveStatus === 'saved' ? '✓ Сохранено' : 'Ошибка сохранения'}
                         </div>
                     )}
+                    <button
+                        className="btn-primary"
+                        style={{
+                            background: 'transparent',
+                            fontSize: '12px',
+                            padding: '4px 8px',
+                            minWidth: '40px'
+                        }}
+                        onClick={toggleLang}
+                    >
+                        {lang.toUpperCase()}
+                    </button>
                     <button className="btn-primary" onClick={() => setModalOpen(true)}>
                         {tr('templates')}
                     </button>
@@ -293,6 +314,7 @@ export default function App() {
                     onRefresh={fetchData}
                     useProxyImages={(settingsData.activeProfilesAccountIds || []).length > 0}
                     tr={tr}
+                    onTgCheck={handleTgCheck}
                 />
             )}
 

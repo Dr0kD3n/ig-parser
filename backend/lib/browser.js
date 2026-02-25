@@ -1,45 +1,67 @@
-const { chromium } = require('playwright-extra');
+const { firefox } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 
 // Disable user-agent evasion so our custom fingerprints take effect
 stealth.enabledEvasions.delete('user-agent-override');
 
-chromium.use(stealth);
+firefox.use(stealth);
 
 let globalBrowser = null;
 
-async function getBrowser(headless) {
+async function getBrowser(headless, extraPrefs = {}) {
     if (!globalBrowser || !globalBrowser.isConnected()) {
-        globalBrowser = await chromium.launch({
+        const firefoxUserPrefs = {
+            'network.proxy.type': 0,
+            'network.cookie.cookieBehavior': 0,
+            'dom.webdriver.enabled': false,
+            'usePrivacyResistFingerprinting': false,
+            ...extraPrefs
+        };
+        globalBrowser = await firefox.launch({
             headless: headless,
-            args: [
-                '--disable-blink-features=AutomationControlled',
-                '--disable-features=IsolateOrigins,site-per-process',
-                '--disable-web-security',
-                '--disable-gpu',
-                '--disable-dev-shm-usage',
-                '--no-sandbox',
-                '--disable-extensions',
-                '--disable-background-networking',
-                '--disable-default-apps',
-                '--disable-sync',
-                '--metrics-recording-only',
-                '--no-first-run'
-            ]
+            firefoxUserPrefs
         });
     }
     return globalBrowser;
 }
 
+const REGIONAL_PROFILES = [
+    { locale: 'en-US', timezoneId: 'America/New_York', acceptLang: 'en-US,en;q=0.9' },
+    { locale: 'en-GB', timezoneId: 'Europe/London', acceptLang: 'en-GB,en;q=0.9' },
+    { locale: 'ru-RU', timezoneId: 'Europe/Moscow', acceptLang: 'ru-RU,ru;q=0.9' },
+    { locale: 'it-IT', timezoneId: 'Europe/Rome', acceptLang: 'it-IT,it;q=0.9,en;q=0.8' },
+    { locale: 'fr-FR', timezoneId: 'Europe/Paris', acceptLang: 'fr-FR,fr;q=0.9,en;q=0.8' },
+    { locale: 'de-DE', timezoneId: 'Europe/Berlin', acceptLang: 'de-DE,de;q=0.9,en;q=0.8' }
+];
+
+function getRegionalProfile(locale) {
+    if (locale) {
+        const profile = REGIONAL_PROFILES.find(p => p.locale === locale);
+        if (profile) return profile;
+    }
+    return REGIONAL_PROFILES[Math.floor(Math.random() * REGIONAL_PROFILES.length)];
+}
+
 async function createBrowserContext(config, headless = true) {
-    const browser = await getBrowser(headless);
+    // Determine the target locale first
+    const targetLocale = (config.fingerprint && config.fingerprint.locale) || config.locale;
+    const reg = getRegionalProfile(targetLocale);
+
+    const browser = await getBrowser(headless, {
+        'intl.accept_languages': reg.acceptLang
+    });
 
     const contextOptions = {
-        viewport: (config.fingerprint && config.fingerprint.viewport) || config.viewport || { width: 1280, height: 900 },
+        viewport: (config.fingerprint && config.fingerprint.viewport) || config.viewport || { width: 1280, height: 720 },
         userAgent: (config.fingerprint && config.fingerprint.userAgent) || config.userAgent,
-        timezoneId: (config.fingerprint && config.fingerprint.timezoneId),
-        locale: (config.fingerprint && config.fingerprint.locale),
+        timezoneId: (config.fingerprint && config.fingerprint.timezoneId) || config.timezoneId || reg.timezoneId,
+        locale: targetLocale || reg.locale,
+        colorScheme: config.colorScheme || 'dark',
         deviceScaleFactor: (config.fingerprint && config.fingerprint.deviceScaleFactor),
+        extraHTTPHeaders: {
+            'Accept-Language': reg.acceptLang,
+            'Content-Language': targetLocale || reg.locale
+        },
     };
     if (config.proxy) {
         contextOptions.proxy = {

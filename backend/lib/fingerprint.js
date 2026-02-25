@@ -7,7 +7,7 @@ const UAs = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:122.0) Gecko/20100101 Firefox/122.0'
 ];
 
-const locales = ['en-US', 'en-GB', 'ru-RU', 'de-DE', 'fr-FR', 'es-ES'];
+const locales = ['en-US', 'en-GB', 'ru-RU', 'de-DE', 'fr-FR'];
 const timezones = ['America/New_York', 'Europe/London', 'Europe/Moscow', 'Europe/Berlin', 'Europe/Paris', 'Asia/Dubai'];
 
 function generateFingerprint() {

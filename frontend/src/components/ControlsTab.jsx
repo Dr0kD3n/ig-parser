@@ -12,7 +12,7 @@ const LogGroup = memo(function LogGroup({ group }) {
                 <div className="group-info">
                     <span className={`log-source source-${group.source.split('-')[0]}`}>{source}</span>
                     <span className="log-time">{time}</span>
-                    <span className="group-label">BATCH • {group.logs.length} entries</span>
+                    <span className="group-label">{tr('batch_entries').replace('{count}', group.logs.length)}</span>
                 </div>
                 <div className="group-toggle">{collapsed ? '+' : '−'}</div>
             </div>
@@ -150,7 +150,7 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
             <div className={`control-card logs-card${logsCollapsed ? ' collapsed' : ''}`}>
                 <div className="logs-header" style={{ marginBottom: logsCollapsed ? 0 : 12 }}>
                     <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={toggleLogs}>
-                        <FileIcon /> {tr('tab_logs') || 'Логи (SSE)'}
+                        <FileIcon /> {tr('tab_logs')}
                     </h3>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <button
@@ -194,7 +194,7 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
             {/* Stream card */}
             <div className={`stream-card${streamCollapsed ? ' collapsed' : ''}`}>
                 <div className="logs-header" style={{ marginBottom: streamCollapsed ? 0 : 0, cursor: 'pointer' }} onClick={toggleStream}>
-                    <h3 style={{ margin: 0 }}>{tr('live_view') || 'Стрим'}</h3>
+                    <h3 style={{ margin: 0 }}>{tr('live_view')}</h3>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div className={`status-dot${botStatus.index || botStatus.parser ? ' active' : ''}`} />
                         <span style={{ color: 'hsl(var(--text-muted))', fontSize: '14px' }}>{streamCollapsed ? '▼' : '▲'}</span>
@@ -210,7 +210,7 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
                             onLoad={(e) => { e.target.style.display = 'block'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'none'; }}
                         />
                         <div style={{ color: 'hsl(var(--text-dim))', fontFamily: 'monospace', fontSize: '12px', padding: 20, textAlign: 'center' }}>
-                            {(botStatus.index || botStatus.parser) ? 'Ожидание трансляции...' : 'Браузер не запущен'}
+                            {(botStatus.index || botStatus.parser) ? tr('waiting_stream') : tr('browser_not_started')}
                         </div>
                     </div>
                 )}

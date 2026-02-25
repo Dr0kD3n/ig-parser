@@ -15,7 +15,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
         const cookiesEl = document.getElementById('new-acc-cookies')
         const name = nameEl.value.trim()
         const cookies = cookiesEl.value.trim()
-        if (!name || !cookies) { alert('Имя и Куки обязательны'); return }
+        if (!name || !cookies) { alert(tr('error_name_cookies_required')); return }
         setAccounts([...settingsData.accounts, { id: Date.now().toString(), name, proxy: proxyEl.value.trim(), cookies }])
         nameEl.value = ''; proxyEl.value = ''; cookiesEl.value = ''
     }
@@ -90,7 +90,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
             <div className="task-setup-section" style={{ marginBottom: '24px', padding: '20px', background: 'hsl(var(--bg-card))', borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))' }}>
                 <h4 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 700, color: 'hsl(var(--primary))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</h4>
                 <div className="active-accounts-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {activeAccounts.length === 0 && <div style={{ color: 'hsl(var(--text-dim))', fontSize: '13px', textAlign: 'center', padding: '12px', border: '1px dashed hsl(var(--border))', borderRadius: '10px' }}>Нет выбранных профилей</div>}
+                    {activeAccounts.length === 0 && <div style={{ color: 'hsl(var(--text-dim))', fontSize: '13px', textAlign: 'center', padding: '12px', border: '1px dashed hsl(var(--border))', borderRadius: '10px' }}>{tr('no_accounts_selected')}</div>}
                     {activeAccounts.map((acc, idx) => (
                         <div
                             key={acc.id}
@@ -138,7 +138,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
                             className={`tab-btn${settingsTab === tab ? ' active' : ''}`}
                             onClick={() => setSettingsTab(tab)}
                         >
-                            {tab === 'donors' ? tr('tab_donors') : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                            {tr(`tab_${tab}`)}
                         </button>
                     ))}
                 </div>
@@ -150,10 +150,10 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
                             style={{ width: '16px', height: '16px', accentColor: 'hsl(var(--primary))' }}
                             onChange={e => onSettingsChange({ ...settingsData, showBrowser: e.target.checked })}
                         />
-                        Показывать браузер
+                        {tr('show_browser')}
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'hsl(var(--text-muted))' }}>
-                        Профилей:
+                        {tr('concurrent_profiles')}
                         <input
                             type="number"
                             min="1"
@@ -179,15 +179,15 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '32px', padding: '0 32px' }}>
                     <div className="tasks-columns">
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                            {renderTaskSection('activeParserAccountIds', 'Parser')}
-                            {renderTaskSection('activeIndexAccountIds', 'Scraper')}
+                            {renderTaskSection('activeParserAccountIds', tr('task_parser'))}
+                            {renderTaskSection('activeIndexAccountIds', tr('task_scraper'))}
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                            {renderTaskSection('activeServerAccountIds', 'Sender')}
-                            {renderTaskSection('activeProfilesAccountIds', 'Profiles')}
+                            {renderTaskSection('activeServerAccountIds', tr('task_sender'))}
+                            {renderTaskSection('activeProfilesAccountIds', tr('task_profiles'))}
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '24px' }}>
-                            {renderTaskSection('activeCheckerAccountIds', 'Checker')}
+                            {renderTaskSection('activeCheckerAccountIds', tr('task_checker'))}
                         </div>
 
                         <div className="add-account-form" style={{ marginTop: '32px', padding: '24px', background: 'hsl(var(--bg-card))', borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))' }}>
@@ -204,7 +204,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
                     </div>
 
                     <div className="all-accounts-column">
-                        <h4 style={{ marginBottom: '20px', fontSize: '18px' }}>Все аккаунты</h4>
+                        <h4 style={{ marginBottom: '20px', fontSize: '18px' }}>{tr('all_accounts')}</h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {settingsData.accounts.map(acc => (
                                 <div key={acc.id} className="account-card">
@@ -213,7 +213,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
                                             <input
                                                 type="text"
                                                 className="search-input"
-                                                placeholder="Имя"
+                                                placeholder={tr('edit_name')}
                                                 value={editForm.name}
                                                 onChange={e => setEditForm({ ...editForm, name: e.target.value })}
                                                 style={{ fontSize: '14px' }}
@@ -221,14 +221,14 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
                                             <input
                                                 type="text"
                                                 className="search-input"
-                                                placeholder="Прокси (host:port:user:pass)"
+                                                placeholder={tr('edit_proxy')}
                                                 value={editForm.proxy}
                                                 onChange={e => setEditForm({ ...editForm, proxy: e.target.value })}
                                                 style={{ fontSize: '13px', fontFamily: 'monospace' }}
                                             />
                                             <textarea
                                                 className="msg-textarea"
-                                                placeholder="Куки"
+                                                placeholder={tr('edit_cookies')}
                                                 value={editForm.cookies}
                                                 onChange={e => setEditForm({ ...editForm, cookies: e.target.value })}
                                                 style={{ height: '80px', fontSize: '12px', fontFamily: 'monospace' }}
@@ -239,14 +239,14 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
                                                     style={{ flex: 1, fontSize: '12px', padding: '6px 12px', background: 'hsl(var(--success))' }}
                                                     onClick={() => handleSaveEdit(acc.id)}
                                                 >
-                                                    Сохранить
+                                                    {tr('save_changes')}
                                                 </button>
                                                 <button
                                                     className="btn-primary"
                                                     style={{ flex: 1, fontSize: '12px', padding: '6px 12px', background: 'transparent', border: '1px solid hsl(var(--border))', color: 'hsl(var(--text-muted))' }}
                                                     onClick={() => setEditingAccount(null)}
                                                 >
-                                                    Отмена
+                                                    {tr('cancel')}
                                                 </button>
                                             </div>
                                         </div>
@@ -257,7 +257,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
                                                 <button
                                                     className="actionBtn editBtn"
                                                     onClick={() => handleStartEdit(acc)}
-                                                    title="Редактировать"
+                                                    title={tr('edit_title')}
                                                 >
                                                     <EditIcon />
                                                 </button>
@@ -267,11 +267,11 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
                                             </div>
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                                 {[
-                                                    { field: 'activeParserAccountIds', label: 'Parser' },
-                                                    { field: 'activeIndexAccountIds', label: 'Scraper' },
-                                                    { field: 'activeServerAccountIds', label: 'Sender' },
-                                                    { field: 'activeProfilesAccountIds', label: 'Profiles' },
-                                                    { field: 'activeCheckerAccountIds', label: 'Checker' }
+                                                    { field: 'activeParserAccountIds', label: tr('task_parser') },
+                                                    { field: 'activeIndexAccountIds', label: tr('task_scraper') },
+                                                    { field: 'activeServerAccountIds', label: tr('task_sender') },
+                                                    { field: 'activeProfilesAccountIds', label: tr('task_profiles') },
+                                                    { field: 'activeCheckerAccountIds', label: tr('task_checker') }
                                                 ].map(t => {
                                                     const isActive = (settingsData[t.field] || []).includes(acc.id)
                                                     return (
@@ -295,7 +295,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr }) {
                                                 <button
                                                     className="actionBtn deleteBtn"
                                                     onClick={() => handleDelete(acc.id)}
-                                                    title="Удалить"
+                                                    title={tr('delete_title')}
                                                 >
                                                     <TrashIcon />
                                                 </button>

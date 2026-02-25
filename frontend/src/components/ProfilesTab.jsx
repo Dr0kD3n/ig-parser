@@ -1,5 +1,5 @@
 import { useState, useCallback, memo } from 'react'
-import { HeartIcon, XIcon, InstagramIcon, TelegramIcon, SendIcon } from './Icons.jsx'
+import { HeartIcon, XIcon, InstagramIcon, TelegramIcon, SendIcon, HelpIcon } from './Icons.jsx'
 
 function parseSmartBio(text, username) {
     if (!text) return { bio: ' ', stats: [] }
@@ -38,16 +38,49 @@ function parseSmartBio(text, username) {
     return { bio: bio || ' ', stats }
 }
 
-const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, onOpen, onSendDM, onImageError, useProxyImages, tr }) {
+const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, onOpen, onSendDM, onImageError, useProxyImages, tr, onTgCheck }) {
     const { bio, stats } = parseSmartBio(g.bio, g.name)
     const isLiked = votes[g.url] === 'like'
     const isDisliked = votes[g.url] === 'dislike'
+    const [checkingTg, setCheckingTg] = useState(false)
 
     const photoSrc = g.photo
         ? (useProxyImages
             ? `/api/proxy-image?url=${encodeURIComponent(g.photo)}`
             : `https://images.weserv.nl/?url=${encodeURIComponent(g.photo)}`)
         : null
+
+    const handleTgClick = async (e) => {
+        e.stopPropagation();
+        const tgUrl = `https://t.me/${g.name}`;
+
+        // If already verified, just open
+        if (g.tg_status === 'valid') {
+            window.open(tgUrl, '_blank');
+            return;
+        }
+
+        // Open popup first
+        const popup = window.open(tgUrl, '_blank', 'width=600,height=800');
+
+        setCheckingTg(true);
+        try {
+            const resp = await fetch(`/api/check-telegram?url=${encodeURIComponent(g.name)}`);
+            const data = await resp.json();
+
+            if (data.success) {
+                if (data.status === 'invalid') {
+                    if (popup) popup.close();
+                }
+                if (onTgCheck) onTgCheck(g.url, data.status);
+            }
+        } catch (err) {
+            console.error('TG check failed', err);
+        } finally {
+            setCheckingTg(false);
+        }
+    };
+
 
     return (
         <div className={`card ${isLiked ? 'status-like' : isDisliked ? 'status-dislike' : ''}`}>
@@ -79,9 +112,21 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
                     {g.dmSent && <div className="badge dmTag">{tr('badge_dm_sent')}</div>}
                 </div>
                 <div className="linksStack">
-                    <div className="socialBtn" title="Telegram" onClick={() => window.open(`https://t.me/${g.name}`, '_blank')}>
-                        <TelegramIcon />
-                    </div>
+                    {g.tg_status !== 'invalid' && (
+                        <div
+                            className={`socialBtn ${g.tg_status === 'valid' ? 'tg-valid' : ''} ${checkingTg ? 'loading' : ''}`}
+                            title="Telegram"
+                            onClick={handleTgClick}
+                            style={{ position: 'relative' }}
+                        >
+                            <TelegramIcon />
+                            {!g.tg_status && !checkingTg && (
+                                <div className="status-badge-mini" style={{ position: 'absolute', top: -4, right: -4, background: 'orange', borderRadius: '50%', width: 12, height: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid white' }}>
+                                    <HelpIcon />
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div className="socialBtn" title="Instagram" onClick={() => onOpen(g)}>
                         <InstagramIcon />
                     </div>
@@ -122,13 +167,42 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
     )
 })
 
-export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onImageError, onRefresh, useProxyImages, tr, lang }) {
+export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onImageError, onRefresh, useProxyImages, tr, lang, onTgCheck }) {
     const [filterText, setFilterText] = useState('')
     const [filterStatus, setFilterStatus] = useState('all')
+    const [filterTgStatus, setFilterTgStatus] = useState('all')
     const [sortOption, setSortOption] = useState('newest')
     const [hideNoImage, setHideNoImage] = useState(false)
     const [currentPage, setCurrentPage] = useState(1)
+    const [checkingAllTg, setCheckingAllTg] = useState(false)
     const ITEMS_PER_PAGE = 24
+
+    const handleCheckAllTg = async () => {
+        const toCheck = girls.filter(g => !g.tg_status).map(g => g.name);
+        if (toCheck.length === 0) {
+            alert('Нет профилей без статуса для проверки');
+            return;
+        }
+
+        if (!confirm(`Проверить ${toCheck.length} профилей? Это может занять время.`)) return;
+
+        setCheckingAllTg(true);
+        try {
+            const resp = await fetch('/api/check-telegram-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: toCheck })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                if (onRefresh) await onRefresh();
+            }
+        } catch (err) {
+            console.error('Batch TG check failed', err);
+        } finally {
+            setCheckingAllTg(false);
+        }
+    };
 
     const filtered = girls.filter(g => {
         const matchesName = g.name.toLowerCase().includes(filterText.toLowerCase())
@@ -140,8 +214,13 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
         else if (filterStatus === 'dislike') matchesStatus = votes[g.url] === 'dislike'
         else if (filterStatus === 'no_status') matchesStatus = !votes[g.url]
         else if (filterStatus === 'dm_sent') matchesStatus = g.dmSent
+
+        let matchesTg = true
+        if (filterTgStatus === 'yes') matchesTg = g.tg_status === 'valid'
+        else if (filterTgStatus === 'none') matchesTg = !g.tg_status
+
         const imgOk = !hideNoImage || (g.photo && !failedImages.has(g.url))
-        return matchesName && matchesStatus && imgOk
+        return matchesName && matchesStatus && matchesTg && imgOk
     }).sort((a, b) => {
         if (sortOption === 'oldest') return new Date(a.timestamp) - new Date(b.timestamp)
         if (sortOption === 'match') {
@@ -179,6 +258,11 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
                     <option value="dm_sent">{tr('filter_dm_sent')}</option>
                     <option value="unopened">{tr('filter_unopened')}</option>
                 </select>
+                <select className="select-input" value={filterTgStatus} onChange={e => { setFilterTgStatus(e.target.value); setCurrentPage(1) }}>
+                    <option value="all">{tr('filter_tg_all')}</option>
+                    <option value="yes">{tr('filter_tg_yes')}</option>
+                    <option value="none">{tr('filter_tg_none')}</option>
+                </select>
                 <select className="select-input" value={sortOption} onChange={e => { setSortOption(e.target.value); setCurrentPage(1) }}>
                     <option value="newest">{tr('sort_newest')}</option>
                     <option value="oldest">{tr('sort_oldest')}</option>
@@ -188,6 +272,35 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
                     <input type="checkbox" checked={hideNoImage} onChange={e => { setHideNoImage(e.target.checked); setCurrentPage(1) }} style={{ width: '16px', height: '16px', accentColor: 'hsl(var(--primary))' }} />
                     {tr('hide_no_photo')}
                 </label>
+                <button
+                    className="select-input"
+                    style={{
+                        padding: '0 16px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        background: 'hsl(var(--primary))',
+                        color: 'white',
+                        border: 'none',
+                        height: '38px',
+                        borderRadius: '8px',
+                        opacity: checkingAllTg ? 0.7 : 1,
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px'
+                    }}
+                    onClick={handleCheckAllTg}
+                    disabled={checkingAllTg}
+                >
+                    {checkingAllTg ? (
+                        <span className="loading-spinner-mini" />
+                    ) : (
+                        <TelegramIcon style={{ width: 16, height: 16 }} />
+                    )}
+                    {checkingAllTg ? 'Checking...' : tr('btn_check_all_tg')}
+                </button>
                 <span style={{ fontSize: 13, color: 'hsl(var(--text-dim))', marginLeft: 'auto', fontWeight: 600 }}>
                     {filtered.length} профилей
                 </span>
@@ -206,6 +319,7 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
                         onImageError={onImageError}
                         useProxyImages={useProxyImages}
                         tr={tr}
+                        onTgCheck={onTgCheck}
                     />
                 ))}
                 {pageData.length === 0 && (

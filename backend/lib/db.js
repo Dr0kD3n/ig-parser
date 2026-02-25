@@ -54,6 +54,7 @@ async function getDB() {
             bio TEXT,
             photo TEXT,
             vote TEXT, -- 'like', 'dislike'
+            tg_status TEXT, -- 'valid', 'invalid', NULL
             timestamp TEXT
         );
 
@@ -62,6 +63,12 @@ async function getDB() {
             value TEXT
         );
     `);
+
+    try {
+        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN tg_status TEXT`);
+    } catch (e) {
+        // Ignore if column already exists
+    }
 
     try {
         await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN fingerprint TEXT`);

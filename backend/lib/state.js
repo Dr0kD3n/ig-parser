@@ -16,8 +16,9 @@ const StateManager = {
         this.processed = new Set(historyRows.map(r => r.url));
         console.log(`🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: ${this.processed.size}`);
 
-        // Для совместимости state.js -> hasDonor, используем тот же Set или отдельный.
-        this.processedDonors = this.processed;
+        // processDonors tracks which donors have been fully scanned during the current session
+        // or loaded from history (type='history').
+        this.processedDonors = new Set(historyRows.map(r => r.url));
 
         const profiles = await db.all(`SELECT * FROM profiles`);
         this.resultsCache = profiles;
@@ -80,7 +81,7 @@ const StateManager = {
         const normUrl = normalizeUrl(url);
         const db = await getDB();
         try {
-            await db.run(`INSERT INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
+            await db.run(`INSERT OR REPLACE INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
             console.log(`✅ Сохранен новый донор: ${normUrl}`);
         } catch (e) {
             // Ignore if already exists in donor table
@@ -93,7 +94,7 @@ const StateManager = {
             await db.run(`DELETE FROM urls WHERE type = 'donor'`);
             for (const url of urls) {
                 const normUrl = normalizeUrl(url);
-                await db.run(`INSERT INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
+                await db.run(`INSERT OR REPLACE INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
             }
         } catch (e) {
             console.error('Ошибка при сохранении списка доноров:', e);

@@ -369,6 +369,36 @@ body::before {
   transform: scale(1.1);
 }
 
+.socialBtn.tg-valid {
+  background: hsl(var(--success));
+  color: #fff;
+  border-color: hsla(var(--success), 0.5);
+  box-shadow: 0 0 12px hsla(var(--success), 0.3);
+}
+
+.socialBtn.loading {
+  animation: bgPulse 1.5s infinite;
+  pointer-events: none;
+}
+
+@keyframes bgPulse {
+  0% {
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  50% {
+    background: hsl(var(--primary) / 0.5);
+  }
+
+  100% {
+    background: rgba(0, 0, 0, 0.4);
+  }
+}
+
+.status-badge-mini svg {
+  color: white;
+}
+
 .cardBody {
   padding: 20px;
   flex-grow: 1;
@@ -662,6 +692,26 @@ body::before {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.loading-spinner-mini {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spinnerMini 0.6s linear infinite;
+}
+
+@keyframes spinnerMini {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.select-input:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
 }
 
 /* Settings Specifics */

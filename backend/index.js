@@ -25,7 +25,7 @@ const getDynamicConfig = async () => {
 
     return {
         viewport: { width, height },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
         timeouts: { pageLoad: 25000, element: 15000, inputWait: 15000 },
         scroll: { maxAttempts: 15, maxRetries: 3 },
         target: {
@@ -289,10 +289,49 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         logger.info(`   ✅ Страница донора загружена. Ищем кнопку подписчиков...`);
 
         const followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK);
-        await followersBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
+        await followersBtn.waitFor({ state: 'visible', timeout: 10000 }).catch(() => null);
 
         if (!await followersBtn.isVisible()) {
             logger.warn(`   ⚠️ Кнопка подписчиков не найдена (возможно, аккаунт пуст или скрыт).`);
+            return;
+        }
+
+        // 4. Проверка количества подписчиков
+        const { parsedCount, rawValue } = await page.evaluate(() => {
+            const link = document.querySelector('a[href$="/followers/"]');
+            if (!link) return { parsedCount: 0, rawValue: 'NOT_FOUND' };
+            const span = link.querySelector('span[title]');
+            const rawValue = span ? span.getAttribute('title') : link.innerText;
+
+            const parseFollowers = (str) => {
+                // 1. Normalize: handle localized comma as decimal if it seems like a ratio (e.g. 10,3M)
+                // but since we force en-GB, we primarily treat dot as decimal and remove commas as thousands.
+                let clean = str.replace(/,/g, '').replace(/\s+/g, '');
+
+                // 2. Extract number and suffix
+                const match = clean.match(/([\d.]+)\s*([^\d\s]*)/);
+                if (!match) return 0;
+
+                const numPart = match[1];
+                const suffix = (match[2] || '').toLowerCase();
+
+                let multiplier = 1;
+                // Expanded suffix check for different languages just in case
+                if (suffix.startsWith('k') || suffix.startsWith('к') || suffix.includes('mil')) {
+                    multiplier = 1000;
+                } else if (suffix.startsWith('m') || suffix.startsWith('м') || suffix.includes('млн') || suffix.includes('mio')) {
+                    multiplier = 1000000;
+                }
+
+                const val = parseFloat(numPart);
+                return isNaN(val) ? 0 : Math.floor(val * multiplier);
+            };
+
+            return { parsedCount: parseFollowers(rawValue), rawValue };
+        }).catch(() => ({ parsedCount: 0, rawValue: 'ERROR' }));
+
+        if (parsedCount < 1000) {
+            logger.info(`   ⏭️ Пропуск и удаление: ${donorUrl} — слишком мало подписчиков. (Текст: "${rawValue}", Парсинг: ${parsedCount} < 1000)`);
             return;
         }
 

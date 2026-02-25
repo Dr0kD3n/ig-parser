@@ -101,7 +101,7 @@ const CONFIG = {
         typingDelayMin: 50,
         typingDelayMax: 180,
     },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
     selectors: {
         directMessageBtn: [
             // RU
@@ -234,6 +234,104 @@ app.post('/api/vote', async (req, res) => {
         console.log(`[GOLOS ERROR] Ошибка при голосовании: ${e.message}`);
         res.status(500).json({ success: false, error: 'Ошибка сервера при сохранении' });
     }
+});
+
+async function checkTelegramProfile(url) {
+    const fetchUrl = url.startsWith('http') ? url : `https://t.me/${url}`;
+    return new Promise((resolve, reject) => {
+        const req = https.get(fetchUrl, {
+            headers: { 'User-Agent': CONFIG.userAgent }
+        }, (res) => {
+            // Follow redirects manually if needed for t.me
+            if ([301, 302].includes(res.statusCode) && res.headers.location) {
+                if (res.headers.location.includes('telegram.org') && !res.headers.location.includes('t.me')) {
+                    return resolve('invalid');
+                }
+                // Recurse for internal redirects if any
+                return checkTelegramProfile(res.headers.location).then(resolve).catch(reject);
+            }
+
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                // Check for profile markers
+                // Valid profiles on t.me MUST have a "tgme_page_title"
+                const hasTitle = data.includes('tgme_page_title');
+                const isMainSite = data.includes('telegram.org') && !data.includes('tgme_page');
+
+                if (isMainSite || !hasTitle) {
+                    resolve('invalid');
+                } else {
+                    resolve('valid');
+                }
+            });
+        });
+        req.on('error', reject);
+        req.setTimeout(10000, () => {
+            req.destroy();
+            reject(new Error('Timeout'));
+        });
+    });
+}
+
+app.get('/api/check-telegram', async (req, res) => {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ success: false, error: 'Missing url' });
+
+    console.log(`[TG CHECK] Checking: ${url}`);
+
+    try {
+        const status = await checkTelegramProfile(url);
+        console.log(`[TG CHECK] Result for ${url}: ${status}`);
+
+        // Update DB
+        const db = await getDB();
+        await db.run(`UPDATE profiles SET tg_status = ? WHERE url = ? OR name = ?`, [status, url, url.replace('https://t.me/', '')]);
+
+        invalidateGirlsCache();
+        res.json({ success: true, status });
+    } catch (e) {
+        console.error(`[TG CHECK ERROR] ${e.message}`);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/check-telegram-batch', async (req, res) => {
+    const { urls } = req.body;
+    if (!urls || !Array.isArray(urls)) return res.status(400).json({ success: false, error: 'Invalid urls' });
+
+    console.log(`[TG BATCH CHECK] Starting for ${urls.length} profiles`);
+
+    const results = [];
+    const BATCH_SIZE = 10;
+    const db = await getDB();
+
+    for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+        const batch = urls.slice(i, i + BATCH_SIZE);
+        console.log(`[TG BATCH CHECK] Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(urls.length / BATCH_SIZE)}`);
+
+        const batchPromises = batch.map(async (url) => {
+            try {
+                const status = await checkTelegramProfile(url);
+                await db.run(`UPDATE profiles SET tg_status = ? WHERE url = ? OR name = ?`, [status, url, url.replace('https://t.me/', '')]);
+                return { url, status, success: true };
+            } catch (e) {
+                console.error(`[TG BATCH CHECK ERROR] Failed ${url}: ${e.message}`);
+                return { url, success: false, error: e.message };
+            }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+
+        // Small delay between batches to avoid being too aggressive
+        if (i + BATCH_SIZE < urls.length) {
+            await wait(1000);
+        }
+    }
+
+    invalidateGirlsCache();
+    res.json({ success: true, results });
 });
 
 app.get('/api/settings', async (req, res) => {
