@@ -6,9 +6,18 @@ export default defineConfig({
     server: {
         port: 5173,
         // Proxy API requests to Express backend during dev
-        proxy: {
-            '/api': 'http://127.0.0.1:1337'
-        }
+        proxy: process.env.VITE_PROXY_BACKEND === 'true' ? {
+            '/api': {
+                target: 'http://127.0.0.1:1337',
+                changeOrigin: true,
+                configure: (proxy) => {
+                    proxy.on('error', (err) => {
+                        if (err.code === 'ECONNREFUSED') return;
+                        console.error('proxy error', err);
+                    });
+                }
+            }
+        } : {}
     },
     build: {
         outDir: '../backend/public',
