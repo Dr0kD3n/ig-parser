@@ -5,15 +5,15 @@ import { toast } from 'react-hot-toast';
 const SkeletonSettings = memo(function SkeletonSettings() {
     return (<div className="settings-wrap tab-content-fade">
         <div className="settings-header">
-            <div className="skeleton" style={{ width: 400, height: 40, borderRadius: 12 }} />
+            <div className="skeleton skeleton-header-box" />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '32px', padding: '0 32px' }}>
+        <div className="settings-main-grid">
             <div>
-                <div className="skeleton-item skeleton" style={{ height: 200 }} />
-                <div className="skeleton-item skeleton" style={{ height: 200 }} />
+                <div className="skeleton-item skeleton skeleton-item-200" />
+                <div className="skeleton-item skeleton skeleton-item-200" />
             </div>
             <div>
-                <div className="skeleton-item skeleton" style={{ height: 400 }} />
+                <div className="skeleton-item skeleton skeleton-item-400" />
             </div>
         </div>
     </div>);
@@ -24,6 +24,44 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
     const [draggedItem, setDraggedItem] = useState(null);
     const [editingAccount, setEditingAccount] = useState(null);
     const [editForm, setEditForm] = useState({ name: '', proxy: '', cookies: '', fingerprint: '' });
+    const [dolphinProfiles, setDolphinProfiles] = useState([]);
+    const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
+    const [warmupProgress, setWarmupProgress] = useState({}); // { accountId: { running, percent, site } }
+
+    React.useEffect(() => {
+        const interval = setInterval(async () => {
+            const runningIds = Object.keys(warmupProgress).filter(id => warmupProgress[id]?.running);
+            // Also check all accounts for "running" state initially or if we missed any
+            const accountsToCheck = settingsData.accounts.filter(a => warmupProgress[a.id]?.running || !warmupProgress[a.id]);
+
+            for (const acc of accountsToCheck) {
+                try {
+                    const res = await fetch(`/api/accounts/${acc.id}/warmup/status`);
+                    const data = await res.json();
+                    if (data.running) {
+                        setWarmupProgress(prev => ({
+                            ...prev,
+                            [acc.id]: {
+                                running: true,
+                                percent: Math.round((data.current / data.total) * 100),
+                                site: data.site
+                            }
+                        }));
+                    } else if (warmupProgress[acc.id]?.running) {
+                        // Just stopped
+                        setWarmupProgress(prev => ({
+                            ...prev,
+                            [acc.id]: { running: false }
+                        }));
+                        // Refresh settings to get final score
+                        const sRes = await fetch('/api/settings');
+                        onSettingsChange(await sRes.json());
+                    }
+                } catch (e) { }
+            }
+        }, 3000);
+        return () => clearInterval(interval);
+    }, [settingsData.accounts, warmupProgress]);
 
     const setAccounts = (accounts) => onSettingsChange({ ...settingsData, accounts });
 
@@ -199,6 +237,42 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
         }
     };
 
+    const handleWarmup = async (id) => {
+        try {
+            const res = await fetch(`/api/accounts/${id}/warmup`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                toast.success('Прогрев запущен в фоновом режиме');
+            } else {
+                toast.error(data.error || 'Ошибка запуска прогрева');
+            }
+        } catch (e) {
+            toast.error('Ошибка сервера');
+        }
+    };
+
+    const fetchDolphinProfiles = async () => {
+        setIsLoadingProfiles(true);
+        try {
+            const token = settingsData.dolphinToken || '';
+            const res = await fetch(`/api/dolphin/profiles?token=${encodeURIComponent(token)}`);
+            const data = await res.json();
+            if (data.success) {
+                setDolphinProfiles(data.data);
+                toast.success('Профили Dolphin обновлены');
+            }
+            else {
+                toast.error(data.error || 'Ошибка загрузки профилей');
+            }
+        }
+        catch (e) {
+            toast.error('Ошибка сервера при загрузке профилей');
+        }
+        finally {
+            setIsLoadingProfiles(false);
+        }
+    };
+
     const onDragStart = (e, index, field) => {
         setDraggedItem({ index, field });
         e.dataTransfer.effectAllowed = 'move';
@@ -220,24 +294,14 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
     const renderTaskSection = (field, label) => {
         const activeIds = settingsData[field] || [];
         const activeAccounts = activeIds.map(id => settingsData.accounts.find(a => a.id === id)).filter((a) => !!a);
-        return (<div className="task-setup-section" style={{ marginBottom: '24px', padding: '20px', background: 'hsl(var(--bg-card))', borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))' }}>
-            <h4 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 700, color: 'hsl(var(--primary))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</h4>
-            <div className="active-accounts-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {activeAccounts.length === 0 && <div style={{ color: 'hsl(var(--text-dim))', fontSize: '13px', textAlign: 'center', padding: '12px', border: '1px dashed hsl(var(--border))', borderRadius: '10px' }}>{tr('no_accounts_selected')}</div>}
-                {activeAccounts.map((acc, idx) => (<div key={acc.id} draggable onDragStart={(e) => onDragStart(e, idx, field)} onDragOver={(e) => onDragOver(e, idx, field)} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '10px 14px',
-                    background: 'hsl(var(--bg-elevated) / 0.5)',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: '10px',
-                    cursor: 'grab',
-                    userSelect: 'none',
-                    transition: 'all 0.2s'
-                }} onMouseEnter={(e) => e.currentTarget.style.borderColor = 'hsl(var(--primary))'} onMouseLeave={(e) => e.currentTarget.style.borderColor = 'hsl(var(--border))'}>
-                    <span style={{ marginRight: '12px', color: 'hsl(var(--text-dim))', fontSize: '14px' }}>☰</span>
-                    <span style={{ fontWeight: '600', fontSize: '14px' }}>{acc.name}</span>
-                    <button onClick={() => toggleAccountForTask(field, acc.id)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'hsl(var(--danger))', cursor: 'pointer', padding: '4px', opacity: 0.7, transition: 'opacity 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}>
+        return (<div className="task-setup-section">
+            <h4 className="task-section-title">{label}</h4>
+            <div className="active-accounts-list flex-col-gap-8">
+                {activeAccounts.length === 0 && <div className="no-accounts-placeholder">{tr('no_accounts_selected')}</div>}
+                {activeAccounts.map((acc, idx) => (<div key={acc.id} draggable onDragStart={(e) => onDragStart(e, idx, field)} onDragOver={(e) => onDragOver(e, idx, field)} className="account-drag-item">
+                    <span className="account-drag-handle">☰</span>
+                    <span className="account-name-badge">{acc.name}</span>
+                    <button onClick={() => toggleAccountForTask(field, acc.id)} className="account-remove-btn">
                         ✕
                     </button>
                 </div>))}
@@ -251,123 +315,188 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
     return (<div className="settings-wrap tab-content-fade">
         <div className="settings-header">
             <div className="settings-nested-tabs">
-                {['accounts', 'names', 'cities', 'niches', 'donors'].map(tab => (<button key={tab} className={`tab-btn${settingsTab === tab ? ' active' : ''}`} onClick={() => setSettingsTab(tab)}>
-                    {tr(`tab_${tab}`)}
+                {['accounts', 'names', 'cities', 'niches', 'donors', 'dolphin'].map(tab => (<button key={tab} className={`tab-btn${settingsTab === tab ? ' active' : ''}`} onClick={() => setSettingsTab(tab)}>
+                    {tr(`tab_${tab}`) || (tab === 'dolphin' ? 'Dolphin Anty' : tab)}
                 </button>))}
             </div>
         </div>
 
-        {settingsTab === 'accounts' && (<div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '32px', padding: '0 32px' }}>
+        {settingsTab === 'accounts' && (<div className="settings-main-grid">
             <div className="tasks-columns">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div className="two-column-grid">
                     {renderTaskSection('activeParserAccountIds', tr('task_parser'))}
                     {renderTaskSection('activeIndexAccountIds', tr('task_scraper'))}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div className="two-column-grid">
                     {renderTaskSection('activeServerAccountIds', tr('task_sender'))}
                     {renderTaskSection('activeProfilesAccountIds', tr('task_profiles'))}
                 </div>
-                <div className="add-account-form" style={{ marginTop: '32px', padding: '24px', background: 'hsl(var(--bg-card))', borderRadius: 'var(--radius)', border: '1px solid hsl(var(--border))' }}>
-                    <h4 style={{ margin: '0 0 20px 0', fontSize: '18px' }}>{tr('add_account')}</h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div className="add-account-form">
+                    <h4 className="add-account-title">{tr('add_account')}</h4>
+                    <div className="add-account-grid">
                         <input type="text" id="new-acc-name" placeholder={tr('name_placeholder')} className="search-input" />
                         <input type="text" id="new-acc-proxy" placeholder={tr('proxy_placeholder')} className="search-input" />
                     </div>
-                    <textarea id="new-acc-cookies" placeholder={tr('cookies_placeholder_new')} className="msg-textarea" style={{ height: 100, marginBottom: '20px' }} />
-                    <button className="btn-primary" style={{ width: '100%' }} onClick={handleAdd}>
+                    <textarea id="new-acc-cookies" placeholder={tr('cookies_placeholder_new')} className="msg-textarea new-acc-cookies-textarea" />
+                    <button className="btn-primary full-width-btn" onClick={handleAdd}>
                         {tr('btn_add')}
                     </button>
                 </div>
             </div>
 
             <div className="all-accounts-column">
-                <h4 style={{ marginBottom: '20px', fontSize: '18px' }}>{tr('all_accounts')}</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h4 className="all-accounts-title">{tr('all_accounts')}</h4>
+                <div className="flex-col-gap-12">
                     {settingsData.accounts.map(acc => (<div key={acc.id} className="account-card">
-                        {editingAccount === acc.id ? (<div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            <input type="text" className="search-input" placeholder={tr('edit_name')} value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} style={{ fontSize: '14px' }} />
-                            <input type="text" className="search-input" placeholder={tr('edit_proxy')} value={editForm.proxy} onChange={e => setEditForm({ ...editForm, proxy: e.target.value })} style={{ fontSize: '13px', fontFamily: 'monospace' }} />
-                            <textarea className="msg-textarea" placeholder={tr('edit_cookies')} value={editForm.cookies} onChange={e => setEditForm({ ...editForm, cookies: e.target.value })} style={{ height: '80px', fontSize: '12px', fontFamily: 'monospace' }} />
-                            <div style={{ position: 'relative' }}>
-                                <textarea className="msg-textarea" placeholder={tr('edit_fingerprint')} value={editForm.fingerprint} onChange={e => setEditForm({ ...editForm, fingerprint: e.target.value })} style={{ height: '120px', fontSize: '11px', fontFamily: 'monospace' }} />
-                                <button onClick={() => handleRegenerateFingerprint(acc.id)} style={{
-                                    position: 'absolute',
-                                    top: '8px',
-                                    right: '8px',
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    background: 'hsl(var(--bg-elevated))',
-                                    border: '1px solid hsl(var(--border))',
-                                    borderRadius: '4px',
-                                    color: 'hsl(var(--text-muted))',
-                                    cursor: 'pointer'
-                                }}>
-                                    {tr('btn_regenerate')}
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        const text = prompt('Вставьте данные профиля:');
-                                        if (text) parsePasteData(text);
-                                    }}
-                                    style={{
-                                        position: 'absolute',
-                                        top: '8px',
-                                        right: '110px',
-                                        padding: '4px 8px',
-                                        fontSize: '10px',
-                                        background: 'hsl(var(--primary))',
-                                        border: '1px solid hsl(var(--primary))',
-                                        borderRadius: '4px',
-                                        color: 'white',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    {tr('btn_paste_data')}
-                                </button>
+                        {editingAccount === acc.id ? (<div className="flex-col-gap-10">
+                            <input type="text" className="search-input edit-acc-name-input" placeholder={tr('edit_name')} value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                            <input type="text" className="search-input edit-acc-proxy-input" placeholder={tr('edit_proxy')} value={editForm.proxy} onChange={e => setEditForm({ ...editForm, proxy: e.target.value })} />
+                            <div className="config-relative-wrap">
+
+                                <div className="fingerprint-config-grid">
+                                    <div className="config-col-item">
+                                        <label className="config-label-text">CPU Cores</label>
+                                        <select
+                                            value={(() => { try { return JSON.parse(editForm.fingerprint).hardware?.cpuCores || 8 } catch (e) { return 8 } })()}
+                                            onChange={e => {
+                                                const fp = JSON.parse(editForm.fingerprint || '{}');
+                                                if (!fp.hardware) fp.hardware = {};
+                                                fp.hardware.cpuCores = parseInt(e.target.value);
+                                                setEditForm({ ...editForm, fingerprint: JSON.stringify(fp, null, 2) });
+                                            }}
+                                            className="search-input config-input-small"
+                                        >
+                                            {[2, 4, 6, 8, 12, 16, 32, 64].map(v => <option key={v} value={v}>{v} cores</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="config-col-item">
+                                        <label className="config-label-text">Memory GB</label>
+                                        <select
+                                            value={(() => { try { return JSON.parse(editForm.fingerprint).hardware?.memoryGB || 8 } catch (e) { return 8 } })()}
+                                            onChange={e => {
+                                                const fp = JSON.parse(editForm.fingerprint || '{}');
+                                                if (!fp.hardware) fp.hardware = {};
+                                                fp.hardware.memoryGB = parseInt(e.target.value);
+                                                setEditForm({ ...editForm, fingerprint: JSON.stringify(fp, null, 2) });
+                                            }}
+                                            className="search-input config-input-small"
+                                        >
+                                            {[2, 4, 8, 16, 32, 64, 128].map(v => <option key={v} value={v}>{v} GB</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="config-col-item config-col-span-2">
+                                        <label className="config-label-text">WebGL Renderer</label>
+                                        <input
+                                            type="text"
+                                            className="search-input config-input-renderer"
+                                            value={(() => { try { return JSON.parse(editForm.fingerprint).webgl?.renderer || '' } catch (e) { return '' } })()}
+                                            onChange={e => {
+                                                const fp = JSON.parse(editForm.fingerprint || '{}');
+                                                if (!fp.webgl) fp.webgl = {};
+                                                fp.webgl.renderer = e.target.value;
+                                                setEditForm({ ...editForm, fingerprint: JSON.stringify(fp, null, 2) });
+                                            }}
+                                            placeholder="Renderer string..."
+                                        />
+                                    </div>
+                                    <div className="config-col-item">
+                                        <label className="config-label-text">Dolphin Token</label>
+                                        <input
+                                            type="password"
+                                            className="search-input config-input-renderer"
+                                            value={(() => { try { return JSON.parse(editForm.fingerprint).dolphinToken || '' } catch (e) { return '' } })()}
+                                            onChange={e => {
+                                                let fp = {};
+                                                try { fp = JSON.parse(editForm.fingerprint || '{}'); } catch (err) { }
+                                                fp.dolphinToken = e.target.value;
+                                                setEditForm({ ...editForm, fingerprint: JSON.stringify(fp, null, 2) });
+                                            }}
+                                            placeholder="Token..."
+                                        />
+                                    </div>
+                                    <div className="config-col-item">
+                                        <label className="config-label-text">Profile ID</label>
+                                        <input
+                                            type="text"
+                                            className="search-input config-input-renderer"
+                                            value={(() => { try { return JSON.parse(editForm.fingerprint).dolphinProfileId || '' } catch (e) { return '' } })()}
+                                            onChange={e => {
+                                                let fp = {};
+                                                try { fp = JSON.parse(editForm.fingerprint || '{}'); } catch (err) { }
+                                                fp.dolphinProfileId = e.target.value;
+                                                setEditForm({ ...editForm, fingerprint: JSON.stringify(fp, null, 2) });
+                                            }}
+                                            placeholder="Profile ID..."
+                                        />
+                                    </div>
+                                </div>
+                                <div className="fingerprint-config-grid">
+                                    <textarea className="msg-textarea edit-acc-cookies-textarea" placeholder={tr('edit_cookies')} value={editForm.cookies} onChange={e => setEditForm({ ...editForm, cookies: e.target.value })} />
+                                    <div className="edit-data-actions">
+                                        <button
+                                            onClick={() => {
+                                                const text = prompt('Вставьте данные профиля:');
+                                                if (text) parsePasteData(text);
+                                            }}
+                                            className="btn-paste-data"
+                                        >
+                                            {tr('btn_paste_data')}
+                                        </button>
+                                        <button onClick={() => handleRegenerateFingerprint(acc.id)} className="btn-regenerate-fp">
+                                            {tr('btn_regenerate')}
+                                        </button>
+                                    </div>
+                                    <textarea className="msg-textarea edit-acc-fingerprint-textarea" placeholder={tr('edit_fingerprint')} value={editForm.fingerprint} onChange={e => setEditForm({ ...editForm, fingerprint: e.target.value })} />
+                                </div>
                             </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <button className="btn-primary" style={{ flex: 1, fontSize: '12px', padding: '6px 12px', background: 'hsl(var(--success))' }} onClick={() => handleSaveEdit(acc.id)}>
+
+                            <div className="flex-row-gap-8">
+                                <button className="btn-primary save-edit-btn" onClick={() => handleSaveEdit(acc.id)}>
                                     {tr('save_changes')}
                                 </button>
-                                <button className="btn-primary" style={{ flex: 1, fontSize: '12px', padding: '6px 12px', background: 'transparent', border: '1px solid hsl(var(--border))', color: 'hsl(var(--text-muted))' }} onClick={() => setEditingAccount(null)}>
+                                <button className="btn-primary cancel-edit-btn" onClick={() => setEditingAccount(null)}>
                                     {tr('cancel')}
                                 </button>
                             </div>
-                        </div>) : (<>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                <div style={{ fontWeight: '700', fontSize: '15px' }}>{acc.name}</div>
-                                <button className="actionBtn editBtn" onClick={() => handleStartEdit(acc)} title={tr('edit_title')}>
-                                    <EditIcon />
-                                </button>
+                        </div>) : (<div className="flex-col-gap-10">
+                            <div className="account-card-header">
+                                <div className="account-card-name">{acc.name}</div>
+                                <div className="account-card-actions">
+                                    <button className="actionBtn editBtn" onClick={() => handleStartEdit(acc)} title={tr('edit_title')}>
+                                        <EditIcon />
+                                    </button>
+                                    <button className="actionBtn deleteBtn" onClick={() => handleDelete(acc.id)} title={tr('delete_title')}>
+                                        <TrashIcon />
+                                    </button>
+                                </div>
                             </div>
-                            <div style={{ fontSize: '12px', color: 'hsl(var(--text-dim))', marginBottom: '12px', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                            <div className="account-card-proxy">
                                 {acc.proxy || 'Direct Connection'}
                             </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                <button className="actionBtn" onClick={() => handleLoginBrowser(acc.id)} style={{
-                                    padding: '4px 8px',
-                                    fontSize: '11px',
-                                    fontWeight: 700,
-                                    color: 'white',
-                                    background: 'hsl(var(--primary))',
-                                    borderColor: 'hsl(var(--primary))',
-                                    width: '100%',
-                                    marginBottom: '4px'
-                                }}>
-                                    🌐 {tr('btn_login_browser')}
+                            <div className="account-action-row">
+                                <button className="btn-premium-action btn-premium-login" onClick={() => handleLoginBrowser(acc.id)}>
+                                    {tr('btn_login_browser')}
                                 </button>
-                                <button className="actionBtn" onClick={() => handleOpenBrowser(acc.id)} style={{
-                                    padding: '4px 8px',
-                                    fontSize: '11px',
-                                    fontWeight: 700,
-                                    color: 'white',
-                                    background: 'hsl(var(--success))',
-                                    borderColor: 'hsl(var(--success))',
-                                    width: '100%',
-                                    marginBottom: '4px'
-                                }}>
-                                    🌐 {tr('btn_open_browser')}
+                                <button className="btn-premium-action btn-premium-open" onClick={() => handleOpenBrowser(acc.id)}>
+                                    ОТКРЫТЬ
                                 </button>
+                                <button className="btn-premium-action btn-premium-warmup" onClick={() => handleWarmup(acc.id)}>
+                                    ПРОГРЕВ
+                                </button>
+
+                                <div className="warmup-progress-inline" title={acc.last_warmup ? `Last: ${new Date(acc.last_warmup).toLocaleDateString()}` : ''}>
+                                    {warmupProgress[acc.id]?.running ? (
+                                        <>
+                                            <div className="warmup-pulse" />
+                                            {warmupProgress[acc.id].percent}%
+                                        </>
+                                    ) : (
+                                        <>🔥 {acc.warmup_score || 0}%</>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="account-action-row task-toggles-row">
                                 {[
                                     { field: 'activeParserAccountIds', label: tr('task_parser') },
                                     { field: 'activeIndexAccountIds', label: tr('task_scraper') },
@@ -375,30 +504,51 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                                     { field: 'activeProfilesAccountIds', label: tr('task_profiles') },
                                 ].map(t => {
                                     const isActive = (settingsData[t.field] || []).includes(acc.id);
-                                    return (<button key={t.field} onClick={() => toggleAccountForTask(t.field, acc.id)} className="actionBtn" style={{
-                                        padding: '4px 8px',
-                                        fontSize: '11px',
-                                        fontWeight: 700,
-                                        color: isActive ? 'hsl(var(--primary))' : 'hsl(var(--text-dim))',
-                                        borderColor: isActive ? 'hsl(var(--primary))' : 'hsl(var(--border))',
-                                        background: isActive ? 'hsla(var(--primary), 0.1)' : 'transparent'
-                                    }}>
+                                    return (<button key={t.field} onClick={() => toggleAccountForTask(t.field, acc.id)} className={`actionBtn btn-task-toggle ${isActive ? 'active' : 'inactive'}`}>
                                         {t.label}
                                     </button>);
                                 })}
-                                <button className="actionBtn deleteBtn" onClick={() => handleDelete(acc.id)} title={tr('delete_title')}>
-                                    <TrashIcon />
-                                </button>
                             </div>
-                        </>)}
+                        </div>)}
                     </div>))}
                 </div>
             </div>
         </div>)}
 
-        {settingsTab === 'names' && (<textarea className="msg-textarea" style={{ height: 500 }} value={(settingsData.names || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, names: e.target.value.split('\n') })} />)}
-        {settingsTab === 'cities' && (<textarea className="msg-textarea" style={{ height: 500 }} value={(settingsData.cities || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, cities: e.target.value.split('\n') })} />)}
-        {settingsTab === 'niches' && (<textarea className="msg-textarea" style={{ height: 500 }} value={(settingsData.niches || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, niches: e.target.value.split('\n') })} />)}
-        {settingsTab === 'donors' && (<textarea className="msg-textarea" style={{ height: 500 }} value={(settingsData.donors || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, donors: e.target.value.split('\n') })} />)}
+        {settingsTab === 'names' && (<textarea className="msg-textarea settings-list-textarea" value={(settingsData.names || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, names: e.target.value.split('\n') })} />)}
+        {settingsTab === 'cities' && (<textarea className="msg-textarea settings-list-textarea" value={(settingsData.cities || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, cities: e.target.value.split('\n') })} />)}
+        {settingsTab === 'niches' && (<textarea className="msg-textarea settings-list-textarea" value={(settingsData.niches || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, niches: e.target.value.split('\n') })} />)}
+        {settingsTab === 'donors' && (<textarea className="msg-textarea settings-list-textarea" value={(settingsData.donors || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, donors: e.target.value.split('\n') })} />)}
+        {settingsTab === 'dolphin' && (<div className="flex-col-gap-20">
+            <div className="add-account-form dolphin-settings-container">
+                <h4 className="add-account-title">Настройки Dolphin Anty</h4>
+                <div className="flex-col-gap-10">
+                    <label className="config-label-text">API Token</label>
+                    <input type="password" placeholder="Dolphin API Token..." className="search-input" value={settingsData.dolphinToken || ''} onChange={e => onSettingsChange({ ...settingsData, dolphinToken: e.target.value })} />
+                    <div className="flex-row-gap-8 dolphin-refresh-btn-wrap">
+                        <button className="btn-primary" onClick={fetchDolphinProfiles} disabled={isLoadingProfiles}>
+                            {isLoadingProfiles ? 'Загрузка...' : 'Получить список профилей'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {dolphinProfiles.length > 0 && (<div className="dolphin-accounts-column">
+                <h4 className="all-accounts-title">Найдено профилей: {dolphinProfiles.length}</h4>
+                <div className="flex-col-gap-10">
+                    {dolphinProfiles.map(p => (<div key={p.id} className="account-card dolphin-account-card">
+                        <div className="dolphin-card-row">
+                            <div>
+                                <div className="dolphin-card-name">{p.name}</div>
+                                <div className="dolphin-card-details">ID: {p.id} | Proxy: {p.proxy?.host || 'No proxy'}</div>
+                            </div>
+                            <div className="dolphin-card-time">
+                                {p.lastStartTime || 'Никогда не запускался'}
+                            </div>
+                        </div>
+                    </div>))}
+                </div>
+            </div>)}
+        </div>)}
     </div>);
 }

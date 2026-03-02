@@ -1,41 +1,59 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateFingerprint = generateFingerprint;
-const UAs = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+
+const { FingerprintGenerator } = require('fingerprint-generator');
+const fingerprintGenerator = new FingerprintGenerator();
+
+const WEBGL_RENDERERS = [
+    { vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, AMD Radeon(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)' },
+    { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
+    { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)' },
+    { vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, AMD Radeon RX 580 Series Direct3D11 vs_5_0 ps_5_0, D3D11)' },
+    { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
+    { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop GPU Direct3D11 vs_5_0 ps_5_0, D3D11)' },
+    { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)' }
 ];
-const REGIONAL_PROFILES = [
-    { locale: 'en-US', timezones: ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'] },
-    { locale: 'en-GB', timezones: ['Europe/London'] },
-    { locale: 'ru-RU', timezones: ['Europe/Moscow', 'Europe/Kaliningrad', 'Europe/Simferopol', 'Asia/Yekaterinburg'] },
-    { locale: 'de-DE', timezones: ['Europe/Berlin'] },
-    { locale: 'fr-FR', timezones: ['Europe/Paris'] },
-    { locale: 'it-IT', timezones: ['Europe/Rome'] },
-    { locale: 'es-ES', timezones: ['Europe/Madrid'] }
-];
+
+const CPU_OPTIONS = [4, 6, 8, 12, 16];
+const MEMORY_OPTIONS = [8, 16, 32, 64];
 
 function generateFingerprint() {
-    const ua = UAs[Math.floor(Math.random() * UAs.length)];
-    const profile = REGIONAL_PROFILES[Math.floor(Math.random() * REGIONAL_PROFILES.length)];
-    const timezone = profile.timezones[Math.floor(Math.random() * profile.timezones.length)];
+    const baseFP = fingerprintGenerator.getFingerprint({
+        devices: ['desktop'],
+        operatingSystems: ['windows'],
+        browsers: ['chrome']
+    });
 
-    // Randomize viewport
-    const width = 1280 + Math.floor(Math.random() * 300);
-    const height = 720 + Math.floor(Math.random() * 200);
+    const webgl = WEBGL_RENDERERS[Math.floor(Math.random() * WEBGL_RENDERERS.length)];
+    const cpuCores = CPU_OPTIONS[Math.floor(Math.random() * CPU_OPTIONS.length)];
+    const memoryGB = MEMORY_OPTIONS[Math.floor(Math.random() * MEMORY_OPTIONS.length)];
 
-    // Device Scale Factor (mostly 1 or 2 for desktop)
-    const deviceScaleFactor = Math.random() > 0.8 ? 2 : 1;
+    // Update the base fingerprint with our specific overrides if needed
+    // or just return them as separate fields for the UI and injector
 
     return {
-        userAgent: ua,
-        viewport: { width, height },
-        locale: profile.locale,
-        timezoneId: timezone,
-        deviceScaleFactor,
-        isMobile: false,
-        hasTouch: false
+        ...baseFP,
+        userAgent: baseFP.fingerprint.navigator.userAgent,
+        viewport: {
+            width: baseFP.fingerprint.screen.width,
+            height: baseFP.fingerprint.screen.height
+        },
+        timezoneId: 'Auto', // Let browser.js handle Auto logic
+        locale: 'en-US',
+        webgl: webgl,
+        hardware: {
+            cpuCores: cpuCores,
+            memoryGB: memoryGB
+        },
+        webRTC: 'Altered',
+        canvas: 'Real',
+        webGLMode: 'Real',
+        audio: 'Real',
+        fonts: 'Auto',
+        doNotTrack: Math.random() > 0.5 ? 'On' : 'Off',
+        platform: 'Win32',
+        macAddress: 'Off',
+        deviceName: 'Off'
     };
 }

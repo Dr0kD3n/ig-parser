@@ -464,7 +464,6 @@ body::before {
 
 .actionBtn {
   padding: 12px;
-  border-radius: 12px;
   border: 1px solid hsl(var(--border));
   background: hsl(var(--bg-elevated) / 0.5);
   color: hsl(var(--text-muted));
@@ -795,8 +794,385 @@ body::before {
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-top-color: #fff;
   border-radius: 50%;
+
   animation: spinnerMini 0.6s linear infinite;
 }
+
+/* Settings Tab Specific Classes */
+.settings-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 32px;
+  padding: 0 32px;
+}
+
+.two-column-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.flex-col-gap-8 {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flex-col-gap-12 {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.flex-col-gap-10 {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.flex-row-gap-8 {
+  display: flex;
+  gap: 8px;
+}
+
+.task-setup-section {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: hsl(var(--bg-card));
+  border-radius: var(--radius);
+  border: 1px solid hsl(var(--border));
+}
+
+.task-section-title {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: hsl(var(--primary));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.no-accounts-placeholder {
+  color: hsl(var(--text-dim));
+  font-size: 13px;
+  text-align: center;
+  padding: 12px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 10px;
+}
+
+.account-drag-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  background: hsl(var(--bg-elevated) / 0.5);
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  cursor: grab;
+  user-select: none;
+  transition: all 0.2s;
+}
+
+.account-drag-item:hover {
+  border-color: hsl(var(--primary));
+}
+
+.account-drag-handle {
+  margin-right: 12px;
+  color: hsl(var(--text-dim));
+  font-size: 14px;
+}
+
+.account-name-badge {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.account-remove-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: hsl(var(--danger));
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.account-remove-btn:hover {
+  opacity: 1;
+}
+
+.add-account-form {
+  margin-top: 32px;
+  padding: 24px;
+  background: hsl(var(--bg-card));
+  border-radius: var(--radius);
+  border: 1px solid hsl(var(--border));
+}
+
+.add-account-title {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+}
+
+.add-account-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.full-width-btn {
+  width: 100%;
+}
+
+.dolphin-accounts-column {
+  margin-top: 40px;
+}
+
+.all-accounts-column {
+  top: -40px;
+  position: relative;
+}
+
+.all-accounts-title {
+  margin-bottom: 20px;
+  margin-top: 0;
+  font-size: 18px;
+}
+
+.edit-data-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.btn-paste-data {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  background: hsl(var(--primary));
+  border: none;
+  border-radius: 10px;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px hsla(var(--primary), 0.3);
+}
+
+.btn-paste-data:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px hsla(var(--primary), 0.4);
+}
+
+.btn-regenerate-fp {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  background: hsl(var(--bg-elevated));
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  color: hsl(var(--text-main));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-regenerate-fp:hover {
+  background: hsl(var(--bg-card));
+  border-color: hsl(var(--primary));
+  transform: translateY(-1px);
+}
+
+.fingerprint-config-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 16px;
+  background: hsl(var(--bg-card) / 0.5);
+  border-radius: 12px;
+  border: 1px solid hsl(var(--border));
+  backdrop-filter: blur(8px);
+}
+
+.config-col-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.config-label-text {
+  font-size: 11px;
+  color: hsl(var(--text-dim));
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.config-input-small {
+  font-size: 13px;
+  height: 38px;
+  border-radius: 8px;
+  padding: 0 18px;
+  background: hsl(var(--bg-elevated));
+}
+
+.config-input-renderer {
+  font-size: 12px;
+  height: 38px;
+  border-radius: 8px;
+  background: hsl(var(--bg-elevated));
+}
+
+.save-edit-btn {
+  background: hsl(var(--success)) !important;
+}
+
+.cancel-edit-btn {
+  background: transparent !important;
+  border: 1px solid hsl(var(--border)) !important;
+  color: hsl(var(--text-muted)) !important;
+}
+
+.account-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.account-card-name {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.account-card-proxy {
+  font-size: 12px;
+  color: hsl(var(--text-dim));
+  word-break: break-all;
+  font-family: monospace;
+}
+
+.account-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  margin-top: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.btn-premium-action {
+  flex: 1;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: white;
+  white-space: nowrap;
+}
+
+.btn-premium-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.btn-premium-action:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+}
+
+.btn-premium-action:active {
+  transform: translateY(0);
+}
+
+.btn-premium-login {
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%);
+  box-shadow: 0 4px 12px hsla(var(--primary), 0.3);
+}
+
+.btn-premium-open {
+  background: hsl(var(--bg-elevated));
+  border: 1px solid hsl(var(--border-bright));
+  color: hsl(var(--text-main));
+}
+
+.btn-premium-warmup {
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+  box-shadow: 0 4px 12px rgba(220, 39, 67, 0.3);
+}
+
+.warmup-progress-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  background: hsla(var(--warning), 0.1);
+  border: 1px solid hsla(var(--warning), 0.3);
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  color: hsl(var(--warning));
+  min-width: fit-content;
+  justify-content: center;
+}
+
+.warmup-pulse {
+  width: 6px;
+  height: 6px;
+  background: hsl(var(--warning));
+  border-radius: 50%;
+  box-shadow: 0 0 8px hsl(var(--warning));
+  animation: pulse 1.5s infinite;
+}
+
+.btn-task-toggle {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+
+.skeleton-header-box {
+  width: 400px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.skeleton-item-200 {
+  height: 200px;
+}
+
+.skeleton-item-400 {
+  height: 400px;
+}
+
 
 @keyframes spinnerMini {
   to {
@@ -831,6 +1207,7 @@ body::before {
 }
 
 .account-card {
+  position: relative;
   background: hsl(var(--bg-elevated) / 0.5);
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
@@ -841,6 +1218,13 @@ body::before {
 .account-card:hover {
   background: hsl(var(--bg-elevated));
   border-color: hsl(var(--primary));
+}
+
+.account-card-actions {
+  display: flex;
+  position: absolute;
+  top: 8px;
+  right: 8px;
 }
 
 .editBtn {
@@ -855,15 +1239,14 @@ body::before {
 
 .editBtn:hover {
   color: hsl(var(--primary));
-  border-color: hsl(var(--primary));
   background: hsla(var(--primary), 0.1);
-  box-shadow: 0 0 12px hsla(var(--primary), 0.2);
+  border-color: transparent;
 }
 
 .deleteBtn {
-  padding: 4px 8px;
-  color: hsl(var(--danger));
-  border-color: hsla(var(--danger), 0.15);
+  padding: 6px;
+  color: hsl(var(--text-dim));
+  border-color: transparent;
   background: transparent;
   display: flex;
   align-items: center;
@@ -872,8 +1255,8 @@ body::before {
 
 .deleteBtn:hover {
   background: hsla(var(--danger), 0.1);
-  border-color: hsl(var(--danger));
-  box-shadow: 0 0 12px hsla(var(--danger), 0.2);
+  border-color: transparent;
+  color: hsl(var(--danger));
 }
 
 /* Animations & Polishing */
@@ -887,6 +1270,7 @@ body::before {
   resize: none;
   font-family: inherit;
   font-size: 14px;
+  margin-bottom: 12px;
 }
 
 .msg-textarea:focus {
@@ -1005,4 +1389,84 @@ body::before {
   width: 100%;
   margin-bottom: 12px;
   border-radius: 10px;
+}
+
+/* Settings Tab Specific Classes */
+.new-acc-cookies-textarea {
+  height: 100px;
+  margin-bottom: 20px;
+}
+
+.edit-acc-name-input {
+  font-size: 14px;
+}
+
+.edit-acc-proxy-input {
+  font-size: 13px;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.config-relative-wrap {
+  position: relative;
+}
+
+.config-col-span-2 {
+  grid-column: span 2;
+}
+
+.edit-acc-cookies-textarea {
+  height: 80px;
+  font-size: 12px;
+  font-family: \JetBrains Mono\, monospace;
+}
+
+.edit-acc-fingerprint-textarea {
+  height: 120px;
+  font-size: 11px;
+  font-family: \JetBrains Mono\, monospace;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.delete-btn-mini {
+  padding: 6px !important;
+  width: 36px !important;
+  height: 36px !important;
+}
+
+.settings-list-textarea {
+  height: 500px;
+}
+
+.dolphin-settings-container {
+  max-width: 600px;
+}
+
+.dolphin-refresh-btn-wrap {
+  margin-top: 10px;
+}
+
+.dolphin-account-card {
+  padding: 10px 15px !important;
+}
+
+.dolphin-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dolphin-card-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.dolphin-card-details {
+  font-size: 12px;
+  color: hsl(var(--text-muted));
+}
+
+.dolphin-card-time {
+  font-size: 12px;
+  opacity: 0.8;
 }

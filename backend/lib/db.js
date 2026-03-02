@@ -121,7 +121,13 @@ async function getDB() {
         // Ignore if column already exists
     }
     try {
-        await dbInstance.exec(`ALTER TABLE donors ADD COLUMN photo TEXT`);
+        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN warmup_score INTEGER DEFAULT 0`);
+    }
+    catch (e) {
+        // Ignore if column already exists
+    }
+    try {
+        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN last_warmup TEXT`);
     }
     catch (e) {
         // Ignore if column already exists

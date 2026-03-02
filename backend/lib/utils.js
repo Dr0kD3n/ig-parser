@@ -43,6 +43,78 @@ const humanType = async (page, selector, text, timeouts) => {
 };
 exports.humanType = humanType;
 /**
+ * Генерирует массив точек для кубической кривой Безье
+ */
+const getBezierPoints = (p0, p1, p2, p3, steps = 30) => {
+    const points = [];
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = Math.pow(1 - t, 3) * p0.x +
+            3 * Math.pow(1 - t, 2) * t * p1.x +
+            3 * (1 - t) * Math.pow(t, 2) * p2.x +
+            Math.pow(t, 3) * p3.x;
+        const y = Math.pow(1 - t, 3) * p0.y +
+            3 * Math.pow(1 - t, 2) * t * p1.y +
+            3 * (1 - t) * Math.pow(t, 2) * p2.y +
+            Math.pow(t, 3) * p3.y;
+        points.push({ x, y });
+    }
+    return points;
+};
+exports.getBezierPoints = getBezierPoints;
+
+/**
+ * Плавное движение мыши по кривой
+ */
+const humanMove = async (page, targetX, targetY, options = {}) => {
+    try {
+        const steps = options.steps || (15 + Math.floor(Math.random() * 15));
+        const startX = options.startX || 0;
+        const startY = options.startY || 0;
+
+        // Контрольные точки для кривой Безье
+        const p1 = {
+            x: startX + (targetX - startX) * Math.random(),
+            y: startY + (targetY - startY) * Math.random()
+        };
+        const p2 = {
+            x: startX + (targetX - startX) * Math.random(),
+            y: startY + (targetY - startY) * Math.random()
+        };
+
+        const points = getBezierPoints(
+            { x: startX, y: startY },
+            p1,
+            p2,
+            { x: targetX, y: targetY },
+            steps
+        );
+
+        for (const point of points) {
+            // "Дрожание" (jitter) - добавляем случайное смещение
+            const jitterX = (Math.random() - 0.5) * 3;
+            const jitterY = (Math.random() - 0.5) * 3;
+
+            // "Угловатость" - иногда пропускаем промежуточные точки или делаем резкие скачки
+            if (Math.random() > 0.1) {
+                await page.mouse.move(point.x + jitterX, point.y + jitterY);
+            }
+
+            // Рандомные паузы для имитации "неуверенности"
+            if (Math.random() > 0.85) {
+                await wait(Math.random() * 20 + 10);
+            }
+        }
+
+        // Финальный микро-прыжок к цели
+        await page.mouse.move(targetX, targetY);
+    } catch (e) {
+        await page.mouse.move(targetX, targetY);
+    }
+};
+exports.humanMove = humanMove;
+
+/**
  * Эмуляция наведения мыши
  */
 const humanHover = async (page, selector) => {
@@ -50,16 +122,39 @@ const humanHover = async (page, selector) => {
         const element = typeof selector === 'string' ? page.locator(selector).first() : selector;
         const box = await element.boundingBox();
         if (box) {
-            const x = box.x + box.width * (0.3 + Math.random() * 0.4);
-            const y = box.y + box.height * (0.3 + Math.random() * 0.4);
-            // Move to the element
-            await page.mouse.move(x, y, { steps: 5 + Math.floor(Math.random() * 5) });
-            await (0, exports.wait)(500 + Math.random() * 1000);
+            const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
+            const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
+
+            await humanMove(page, targetX, targetY);
+            await wait(500 + Math.random() * 1000);
         }
     }
     catch (e) { }
 };
 exports.humanHover = humanHover;
+
+/**
+ * Эмуляция человеческого клика
+ */
+const humanClick = async (page, selectorOrHandle, options = {}) => {
+    try {
+        const element = typeof selectorOrHandle === 'string' ? page.locator(selectorOrHandle).first() : selectorOrHandle;
+        const box = await element.boundingBox();
+        if (box) {
+            const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
+            const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
+
+            await humanMove(page, targetX, targetY);
+            await wait(100 + Math.random() * 200);
+            await element.click(options);
+        } else {
+            await element.click(options);
+        }
+    } catch (e) {
+        console.error('Ошибка клика:', e.message);
+    }
+};
+exports.humanClick = humanClick;
 /**
  * Режим "Раздумье" (длительная пауза)
  */

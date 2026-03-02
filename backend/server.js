@@ -12,6 +12,7 @@ const events_1 = require("events");
 const fingerprint_1 = require("./lib/fingerprint");
 const reporter_1 = require("./lib/reporter");
 const config_1 = require("./lib/config");
+const warmup_1 = require("./lib/warmup");
 const logEmitter = new events_1.EventEmitter();
 const LOGS_FILE = path_1.join(utils_1.getRootPath(), 'data', 'logs.json');
 let botProcesses = {
@@ -127,7 +128,13 @@ async function getSettings() {
     const db = await (0, db_1.getDB)();
     const rows = await db.all(`SELECT * FROM accounts`);
     const accounts = rows.map(r => ({
-        id: r.id, name: r.name, proxy: r.proxy, cookies: r.cookies, fingerprint: r.fingerprint
+        id: r.id,
+        name: r.name,
+        proxy: r.proxy,
+        cookies: r.cookies,
+        fingerprint: r.fingerprint,
+        warmup_score: r.warmup_score,
+        last_warmup: r.last_warmup
     }));
     const activeParserIds = rows.filter(r => r.active_parser).sort((a, b) => a.active_parser - b.active_parser).map(r => r.id);
     const activeServerIds = rows.filter(r => r.active_server).sort((a, b) => a.active_server - b.active_server).map(r => r.id);
@@ -139,6 +146,8 @@ async function getSettings() {
     const concurrentProfiles = concurrentProfilesStr ? parseInt(concurrentProfilesStr.value) : 3;
     const humanEmulationStr = await db.get(`SELECT value FROM settings WHERE key = 'humanEmulation'`);
     const humanEmulation = humanEmulationStr ? humanEmulationStr.value === 'true' : false;
+    const dolphinTokenStr = await db.get(`SELECT value FROM settings WHERE key = 'dolphinToken'`);
+    const dolphinToken = dolphinTokenStr ? dolphinTokenStr.value : '';
     return {
         accounts,
         activeParserAccountIds: activeParserIds,
@@ -147,7 +156,8 @@ async function getSettings() {
         activeProfilesAccountIds: activeProfilesIds,
         showBrowser,
         concurrentProfiles,
-        humanEmulation
+        humanEmulation,
+        dolphinToken
     };
 }
 app.use(express_1.json());
@@ -338,7 +348,8 @@ app.get('/api/settings', async (req, res) => {
         donors,
         showBrowser: settings.showBrowser,
         concurrentProfiles: settings.concurrentProfiles,
-        humanEmulation: settings.humanEmulation
+        humanEmulation: settings.humanEmulation,
+        dolphinToken: settings.dolphinToken
     });
 });
 app.post('/api/settings', async (req, res) => {
@@ -375,14 +386,17 @@ app.post('/api/settings', async (req, res) => {
                         else if (typeof fingerprint !== 'string') {
                             fingerprint = JSON.stringify(fingerprint);
                         }
-                        await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, fingerprint)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                        await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, fingerprint, local_storage, warmup_score, last_warmup)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
                             a.id, a.name, a.proxy || '', a.cookies || '',
                             getPriority(req.body.activeParserAccountIds, a.id),
                             getPriority(req.body.activeServerAccountIds, a.id),
                             getPriority(req.body.activeIndexAccountIds, a.id),
                             getPriority(req.body.activeProfilesAccountIds, a.id),
-                            fingerprint
+                            fingerprint,
+                            a.local_storage || null,
+                            a.warmup_score || 0,
+                            a.last_warmup || null
                         ]);
                     }
                 }
@@ -425,6 +439,9 @@ app.post('/api/settings', async (req, res) => {
             }
             if (req.body.hasOwnProperty('humanEmulation')) {
                 await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['humanEmulation', req.body.humanEmulation ? 'true' : 'false']);
+            }
+            if (req.body.hasOwnProperty('dolphinToken')) {
+                await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['dolphinToken', req.body.dolphinToken || '']);
             }
             await db.run('COMMIT');
         }
@@ -480,6 +497,33 @@ app.post('/api/accounts/:id/browser/start', async (req, res) => {
         console.error('Error starting browser:', e);
         res.status(500).json({ success: false, error: e.message });
     }
+});
+
+let warmupStatus = new Map();
+
+app.post('/api/accounts/:id/warmup', async (req, res) => {
+    const { id } = req.params;
+    if (warmupStatus.get(id)?.running) {
+        return res.status(400).json({ success: false, error: 'Warmup already in progress' });
+    }
+
+    warmupStatus.set(id, { running: true, current: 0, total: 50, site: '' });
+
+    // Run in background
+    warmup_1.startWarmup(id, (progress) => {
+        warmupStatus.set(id, { running: true, ...progress });
+    }).then(() => {
+        warmupStatus.set(id, { running: false, done: true });
+    }).catch((e) => {
+        warmupStatus.set(id, { running: false, error: e.message });
+    });
+
+    res.json({ success: true });
+});
+
+app.get('/api/accounts/:id/warmup/status', (req, res) => {
+    const { id } = req.params;
+    res.json(warmupStatus.get(id) || { running: false });
 });
 
 app.put('/api/accounts/:id', async (req, res) => {
@@ -668,6 +712,57 @@ app.post('/api/logs/clear', (req, res) => {
     historicalLogs = [];
     debouncedSaveLogs();
     res.json({ success: true });
+});
+app.get('/api/dolphin/profiles', async (req, res) => {
+    try {
+        const queryToken = req.query.token;
+        const db = await (0, db_1.getDB)();
+
+        if (queryToken) {
+            await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['dolphinToken', queryToken]);
+            console.log('🐬 [DOLPHIN] Token updated from request');
+        }
+
+        const dolphinTokenRow = await db.get(`SELECT value FROM settings WHERE key = 'dolphinToken'`);
+        const token = dolphinTokenRow ? dolphinTokenRow.value : '';
+        if (!token) {
+            return res.status(400).json({ success: false, error: 'Dolphin Token not configured' });
+        }
+        const options = {
+            hostname: 'anty-api.com',
+            path: '/browser_profiles?limit=50',
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        };
+        const reqDolphin = https_1.get(options, (dolphinRes) => {
+            let data = '';
+            dolphinRes.on('data', (chunk) => data += chunk);
+            dolphinRes.on('end', () => {
+                if (dolphinRes.statusCode === 200) {
+                    try {
+                        const json = JSON.parse(data);
+                        res.json({ success: true, data: json.data || [] });
+                    }
+                    catch (e) {
+                        res.status(500).json({ success: false, error: 'Failed to parse Dolphin API response' });
+                    }
+                }
+                else {
+                    res.status(dolphinRes.statusCode || 500).json({ success: false, error: `Dolphin API Error: ${dolphinRes.statusCode}` });
+                }
+            });
+        });
+        reqDolphin.on('error', (e) => {
+            res.status(500).json({ success: false, error: `Request Error: ${e.message}` });
+        });
+    }
+    catch (e) {
+        console.error('Error fetching Dolphin profiles:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
 });
 app.get('/api/logs', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
