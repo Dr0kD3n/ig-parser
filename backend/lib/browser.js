@@ -26,6 +26,21 @@ async function createBrowserContext(config, headless = true) {
         extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' }
     };
 
+    const geoMap = {
+        'RU': { tz: 'Europe/Moscow', loc: { latitude: 55.7558, longitude: 37.6173 } },
+        'FR': { tz: 'Europe/Paris', loc: { latitude: 48.8566, longitude: 2.3522 } },
+        'DE': { tz: 'Europe/Berlin', loc: { latitude: 52.5200, longitude: 13.4050 } },
+        'ES': { tz: 'Europe/Madrid', loc: { latitude: 40.4168, longitude: -3.7038 } },
+        'US': { tz: 'America/New_York', loc: { latitude: 40.7128, longitude: -74.0060 } },
+        'GB': { tz: 'Europe/London', loc: { latitude: 51.5074, longitude: -0.1278 } }
+    };
+
+    if (config.countryCode && geoMap[config.countryCode]) {
+        contextOptions.timezoneId = geoMap[config.countryCode].tz;
+        contextOptions.geolocation = geoMap[config.countryCode].loc;
+        contextOptions.permissions = ['geolocation'];
+    }
+
     if (config.proxy) {
         contextOptions.proxy = {
             server: config.proxy.server,
@@ -124,6 +139,60 @@ async function createBrowserContext(config, headless = true) {
 
     await applyFingerprint(context, config.fingerprint);
     if (config.cookies) await context.addCookies(config.cookies).catch(() => { });
+
+    // Inject hardcore Canvas, Audio, and UI noise uniquely bound to account ID
+    const seed = config.id ? config.id.split('').reduce((a, b) => a + b.charCodeAt(0), 0) : Math.floor(Math.random() * 1000);
+    await context.addInitScript((seedValue) => {
+        const noise = (Math.sin(seedValue) * 10000 % 1) * 0.00001;
+
+        // 1. AudioContext Noise
+        const originalGetChannelData = AudioBuffer.prototype.getChannelData;
+        AudioBuffer.prototype.getChannelData = function (channel) {
+            const results = originalGetChannelData.apply(this, arguments);
+            for (let i = 0; i < results.length; i += 100) {
+                results[i] += noise;
+            }
+            return results;
+        };
+
+        // 2. Canvas Noise
+        const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+        CanvasRenderingContext2D.prototype.getImageData = function () {
+            const imageData = originalGetImageData.apply(this, arguments);
+            for (let i = 0; i < imageData.data.length; i += 4) {
+                if (imageData.data[i] < 255) {
+                    imageData.data[i] = Math.min(255, imageData.data[i] + Math.floor(noise * 1000000));
+                }
+            }
+            return imageData;
+        };
+
+        // 3. DOMRect / ClientRect Noise
+        const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+        // @ts-ignore
+        Element.prototype.getBoundingClientRect = function () {
+            const rect = originalGetBoundingClientRect.apply(this, arguments);
+            const r = {
+                x: rect.x + noise, y: rect.y + noise,
+                width: rect.width + noise, height: rect.height + noise,
+                top: rect.top + noise, right: rect.right + noise,
+                bottom: rect.bottom + noise, left: rect.left + noise
+            };
+            r.toJSON = () => ({ x: r.x, y: r.y, width: r.width, height: r.height, top: r.top, right: r.right, bottom: r.bottom, left: r.left });
+            // @ts-ignore
+            return r;
+        };
+        const originalGetClientRects = Element.prototype.getClientRects;
+        // @ts-ignore
+        Element.prototype.getClientRects = function () {
+            const rect = this.getBoundingClientRect();
+            const rects = [rect];
+            // @ts-ignore
+            rects.item = function (index) { return this[index]; };
+            // @ts-ignore
+            return rects;
+        };
+    }, seed);
 
     return { browser, context };
 }

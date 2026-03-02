@@ -19,6 +19,9 @@ const shuffleArray = (array) => {
     return arr;
 };
 exports.shuffleArray = shuffleArray;
+
+const mouseTracker = new WeakMap();
+
 /**
  * Функция эмуляции человеческого ввода текста
  */
@@ -29,6 +32,14 @@ const humanType = async (page, selector, text, timeouts) => {
         const delayMin = timeouts?.typingDelayMin || 50;
         const delayMax = timeouts?.typingDelayMax || 150;
         for (const char of text) {
+            // 2% chance of making a typo and correcting it
+            if (Math.random() < 0.02 && char !== ' ') {
+                const incorrectChar = String.fromCharCode(char.charCodeAt(0) + (Math.random() > 0.5 ? 1 : -1));
+                await page.keyboard.type(incorrectChar);
+                await wait(Math.floor(Math.random() * 150) + 100);
+                await page.keyboard.press('Backspace');
+                await wait(Math.floor(Math.random() * 150) + 100);
+            }
             await page.keyboard.type(char);
             let delay = Math.floor(Math.random() * (delayMax - delayMin + 1)) + delayMin;
             // Occasional "human" pause
@@ -69,8 +80,13 @@ exports.getBezierPoints = getBezierPoints;
 const humanMove = async (page, targetX, targetY, options = {}) => {
     try {
         const steps = options.steps || (15 + Math.floor(Math.random() * 15));
-        const startX = options.startX || 0;
-        const startY = options.startY || 0;
+
+        let startPos = mouseTracker.get(page) || {
+            x: 100 + Math.random() * 400,
+            y: 100 + Math.random() * 400
+        };
+        const startX = options.startX || startPos.x;
+        const startY = options.startY || startPos.y;
 
         // Контрольные точки для кривой Безье
         const p1 = {
@@ -108,8 +124,10 @@ const humanMove = async (page, targetX, targetY, options = {}) => {
 
         // Финальный микро-прыжок к цели
         await page.mouse.move(targetX, targetY);
+        mouseTracker.set(page, { x: targetX, y: targetY });
     } catch (e) {
         await page.mouse.move(targetX, targetY);
+        mouseTracker.set(page, { x: targetX, y: targetY });
     }
 };
 exports.humanMove = humanMove;
@@ -189,3 +207,66 @@ const humanScroll = async (page, selector, direction = 'down', amount = 300) => 
     }
 };
 exports.humanScroll = humanScroll;
+
+/**
+ * Оверскролл: проскроллить дальше, а потом немного вернуться
+ */
+const humanOverscroll = async (page, direction = 'down', amount = 300) => {
+    try {
+        const overshoot = amount * (1.2 + Math.random() * 0.5); // 20-70% overscroll
+        await humanScroll(page, null, direction, overshoot);
+        await wait(200 + Math.random() * 500);
+        await humanScroll(page, null, direction === 'down' ? 'up' : 'down', overshoot - amount);
+    } catch (e) { }
+};
+exports.humanOverscroll = humanOverscroll;
+
+/**
+ * Мышка покидает экран (потеря фокуса)
+ */
+const humanMouseLeave = async (page) => {
+    try {
+        const viewport = page.viewportSize();
+        if (!viewport) return;
+        const targetX = Math.random() > 0.5 ? -10 : viewport.width + 10;
+        const targetY = Math.random() * viewport.height;
+        await humanMove(page, targetX, targetY);
+        console.log(`👤 [HUMAN] Mouse left the viewport (simulating distraction).`);
+        await wait(2000 + Math.random() * 5000); // stay out for a bit
+        mouseTracker.set(page, { x: Math.max(0, Math.min(targetX, viewport.width)), y: Math.max(0, Math.min(targetY, viewport.height)) });
+    } catch (e) { }
+};
+exports.humanMouseLeave = humanMouseLeave;
+
+/**
+ * Выделение текста на странице рандомно
+ */
+const humanSelection = async (page) => {
+    try {
+        const paragraphs = await page.$$('p, span, h1, h2, h3, li');
+        if (paragraphs.length > 0) {
+            const p = paragraphs[Math.floor(Math.random() * paragraphs.length)];
+            const isVisible = await p.isVisible();
+            if (!isVisible) return;
+            const box = await p.boundingBox();
+            if (box && box.height > 10 && box.width > 20) {
+                const startX = box.x + box.width * Math.random();
+                const startY = box.y + box.height * Math.random();
+                await humanMove(page, startX, startY);
+                // Double click behavior vs drag
+                if (Math.random() > 0.5) {
+                    await page.mouse.click(startX, startY, { clickCount: 2 });
+                    console.log(`👤 [HUMAN] Double clicked random text.`);
+                } else {
+                    await page.mouse.down();
+                    await wait(100 + Math.random() * 200);
+                    await humanMove(page, startX + (Math.random() * 80 - 40), startY + (Math.random() * 20 - 10)); // drag
+                    await page.mouse.up();
+                    console.log(`👤 [HUMAN] Selected random text by dragging.`);
+                }
+                await wait(1000 + Math.random() * 3000);
+            }
+        }
+    } catch (e) { }
+};
+exports.humanSelection = humanSelection;

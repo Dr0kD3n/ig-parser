@@ -1,6 +1,6 @@
 const { createBrowserContext } = require('./browser');
 const { getDB } = require('./db');
-const { wait } = require('./utils');
+const { wait, humanClick, humanMouseLeave, humanOverscroll, humanSelection } = require('./utils');
 const http = require('http');
 
 const GLOBAL_SITES = [
@@ -123,6 +123,7 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
 
     const { browser, context } = await createBrowserContext({
         ...config,
+        countryCode,
         fingerprint: {
             ...(config.fingerprint || {}),
             locale: 'en-US',
@@ -163,7 +164,6 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
                                 for (const selector of selectors) {
                                     const handle = await page.$(`${selector}:has-text("${text}")`);
                                     if (handle && await handle.isVisible()) {
-                                        const { humanClick } = require('./utils');
                                         await humanClick(page, handle, { timeout: 2000 }).catch(() => { });
                                         console.log(`🍪 [WARMUP] Clicked cookie button: "${text}" on ${currentSite}`);
                                         break;
@@ -173,9 +173,53 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
                         } catch (e) { }
 
                         await wait(Math.random() * 3000 + 3000);
+
+                        // New hardcore humanization injection
                         if (Math.random() > 0.3) {
-                            await page.mouse.wheel(0, Math.random() * 800 + 400);
+                            if (Math.random() > 0.5) {
+                                await humanOverscroll(page, 'down', Math.random() * 800 + 400);
+                            } else {
+                                await page.mouse.wheel(0, Math.random() * 800 + 400);
+                            }
                             await wait(Math.random() * 2000);
+                        }
+
+                        if (Math.random() > 0.6) {
+                            await humanSelection(page);
+                        }
+
+                        if (Math.random() > 0.7) {
+                            await humanMouseLeave(page);
+                        }
+
+                        // Deep page navigation
+                        try {
+                            if (Math.random() > 0.4) {
+                                const links = await page.$$('a');
+                                const validLinks = [];
+                                for (const link of links) {
+                                    const href = await link.getAttribute('href');
+                                    if (href && (href.startsWith('/') || href.includes(new URL(currentSite).hostname))) {
+                                        try {
+                                            const isVisible = await link.isVisible();
+                                            if (isVisible) validLinks.push(link);
+                                        } catch (e) { }
+                                    }
+                                }
+                                if (validLinks.length > 0) {
+                                    const randomLink = validLinks[Math.floor(Math.random() * validLinks.length)];
+                                    console.log(`🔗 [WARMUP] Navigating deeper into ${currentSite}`);
+                                    await humanClick(page, randomLink, { timeout: 3000 }).catch(() => { });
+                                    await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => { });
+                                    await wait(Math.random() * 4000 + 3000);
+                                    if (Math.random() > 0.3) {
+                                        await page.mouse.wheel(0, Math.random() * 600 + 300);
+                                        await wait(Math.random() * 2000);
+                                    }
+                                }
+                            }
+                        } catch (innerError) {
+                            // Ignored
                         }
                     } catch (e) {
                         console.warn(`⚠️ [WARMUP] Failed site ${currentSite}: ${e.message}`);

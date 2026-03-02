@@ -91,10 +91,24 @@ async function startAuthorization(accountId, name, proxyStr, savedFingerprint = 
 
             await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
         } else {
-            await page.goto('https://www.google.com/', { waitUntil: 'domcontentloaded' });
+            // "Open Browser" mode: Ensure we have at least one page and navigate to a safe URL
+            // This stops any unintended autostart pages (like google.com from last session)
+            try {
+                if (context.pages().length === 0) {
+                    await context.newPage();
+                } else {
+                    // Force the first page to about:blank to stop any background navigations
+                    // that might cause ERR_ABORTED if we interact with them later
+                    await context.pages()[0].goto('about:blank').catch(() => { });
+                }
+            } catch (e) {
+                console.warn(`[Authorizer] Warning while opening blank page: ${e.message}`);
+            }
         }
     } catch (error) {
         console.error(`[Authorizer] Error: ${error.message}`);
+        // If it's just a navigation error in "Open" mode, maybe don't close the browser?
+        // But for now, we keep the original behavior to be safe.
         await context.close();
         return { success: false, error: error.message };
     }
