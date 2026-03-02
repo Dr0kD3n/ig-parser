@@ -31,9 +31,8 @@ try {
         fs.mkdirSync(backendPublic, { recursive: true });
     }
 
-    // 4. Compile Backend TS to JS
-    console.log('🔨 Compiling Backend TS...');
-    execSync('npm.cmd run build-only', { cwd: backendDir, stdio: 'inherit' });
+    // 4. Compile Backend TS to JS (Skipped, project is plain JS)
+    console.log('🔨 Backend is plain JS, skipping compilation...');
 
     // 5. Bundle Backend with Pkg
     console.log('🚀 Bundling Backend with pkg...');
@@ -43,11 +42,11 @@ try {
 
     // 6. Copy additional files
     console.log('📄 Copying helper files...');
-    fs.writeFileSync(path.join(distDir, 'start.bat'), '@echo off\nig-bot.exe\npause');
+    fs.writeFileSync(path.join(distDir, 'start.bat'), '@echo off\nset APP_ROOT=%~dp0\nset PORT=1338\nig-bot.exe\npause');
     fs.writeFileSync(path.join(distDir, 'install_browsers.bat'), '@echo off\necho Installing Chromium for Playwright...\nnpx playwright install chromium\npause');
-    fs.writeFileSync(path.join(distDir, 'kill_servers.bat'), '@echo off\necho Killing IG-Bot servers on port 1337...\nfor /f "tokens=5" %%a in (\'netstat -aon ^| findstr ":1337" ^| findstr "LISTENING"\') do (\n    echo Killing PID %%a\n    taskkill /F /PID %%a /T 2>NUL\n)\ntaskkill /F /IM ig-bot.exe /T 2>NUL\ntaskkill /F /IM node.exe /T 2>NUL\npause');
+    fs.writeFileSync(path.join(distDir, 'kill_servers.bat'), '@echo off\necho Killing IG-Bot servers on port 1338...\nfor /f "tokens=5" %%a in (\'netstat -aon ^| findstr ":1338" ^| findstr "LISTENING"\') do (\n    echo Killing PID %%a\n    taskkill /F /PID %%a /T 2>NUL\n)\ntaskkill /F /IM ig-bot.exe /T 2>NUL\ntaskkill /F /IM node.exe /T 2>NUL\npause');
     fs.writeFileSync(path.join(distDir, 'config', 'database.sqlite'), '');
-    fs.writeFileSync(path.join(distDir, 'README.txt'), 'IG-BOT Distribution\r\n\r\n1. Run install_browsers.bat (requires Node.js/npx)\r\n2. Run start.bat to launch the app\r\n3. Use kill_servers.bat to stop the app safely\r\n4. Open http://localhost:1337 in your browser');
+    fs.writeFileSync(path.join(distDir, 'README.txt'), 'IG-BOT Distribution\r\n\r\n1. Run install_browsers.bat (requires Node.js/npx)\r\n2. Run start.bat to launch the app\r\n3. Use kill_servers.bat to stop the app safely\r\n4. Open http://localhost:1338 in your browser');
 
     console.log('✅ Build complete! Check the dist_package folder.');
 

@@ -1,48 +1,12 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
+const fs_1 = require("fs");
+const path_1 = require("path");
 const config_1 = require("./lib/config");
 const state_1 = require("./lib/state");
 const browser_1 = require("./lib/browser");
 const utils_1 = require("./lib/utils");
-const logger = __importStar(require("./lib/logger"));
+const logger = require("./lib/logger");
 const reporter_1 = require("./lib/reporter");
 class RotateAccountError extends Error {
     reason;
@@ -57,15 +21,15 @@ class RotateAccountError extends Error {
 const getDynamicConfig = async () => {
     const width = 1280 + Math.floor(Math.random() * 150);
     const height = 900 + Math.floor(Math.random() * 100);
-    const rawNames = await (0, config_1.getList)('names.txt');
-    const shuffledNames = (0, utils_1.shuffleArray)(rawNames);
+    const rawNames = await config_1.getList('names.txt');
+    const shuffledNames = utils_1.shuffleArray(rawNames);
     return {
         viewport: { width, height },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
-        timeouts: { pageLoad: 25000, element: 15000, inputWait: 15000 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        timeouts: { pageLoad: 25000, element: 15000, inputWait: 15000, typingDelayMin: 50, typingDelayMax: 150 },
         scroll: { maxAttempts: 15, maxRetries: 3 },
         target: {
-            cityKeywords: await (0, config_1.getList)('cityKeywords.txt'),
+            cityKeywords: await config_1.getList('cityKeywords.txt'),
             names: shuffledNames
         }
     };
@@ -78,17 +42,17 @@ const SELECTORS = {
     LOADER: 'div[role="dialog"] [role="progressbar"], div[role="dialog"] svg[aria-label="Loading..."], div[role="dialog"] svg[aria-label="Загрузка..."]'
 };
 const checkSkipSignal = () => {
-    const flagPath = path_1.default.join((0, utils_1.getRootPath)(), 'data', 'skip_donor.flag');
-    if (fs_1.default.existsSync(flagPath)) {
+    const flagPath = path_1.join(utils_1.getRootPath(), 'data', 'skip_donor.flag');
+    if (fs_1.existsSync(flagPath)) {
         try {
-            fs_1.default.unlinkSync(flagPath);
+            fs_1.unlinkSync(flagPath);
             return true;
         }
         catch (e) { }
     }
     return false;
 };
-const randomDelay = (min = 100, max = 300) => (0, utils_1.wait)(min + Math.random() * (max - min));
+const randomDelay = (min = 100, max = 300) => utils_1.wait(min + Math.random() * (max - min));
 const extractVisibleCandidates = () => {
     const dialog = document.querySelector('div[role="dialog"]');
     if (!dialog)
@@ -104,7 +68,7 @@ const extractVisibleCandidates = () => {
             if (!parent)
                 break;
             const link = parent.querySelector('a[href^="/"]:not([role="button"])');
-            if (link && link.innerText.trim().length > 0) {
+            if (link && link.textContent.trim().length > 0) {
                 const href = link.getAttribute('href');
                 if (href && !href.includes('followers'))
                     results.push(`https://www.instagram.com${href}`);
@@ -119,40 +83,71 @@ const scrollAndCollectUrls = async (page, config) => {
     const collectedUrls = new Set();
     let previousHeight = 0;
     let sameHeightCount = 0;
+    const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
+
     logger.info(`      🔽 Начинаем скролл списка...`);
     for (let i = 0; i < config.scroll.maxAttempts; i++) {
         if (checkSkipSignal())
             return [];
         const visible = await page.evaluate(extractVisibleCandidates);
         visible.forEach(url => collectedUrls.add(url));
-        const scrolledHeight = await page.evaluate(() => {
+
+        const scrollInfo = await page.evaluate(() => {
             const dialog = document.querySelector('div[role="dialog"]');
-            const scrollable = dialog ? Array.from(dialog.querySelectorAll('div')).find(el => {
+            if (!dialog) return { found: false };
+
+            const scrollable = Array.from(dialog.querySelectorAll('div')).find(el => {
                 const s = window.getComputedStyle(el);
-                return (s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight;
-            }) : null;
-            if (scrollable) {
-                scrollable.scrollTop = scrollable.scrollHeight;
-                return scrollable.scrollHeight;
-            }
-            return false;
+                return (s.overflowY === 'auto' || s.overflowY === 'scroll');
+            });
+
+            if (!scrollable) return { found: false };
+
+            // Add a temporary ID to the scrollable element to target it safely in humanScroll
+            const id = 'ig-scrollable-' + Math.random().toString(36).substr(2, 9);
+            scrollable.setAttribute('data-scroll-id', id);
+
+            return {
+                found: true,
+                selector: `div[data-scroll-id="${id}"]`,
+                scrollHeight: scrollable.scrollHeight,
+                clientHeight: scrollable.clientHeight
+            };
         });
-        if (!scrolledHeight)
-            await page.mouse.wheel(0, 600);
-        await (0, utils_1.wait)(50);
+
+        if (humanEmulation) {
+            if (scrollInfo.found) {
+                await (0, utils_1.humanScroll)(page, scrollInfo.selector, 'down', 400 + Math.random() * 200);
+                if (Math.random() < 0.2) {
+                    await (0, utils_1.wait)(300 + Math.random() * 500);
+                    await (0, utils_1.humanScroll)(page, scrollInfo.selector, 'up', 100 + Math.random() * 100);
+                    await (0, utils_1.wait)(500);
+                }
+            } else {
+                // Fallback to window scroll if no dialog found
+                await (0, utils_1.humanScroll)(page, null, 'down', 600);
+            }
+        } else {
+            if (scrollInfo.found) {
+                await page.evaluate((sel) => {
+                    const el = document.querySelector(sel);
+                    if (el) el.scrollTop = el.scrollHeight;
+                }, scrollInfo.selector);
+            } else {
+                await page.mouse.wheel(0, 600);
+            }
+            await utils_1.wait(50);
+        }
+
         try {
             await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 });
         }
         catch (e) { }
-        await (0, utils_1.wait)(50);
-        const newHeight = await page.evaluate(() => {
-            const dialog = document.querySelector('div[role="dialog"]');
-            const scrollable = dialog ? Array.from(dialog.querySelectorAll('div')).find(el => {
-                const s = window.getComputedStyle(el);
-                return (s.overflowY === 'auto' || s.overflowY === 'scroll');
-            }) : null;
-            return scrollable ? scrollable.scrollHeight : false;
-        });
+        await utils_1.wait(50);
+        const newHeight = scrollInfo.found ? await page.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            return el ? el.scrollHeight : false;
+        }, scrollInfo.selector) : false;
         if (newHeight === previousHeight) {
             sameHeightCount++;
             if (sameHeightCount >= config.scroll.maxRetries) {
@@ -171,7 +166,7 @@ const scrollAndCollectUrls = async (page, config) => {
     }
     return Array.from(collectedUrls);
 };
-const analyzeProfile = async (context, url, config) => {
+const analyzeProfile = async (context, url, config, donor = '') => {
     if (state_1.StateManager.has(url))
         return;
     await state_1.StateManager.add(url);
@@ -179,10 +174,24 @@ const analyzeProfile = async (context, url, config) => {
     logger.info(`      👀 Открываем профиль: ${url}`);
     try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: config.timeouts.pageLoad });
-        await (0, browser_1.takeLiveScreenshot)(page);
+        await browser_1.takeLiveScreenshot(page);
         await page.waitForSelector('header', { timeout: 10000 });
-        await (0, browser_1.takeLiveScreenshot)(page);
-        await (0, utils_1.wait)(150);
+        await browser_1.takeLiveScreenshot(page);
+
+        const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
+        if (humanEmulation) {
+            // Micro-interaction: hover over first few posts
+            const posts = page.locator('article img').all();
+            const postsCount = await posts.then(p => p.length);
+            for (let i = 0; i < Math.min(postsCount, 2); i++) {
+                if (Math.random() < 0.5) {
+                    await (0, utils_1.humanHover)(page, (await posts)[i]);
+                }
+            }
+            await (0, utils_1.daydream)(0.03); // 3% chance to "daydream"
+        }
+
+        await utils_1.wait(150);
         const username = url.split('/').filter(Boolean).pop() || '';
         const extracted = await page.evaluate(() => {
             let bioClean = '';
@@ -192,18 +201,18 @@ const analyzeProfile = async (context, url, config) => {
                 fullSearchText = header.innerText || '';
                 const ulList = header.querySelector('ul');
                 if (ulList && ulList.nextElementSibling) {
-                    bioClean = ulList.nextElementSibling.innerText || '';
+                    bioClean = ulList.nextElementSibling.textContent || '';
                 }
                 else {
                     const autoSpans = Array.from(header.querySelectorAll('span[dir="auto"]'));
-                    const spanTexts = autoSpans.map(s => s.innerText.trim()).filter(Boolean);
+                    const spanTexts = autoSpans.map(s => s.textContent.trim()).filter(Boolean);
                     if (spanTexts.length > 0) {
                         bioClean = spanTexts.join(' | ');
                     }
                 }
                 const highlightsBlock = header.nextElementSibling;
                 if (highlightsBlock) {
-                    fullSearchText += ' ' + (highlightsBlock.innerText || '');
+                    fullSearchText += ' ' + (highlightsBlock.textContent || '');
                 }
             }
             return {
@@ -215,17 +224,31 @@ const analyzeProfile = async (context, url, config) => {
         const isTarget = config.target.cityKeywords.some(kw => searchString.includes(kw.toLowerCase()));
         if (isTarget) {
             logger.info(`         ✅ Целевой профиль! Парсим данные (ищем фото)...`);
+
+            if (humanEmulation) {
+                // Social Signal: 30% chance to watch story for target profiles
+                if (Math.random() < 0.3) {
+                    logger.info(`         👤 [HUMAN] Целевой профиль. Пробуем посмотреть сторис...`);
+                    await (0, browser_1.watchStory)(page);
+                } else {
+                    logger.info(`         👤 [HUMAN] Просмотр сторис по рандому пропущен.`);
+                }
+            }
             const name = await page.locator('header h2, header h1, header span[dir="auto"]').first().innerText().catch(() => username);
-            const photoUrl = await page.evaluate(async (uname) => {
+            const extraData = await page.evaluate(async (uname) => {
                 let pUrl = '';
+                let fCount = 0;
                 try {
                     const res = await fetch(`/api/v1/users/web_profile_info/?username=${uname}`, {
                         headers: { 'X-IG-App-ID': '936619743392459' }
                     });
                     if (res.ok) {
                         const json = await res.json();
-                        if (json?.data?.user?.profile_pic_url_hd) {
-                            pUrl = json.data.user.profile_pic_url_hd;
+                        if (json?.data?.user) {
+                            if (json.data.user.profile_pic_url_hd)
+                                pUrl = json.data.user.profile_pic_url_hd;
+                            if (json.data.user.edge_followed_by?.count)
+                                fCount = json.data.user.edge_followed_by.count;
                         }
                     }
                 }
@@ -251,10 +274,31 @@ const analyzeProfile = async (context, url, config) => {
                             pUrl = img.getAttribute('src') || img.src || '';
                     }
                 }
-                return pUrl;
-            }, username).catch(() => '');
+                // Try to get followers from header if API failed
+                if (fCount === 0) {
+                    const link = document.querySelector('a[href$="/followers/"]');
+                    if (link) {
+                        const span = link.querySelector('span[title]');
+                        const rawValue = span ? span.getAttribute('title') : link.textContent;
+                        if (rawValue) {
+                            const clean = rawValue.replace(/\s+/g, '').replace(/[.,]/g, '');
+                            const match = clean.match(/^(\d+)/);
+                            if (match) fCount = parseInt(match[1]);
+                        }
+                    }
+                }
+                return { pUrl, fCount };
+            }, username).catch(() => ({ pUrl: '', fCount: 0 }));
             const bio = extracted.bioClean;
-            const profileData = { name, bio, photo: photoUrl, url };
+            const profileData = {
+                name,
+                username,
+                bio,
+                photo: extraData.pUrl,
+                url,
+                donor,
+                followers_count: extraData.fCount
+            };
             await state_1.StateManager.saveResult(profileData);
         }
         else {
@@ -281,7 +325,49 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     const page = await context.newPage();
     let shouldSkipDonor = false;
     try {
-        await page.goto(donorUrl, { waitUntil: 'domcontentloaded' });
+        const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
+
+        if (humanEmulation) {
+            logger.info(`👤 [HUMAN] Переходим на главную для поиска донора...`);
+            await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
+            await (0, browser_1.takeLiveScreenshot)(page);
+            await (0, utils_1.wait)(2000);
+
+            // Look for search input
+            let searchInput = page.locator('input[aria-label="Search input"], input[placeholder="Search"], input[placeholder="Поиск"]').first();
+            if (await searchInput.count() === 0) {
+                const searchIcon = page.locator('svg[aria-label="Search"], svg[aria-label="Поисковый запрос"], svg[aria-label="Поиск"]').first();
+                if (await searchIcon.count() > 0) {
+                    await searchIcon.click();
+                    await (0, utils_1.wait)(1500);
+                    searchInput = page.locator('input[aria-label="Search input"], input[placeholder="Search"], input[placeholder="Поиск"]').first();
+                }
+            }
+
+            if (await searchInput.count() > 0) {
+                const donorName = donorUrl.split('/').filter(Boolean).pop();
+                logger.info(`👤 [HUMAN] Вводим имя донора в поиск: ${donorName}`);
+                await (0, browser_1.humanMouseMove)(page, 100, 100);
+                await (0, utils_1.humanType)(page, searchInput, donorName, config.timeouts);
+                await (0, utils_1.wait)(3000);
+
+                const donorLink = page.locator(`a[href="/${donorName}/"]`).first();
+                if (await donorLink.count() > 0) {
+                    await donorLink.click();
+                    await (0, utils_1.wait)(2000);
+                    // 👤 [HUMAN] Engagement pause - "reading" the profile
+                    await (0, utils_1.wait)(3000 + Math.random() * 5000);
+                } else {
+                    logger.warn(`⚠️ [HUMAN] Ссылка на донора не найдена в результатах. Переходим напрямую.`);
+                    await page.goto(donorUrl, { waitUntil: 'domcontentloaded' });
+                }
+            } else {
+                await page.goto(donorUrl, { waitUntil: 'domcontentloaded' });
+            }
+        } else {
+            await page.goto(donorUrl, { waitUntil: 'domcontentloaded' });
+        }
+
         await (0, browser_1.takeLiveScreenshot)(page);
         // 1. Проверка на страницу логина
         if (await (0, browser_1.checkLoginPage)(page)) {
@@ -311,44 +397,106 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
             logger.warn(`   ⚠️ Кнопка подписчиков не найдена (возможно, аккаунт пуст или скрыт).`);
             return;
         }
-        // 4. Проверка количества подписчиков
-        const { parsedCount, rawValue } = await page.evaluate(() => {
+        // 4. Проверка количества подписчиков и сбор инфо о доноре
+        const donorInfo = await page.evaluate(async (uname) => {
+            const name = document.querySelector('header h2, header h1, header span[dir="auto"]')?.textContent || uname;
+
+            // Improved Bio collection
+            let bio = '';
+            const header = document.querySelector('header');
+            if (header) {
+                const ulList = header.querySelector('ul');
+                if (ulList && ulList.nextElementSibling) {
+                    bio = ulList.nextElementSibling.textContent || '';
+                } else {
+                    const autoSpans = Array.from(header.querySelectorAll('span[dir="auto"]'));
+                    const spanTexts = autoSpans.map(s => s.textContent.trim()).filter(Boolean);
+                    if (spanTexts.length > 0) {
+                        bio = spanTexts.join(' | ');
+                    }
+                }
+            }
+
             const link = document.querySelector('a[href$="/followers/"]');
-            if (!link)
-                return { parsedCount: 0, rawValue: 'NOT_FOUND' };
-            const span = link.querySelector('span[title]');
-            const rawValue = span ? span.getAttribute('title') : link.innerText;
+            const followersText = link ? (link.querySelector('span[title]')?.getAttribute('title') || link.textContent) : '';
+
+            // Photo collection logic (similar to analyzeProfile)
+            let photo = '';
+            try {
+                const res = await fetch(`/api/v1/users/web_profile_info/?username=${uname}`, {
+                    headers: { 'X-IG-App-ID': '936619743392459' }
+                });
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json?.data?.user?.profile_pic_url_hd) {
+                        photo = json.data.user.profile_pic_url_hd;
+                    }
+                }
+            } catch (e) { }
+
+            if (!photo) {
+                const html = document.documentElement.innerHTML;
+                const matches = [...html.matchAll(/"profile_pic_url_hd":"([^"]+)"/g)];
+                if (matches.length > 0) {
+                    const rawUrl = matches[matches.length - 1][1];
+                    try { photo = JSON.parse('"' + rawUrl + '"'); } catch (e) {
+                        photo = rawUrl.replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+                    }
+                }
+            }
+            if (!photo && header) {
+                const img = header.querySelector('img');
+                if (img) photo = img.getAttribute('src') || img.src || '';
+            }
+
+            return { username: uname, name, bio, photo, followersText };
+        }, donorUrl.split('/').filter(Boolean).pop()).catch((e) => {
+            console.error('Error in donor evaluation:', e);
+            return { username: donorUrl.split('/').filter(Boolean).pop(), name: '', bio: '', photo: '', followersText: '' };
+        });
+
+        const { parsedCount, rawValue } = await page.evaluate((str) => {
             const parseFollowers = (str) => {
                 if (!str)
                     return 0;
-                // 1. Normalize: handle localized comma as decimal if it seems like a ratio (e.g. 10,3M)
-                // but since we force en-GB, we primarily treat dot as decimal and remove commas as thousands.
-                let clean = str.replace(/,/g, '').replace(/\s+/g, '');
-                // 2. Extract number and suffix
-                const match = clean.match(/([\d.]+)\s*([^\d\s]*)/);
+                let clean = str.replace(/\s+/g, '');
+                const match = clean.match(/^([\d.,]+)(.*)$/i);
                 if (!match)
                     return 0;
-                const numPart = match[1];
+                let numPart = match[1];
                 const suffix = (match[2] || '').toLowerCase();
                 let multiplier = 1;
-                // Expanded suffix check for different languages just in case
                 if (suffix.startsWith('k') || suffix.startsWith('к') || suffix.includes('mil')) {
                     multiplier = 1000;
                 }
                 else if (suffix.startsWith('m') || suffix.startsWith('м') || suffix.includes('млн') || suffix.includes('mio')) {
                     multiplier = 1000000;
                 }
+                if (multiplier > 1) {
+                    numPart = numPart.replace(/[,.]/, 'DECIMAL').replace(/[.,]/g, '').replace('DECIMAL', '.');
+                }
+                else {
+                    numPart = numPart.replace(/[.,]/g, '');
+                }
                 const val = parseFloat(numPart);
                 return isNaN(val) ? 0 : Math.floor(val * multiplier);
             };
-            return { parsedCount: parseFollowers(rawValue), rawValue: rawValue || '' };
-        }).catch(() => ({ parsedCount: 0, rawValue: 'ERROR' }));
+            return { parsedCount: parseFollowers(str), rawValue: str || '' };
+        }, donorInfo.followersText).catch(() => ({ parsedCount: 0, rawValue: 'ERROR' }));
+        // Save donor info
+        await state_1.StateManager.saveDonorInfo({
+            username: donorInfo.username,
+            name: donorInfo.name,
+            bio: donorInfo.bio,
+            photo: donorInfo.photo,
+            followers_count: parsedCount
+        });
         if (parsedCount < 1000) {
             logger.info(`   ⏭️ Пропуск и удаление: ${donorUrl} — слишком мало подписчиков. (Текст: "${rawValue}", Парсинг: ${parsedCount} < 1000)`);
             return;
         }
         await followersBtn.click();
-        await (0, browser_1.takeLiveScreenshot)(page);
+        await browser_1.takeLiveScreenshot(page);
         await page.waitForSelector('div[role="dialog"]', { timeout: 10000 });
         logger.info(`   ✅ Список подписчиков открыт.`);
         const searchInput = page.locator(SELECTORS.SEARCH_INPUT).first();
@@ -404,7 +552,11 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
             }
             logger.info(`      🚀 Обрабатываем новые профили пачками...`);
             const concurrentProfiles = await (0, config_1.getSetting)('concurrentProfiles');
-            const CHUNK_SIZE = concurrentProfiles ? parseInt(concurrentProfiles) : 3;
+            const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
+
+            // If human emulation is ON, we only process ONE profile at a time with large delays
+            const CHUNK_SIZE = humanEmulation ? 1 : (concurrentProfiles ? parseInt(concurrentProfiles) : 3);
+
             for (let i = 0; i < newCandidates.length; i += CHUNK_SIZE) {
                 if (checkSkipSignal()) {
                     console.log(`\n⏭️ [СИГНАЛ] Получен сигнал пропуска в процессе анализа профилей...`);
@@ -418,11 +570,17 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
                         shouldSkipDonor = true;
                         break;
                     }
-                    await analyzeProfile(context, url, config);
+                    const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
+                    await analyzeProfile(context, url, config, donorName);
+                    if (humanEmulation) {
+                        const delay = 5000 + Math.random() * 5000;
+                        logger.info(`👤 [HUMAN] Ожидание ${Math.round(delay / 1000)}с перед следующим профилем...`);
+                        await (0, utils_1.wait)(delay);
+                    }
                 }
                 if (shouldSkipDonor)
                     break;
-                await randomDelay(100, 300);
+                if (!humanEmulation) await randomDelay(100, 300);
             }
             if (shouldSkipDonor)
                 break;
@@ -462,6 +620,12 @@ const run = async () => {
             proxy = accounts[currentAccountIndex].proxy;
             cookies = accounts[currentAccountIndex].cookies;
             fingerprint = accounts[currentAccountIndex].fingerprint;
+
+            if (!cookies || cookies.length === 0) {
+                const errMsg = `❌ [АККАУНТ] У аккаунта "${accounts[currentAccountIndex].name}" нет куки. Пожалуйста, авторизуйте его сначала.`;
+                logger.error(errMsg);
+                throw new Error(errMsg);
+            }
         }
         else {
             logger.warn('⚠️ Нет выбранных аккаунтов для парсера. Прямое соединение без кук.');
@@ -472,7 +636,7 @@ const run = async () => {
         if (fingerprint) {
             logger.info(`🎭 Применен уникальный отпечаток браузера: ${fingerprint.userAgent.substring(0, 50)}...`);
         }
-        const configWithCreds = { ...CONFIG, proxy, cookies, fingerprint };
+        const configWithCreds = { ...CONFIG, id: accounts[currentAccountIndex]?.id, proxy, cookies, fingerprint };
         const showBrowserStr = await (0, config_1.getSetting)('showBrowser');
         const showBrowser = showBrowserStr === 'true' || showBrowserStr === true;
         const isHeadless = !showBrowser;
@@ -527,6 +691,20 @@ const run = async () => {
                 logger.error(`❌ Непредвиденная ошибка: ${e.message}`);
                 donorIdx++; // Skip this donor on other errors
             }
+        }
+
+        // 👤 [HUMAN] Periodic context switching - visit home feed every ~2 donors
+        const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
+        if (humanEmulation && donorIdx % 2 === 0) {
+            try {
+                logger.info(`👤 [HUMAN] Заходим в ленту новостей для "отдыха"...`);
+                const feedPage = await context.newPage();
+                await feedPage.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
+                await (0, utils_1.wait)(2000);
+                await (0, utils_1.humanScroll)(feedPage, null, 'down', 800 + Math.random() * 1000);
+                await (0, utils_1.wait)(3000 + Math.random() * 4000);
+                await feedPage.close();
+            } catch (e) { }
         }
     }
     clearInterval(liveViewInterval);

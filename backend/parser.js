@@ -1,9 +1,7 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
+const path_1 = require("path");
 Object.defineProperty(exports, "__esModule", { value: true });
-const path_1 = __importDefault(require("path"));
+
 const config_1 = require("./lib/config");
 const state_1 = require("./lib/state");
 const browser_1 = require("./lib/browser");
@@ -56,13 +54,19 @@ const run = async () => {
     }
     console.log(`🎯 Загружено комбинаций ключевых слов для поиска: ${keywords.length}`);
     // Файл для сохранения найденных профилей доноров
-    const profilesFile = path_1.default.resolve((0, utils_1.getRootPath)(), 'config', 'profiles.txt');
+    const profilesFile = path_1.resolve((0, utils_1.getRootPath)(), 'config', 'profiles.txt');
     const savedProfiles = await state_1.StateManager.loadDonors();
     const collectedUrls = new Set(savedProfiles.map(config_1.normalizeUrl));
     console.log(`📂 В базе уже сохранено доноров: ${collectedUrls.size}`);
     console.log('🌐 Запуск браузера...');
     console.log(`📡 Прокси: ${CONFIG.proxy ? CONFIG.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
     console.log(`🍪 Загружено куки: ${CONFIG.cookies.length}`);
+
+    if (!CONFIG.cookies || CONFIG.cookies.length === 0) {
+        const errMsg = '❌ [ОШИБКА] Куки для парсера не найдены. Пожалуйста, включите \'Task: Parser\' для авторизованного аккаунта.';
+        console.error(errMsg);
+        return;
+    }
     const showBrowserStr = await (0, config_1.getSetting)('showBrowser');
     const showBrowser = showBrowserStr === 'true' || showBrowserStr === true;
     const isHeadless = !showBrowser;
@@ -77,12 +81,15 @@ const run = async () => {
         await (0, browser_1.takeLiveScreenshot)(page);
         await (0, utils_1.wait)(3000);
         // Ищем строку поиска
-        let searchInputLocator = page.locator('input[aria-label="Search input"], input[placeholder="Search"], input[placeholder="Поиск"]').first();
+        // Ищем строку поиска
+        // Selectors updated to support English, Russian, French, and Spanish
+        let searchInputLocator = page.locator('input[aria-label*="Search"], input[aria-label*="Поиск"], input[aria-label*="Recherche"], input[aria-label*="Buscar"], input[placeholder*="Search"], input[placeholder*="Поиск"], input[placeholder*="Recherche"], input[placeholder*="Buscar"]').first();
         // Если строка поиска скрыта, нужно кликнуть по иконке/вкладке поиска в левом меню
         if (await searchInputLocator.count() === 0) {
             console.log('🔍 Ищем вкладку поиска в меню...');
-            const searchIcon = page.locator('svg[aria-label="Search"], svg[aria-label="Поисковый запрос"], svg[aria-label="Поиск"]').first();
-            const searchLink = page.locator('a[href="#"]').filter({ hasText: /Search|Поиск/ }).first();
+            console.log('🔍 Ищем вкладку поиска в меню...');
+            const searchIcon = page.locator('svg[aria-label*="Search"], svg[aria-label*="Поиск"], svg[aria-label*="Recherche"], svg[aria-label*="Rechercher"], svg[aria-label*="Buscar"]').first();
+            const searchLink = page.locator('a[href="#"]').filter({ hasText: /Search|Поиск|Recherche|Rechercher|Buscar/ }).first();
             if (await searchLink.count() > 0) {
                 await searchLink.click();
             }
@@ -91,7 +98,7 @@ const run = async () => {
             }
             await (0, utils_1.wait)(2000);
         }
-        searchInputLocator = page.locator('input[aria-label="Search input"], input[placeholder="Search"], input[placeholder="Поиск"]').first();
+        searchInputLocator = page.locator('input[aria-label*="Search"], input[aria-label*="Поиск"], input[aria-label*="Recherche"], input[aria-label*="Buscar"], input[placeholder*="Search"], input[placeholder*="Поиск"], input[placeholder*="Recherche"], input[placeholder*="Buscar"]').first();
         if (await searchInputLocator.count() > 0) {
             for (const keyword of keywords) {
                 console.log(`\n🔎 Ищем профили по запросу: "${keyword}"`);
@@ -104,23 +111,68 @@ const run = async () => {
                 await (0, utils_1.wait)(4000);
                 await (0, browser_1.takeLiveScreenshot)(page);
                 // Парсим результаты из выпадающего списка
-                const links = await page.evaluate(() => {
+                const searchResultsData = await page.evaluate(() => {
                     const results = [];
-                    document.querySelectorAll('a[href]').forEach(a => {
+                    // Ищем поле поиска, чтобы оттолкнуться от него
+                    const searchInput = document.querySelector('input[aria-label*="Search"], input[aria-label*="Поиск"], input[aria-label*="Recherche"], input[aria-label*="Buscar"], input[placeholder*="Search"], input[placeholder*="Поиск"], input[placeholder*="Recherche"], input[placeholder*="Buscar"]');
+                    if (!searchInput) return { links: [], container: 'NOT_FOUND' };
+
+                    // Возможные селекторы контейнера результатов
+                    const containerSelectors = [
+                        'div[role="none"] div[role="none"]',
+                        'div.x1iyjqo2',
+                        'div.x1n2onr6.x1ja2u2z',
+                        'div[role="dialog"]',
+                        'div[style*="position: absolute"]'
+                    ];
+
+                    let resultsContainer = null;
+                    let foundSelector = 'NONE';
+
+                    for (const sel of containerSelectors) {
+                        const el = document.querySelector(sel);
+                        if (el && el.querySelectorAll('a[href]').length > 0) {
+                            // Проверяем, что контейнер находится рядом с поиском (обычно ниже или в портале)
+                            resultsContainer = el;
+                            foundSelector = sel;
+                            break;
+                        }
+                    }
+
+                    const searchLinks = resultsContainer
+                        ? resultsContainer.querySelectorAll('a[href]')
+                        : document.querySelectorAll('div[role="dialog"] a[href], div[style*="position: absolute"] a[href]');
+
+                    searchLinks.forEach(a => {
                         const href = a.getAttribute('href');
                         // Ищем ссылки, которые ведут на конкретного пользователя (/username/)
                         if (href && href.startsWith('/') && href.split('/').length === 3) {
                             if (!href.includes('/explore/') && !href.includes('/p/') && !href.includes('/tags/')) {
-                                results.push(`https://www.instagram.com${href}`);
+                                // Исключаем ссылки из боковой панели "Suggested"
+                                const isSuggested = a.closest('aside') || a.closest('div[aria-label="Suggested"]');
+                                // Дополнительная проверка на классы, которые часто бывают у "Suggested" в сайдбаре, но не в поиске
+                                const hasSuggestedClasses = a.closest('div.x9f619.x1n2onr6.x1ja2u2z') && !resultsContainer;
+
+                                if (!isSuggested && !hasSuggestedClasses) {
+                                    results.push(`https://www.instagram.com${href}`);
+                                }
                             }
                         }
                     });
-                    return results;
+
+                    return { links: results, container: foundSelector };
                 });
+
+                const { links, container } = searchResultsData;
+                console.log(`📡 [DEBUG] Контейнер результатов: ${container} | Найдено ссылок: ${links.length}`);
+
                 // Фильтруем (оставляем только уникальные)
                 const uniqueLinks = [...new Set(links)];
+                // Ограничиваем до первых 5 результатов
+                const finalLinks = uniqueLinks.slice(0, 5);
+                // Фильтруем (оставляем только уникальные)
                 let addedCount = 0;
-                for (const link of uniqueLinks) {
+                for (const link of finalLinks) {
                     const normLink = (0, config_1.normalizeUrl)(link);
                     if (!collectedUrls.has(normLink)) {
                         collectedUrls.add(normLink);
@@ -128,7 +180,7 @@ const run = async () => {
                         addedCount++;
                     }
                 }
-                console.log(`✅ Найдено профилей: ${uniqueLinks.length} | Из них новых: ${addedCount}`);
+                console.log(`✅ Найдено профилей: ${finalLinks.length} | Из них новых: ${addedCount}`);
                 // Задержка между запросами
                 await (0, utils_1.wait)(2000 + Math.random() * 3000);
             }

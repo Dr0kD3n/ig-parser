@@ -163,8 +163,8 @@ body::before {
   background: hsl(var(--bg-elevated) / 0.5);
   border-radius: 14px;
   margin: 24px 32px;
-  width: fit-content;
   border: 1px solid hsl(var(--border));
+  align-items: center;
 }
 
 .tab-btn {
@@ -346,6 +346,7 @@ body::before {
   top: 16px;
   right: 16px;
   display: flex;
+  flex-direction: column;
   gap: 8px;
   z-index: 2;
 }
@@ -609,6 +610,99 @@ body::before {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+.donorTag {
+  background: hsla(var(--border-bright), 0.5);
+  color: hsl(var(--text-muted));
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+  display: inline-block;
+  border: 1px solid hsl(var(--border));
+  width: fit-content;
+}
+
+.profileDetailsPopover {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  background: hsl(var(--bg-card));
+  z-index: 10;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid hsl(var(--primary) / 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  max-height: calc(100% - 20px);
+
+  /* Transition styles */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px) scale(0.95);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.profileDetailsPopover.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+}
+
+.donorPopoverPhoto {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  border: 1px solid hsl(var(--border));
+}
+
+.donorPopoverPhoto img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.detailRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detailLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: hsl(var(--text-dim));
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.detailValue {
+  font-size: 14px;
+  color: hsl(var(--text-main));
+  word-break: break-word;
+}
+
+.closeDetails {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  cursor: pointer;
+  color: hsl(var(--text-dim));
+  transition: color 0.2s;
+  z-index: 11;
+}
+
+.closeDetails:hover {
+  color: hsl(var(--text-main));
 }
 
 .logs-card.collapsed {

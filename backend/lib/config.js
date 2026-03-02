@@ -1,7 +1,5 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
+const path_1 = require("path");
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeUrl = exports.getConfigPath = void 0;
 exports.getProxy = getProxy;
@@ -9,11 +7,11 @@ exports.getCookies = getCookies;
 exports.getList = getList;
 exports.getSetting = getSetting;
 exports.getAllAccounts = getAllAccounts;
-const path_1 = __importDefault(require("path"));
+
 const db_1 = require("./db");
 const utils_1 = require("./utils");
 // Оставляем для совместимости, хотя новые методы используют БД
-const getConfigPath = (fileName) => path_1.default.join((0, utils_1.getRootPath)(), 'config', fileName);
+const getConfigPath = (fileName) => path_1.join((0, utils_1.getRootPath)(), 'config', fileName);
 exports.getConfigPath = getConfigPath;
 // Нормализация ссылок (убирает слэши на конце и параметры)
 const normalizeUrl = (url) => {
@@ -33,7 +31,7 @@ async function getProxy(type = '') {
             column = 'active_server';
         else if (type === 'index')
             column = 'active_index';
-        else if (type === 'profiles')
+        else if (type === 'profiles' || type === 'donors')
             column = 'active_profiles';
         else if (type === 'checker')
             column = 'active_checker';
@@ -66,7 +64,7 @@ async function getCookies(type = '') {
             column = 'active_server';
         else if (type === 'index')
             column = 'active_index';
-        else if (type === 'profiles')
+        else if (type === 'profiles' || type === 'donors')
             column = 'active_profiles';
         else if (type === 'checker')
             column = 'active_checker';
@@ -159,7 +157,7 @@ async function getAllAccounts(type = '') {
             column = 'active_server';
         else if (type === 'index')
             column = 'active_index';
-        else if (type === 'profiles')
+        else if (type === 'profiles' || type === 'donors')
             column = 'active_profiles';
         else if (type === 'checker')
             column = 'active_checker';
@@ -225,7 +223,7 @@ async function getAllAccounts(type = '') {
                     console.error('Error parsing fingerprint:', e);
                 }
             }
-            return { proxy: proxyObj, cookies: cookiesArr, fingerprint: fingerprintObj };
+            return { proxy: proxyObj, cookies: cookiesArr, fingerprint: fingerprintObj, local_storage: row.local_storage };
         });
     }
     catch (e) {

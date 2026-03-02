@@ -496,7 +496,7 @@ app.post('/api/bot/start', (req, res) => {
     // ╨Ш╤Б╨┐╨╛╨╗╤М╨╖╤Г╨╡╨╝ process.execPath ╨▓╨╝╨╡╤Б╤В╨╛ 'node' ╨┤╨╗╤П ╨╜╨░╨┤╨╡╨╢╨╜╨╛╤Б╤В╨╕ ╨╜╨░ Windows
     // ╨╕ ╤Г╤Б╤В╨░╨╜╨░╨▓╨╗╨╕╨▓╨░╨╡╨╝ shell: true ╨╡╤Б╨╗╨╕ ╨╜╨╡╨╛╨▒╤Е╨╛╨┤╨╕╨╝╨╛ (╤Е╨╛╤В╤П ╨┤╨╗╤П ╨┐╤А╤П╨╝╨╛╨╣ ╨╜╨╛╨┤╤Л ╨╜╨╡ ╨╛╨▒╤П╨╖╨░╤В╨╡╨╗╤М╨╜╨╛)
     const child = spawn(process.execPath, [scriptPath], {
-        cwd: __dirname,
+        cwd: process['pkg'] ? path.dirname(process.execPath) : __dirname,
         env: { ...process.env, FORCE_COLOR: '1' }
     });
 

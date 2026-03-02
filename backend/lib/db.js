@@ -1,30 +1,28 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
+const sqlite3_1 = require("sqlite3");
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getDB = getDB;
-const sqlite3_1 = __importDefault(require("sqlite3"));
+
 const sqlite_1 = require("sqlite");
-const path_1 = __importDefault(require("path"));
-const promises_1 = __importDefault(require("fs/promises"));
+const path_1 = require("path");
+const promises_1 = require("fs/promises");
 const utils_1 = require("./utils");
-const DB_PATH = path_1.default.join((0, utils_1.getRootPath)(), 'config', 'database.sqlite');
-const CONFIG_DIR = path_1.default.dirname(DB_PATH);
+const DB_PATH = path_1.join((0, utils_1.getRootPath)(), 'config', 'database.sqlite');
+const CONFIG_DIR = path_1.dirname(DB_PATH);
 let dbInstance = null;
 async function getDB() {
     if (dbInstance)
         return dbInstance;
     // Обеспечиваем существование папки config
     try {
-        await promises_1.default.mkdir(CONFIG_DIR, { recursive: true });
+        await promises_1.mkdir(CONFIG_DIR, { recursive: true });
     }
     catch (e) {
         // Игнорируем ошибку, если папка уже существует
     }
     dbInstance = await (0, sqlite_1.open)({
         filename: DB_PATH,
-        driver: sqlite3_1.default.Database
+        driver: sqlite3_1.Database
     });
     await dbInstance.exec(`
         CREATE TABLE IF NOT EXISTS accounts (
@@ -54,8 +52,11 @@ async function getDB() {
         CREATE TABLE IF NOT EXISTS profiles (
             url TEXT PRIMARY KEY,
             name TEXT,
+            username TEXT,
             bio TEXT,
             photo TEXT,
+            followers_count INTEGER DEFAULT 0,
+            donor TEXT,
             vote TEXT, -- 'like', 'dislike'
             tg_status TEXT, -- 'valid', 'invalid', NULL
             timestamp TEXT
@@ -73,6 +74,15 @@ async function getDB() {
             status TEXT, -- 'sent', 'replied', etc.
             timestamp TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS donors (
+            username TEXT PRIMARY KEY,
+            name TEXT,
+            bio TEXT,
+            followers_count INTEGER DEFAULT 0,
+            photo TEXT,
+            last_updated TEXT
+        );
     `);
     try {
         await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN tg_status TEXT`);
@@ -81,7 +91,37 @@ async function getDB() {
         // Ignore if column already exists
     }
     try {
+        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN username TEXT`);
+    }
+    catch (e) {
+        // Ignore if column already exists
+    }
+    try {
+        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN followers_count INTEGER DEFAULT 0`);
+    }
+    catch (e) {
+        // Ignore if column already exists
+    }
+    try {
+        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN donor TEXT`);
+    }
+    catch (e) {
+        // Ignore if column already exists
+    }
+    try {
         await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN fingerprint TEXT`);
+    }
+    catch (e) {
+        // Ignore if column already exists
+    }
+    try {
+        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN local_storage TEXT`);
+    }
+    catch (e) {
+        // Ignore if column already exists
+    }
+    try {
+        await dbInstance.exec(`ALTER TABLE donors ADD COLUMN photo TEXT`);
     }
     catch (e) {
         // Ignore if column already exists

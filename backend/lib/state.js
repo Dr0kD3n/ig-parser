@@ -8,7 +8,7 @@ exports.StateManager = {
     processedDonors: new Set(),
     resultsCache: [], // Used for fast memory lookups if needed elsewhere
     async init() {
-        const db = await (0, db_1.getDB)();
+        const db = await db_1.getDB();
         // В urls с type 'history' лежат как processed_profiles, так и processed_donors. 
         // Мы разделим логику сейчас, или загрузим все в processed history.
         // Для простоты, все URLs обработанные скриптами можно считать историей.
@@ -22,10 +22,10 @@ exports.StateManager = {
         this.resultsCache = profiles;
     },
     has(url) {
-        return this.processed.has((0, config_1.normalizeUrl)(url));
+        return this.processed.has(config_1.normalizeUrl(url));
     },
     async add(url) {
-        const normUrl = (0, config_1.normalizeUrl)(url);
+        const normUrl = config_1.normalizeUrl(url);
         if (this.processed.has(normUrl))
             return;
         this.processed.add(normUrl);
@@ -58,12 +58,31 @@ exports.StateManager = {
         const existing = await db.get(`SELECT * FROM profiles WHERE url = ?`, [profileData.url]);
         const ts = new Date().toISOString();
         if (existing) {
-            await db.run(`UPDATE profiles SET name = ?, bio = ?, photo = ?, timestamp = ? WHERE url = ?`, [profileData.name || existing.name, profileData.bio || existing.bio, profileData.photo || existing.photo, ts, profileData.url]);
+            await db.run(`UPDATE profiles SET name = ?, username = ?, bio = ?, photo = ?, followers_count = ?, donor = ?, timestamp = ? WHERE url = ?`, [
+                profileData.name || existing.name,
+                profileData.username || existing.username,
+                profileData.bio || existing.bio,
+                profileData.photo || existing.photo,
+                profileData.followers_count !== undefined ? profileData.followers_count : existing.followers_count,
+                profileData.donor || existing.donor,
+                ts,
+                profileData.url
+            ]);
         }
         else {
-            await db.run(`INSERT INTO profiles (url, name, bio, photo, vote, timestamp) VALUES (?, ?, ?, ?, ?, ?)`, [profileData.url, profileData.name || '', profileData.bio || '', profileData.photo || '', profileData.vote || '', ts]);
+            await db.run(`INSERT INTO profiles (url, name, username, bio, photo, followers_count, donor, vote, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                profileData.url,
+                profileData.name || '',
+                profileData.username || '',
+                profileData.bio || '',
+                profileData.photo || '',
+                profileData.followers_count || 0,
+                profileData.donor || '',
+                profileData.vote || '',
+                ts
+            ]);
         }
-        console.log(`   🏆 [НАЙДЕНА] ${profileData.name || profileData.url} -> сохранена в базу!`);
+        console.log(`   🏆 [НАЙДЕНА] ${profileData.name || profileData.url} (от ${profileData.donor || '?'}) -> сохранена в базу!`);
     },
     async loadDonors() {
         const db = await (0, db_1.getDB)();
@@ -72,6 +91,11 @@ exports.StateManager = {
     },
     async saveDonor(url) {
         const normUrl = (0, config_1.normalizeUrl)(url);
+        // Deduplication: don't add to active list if already processed
+        if (this.processedDonors.has(normUrl)) {
+            console.log(`⏭️ Донор уже был обработан ранее, пропускаем сохранение в активный список: ${normUrl}`);
+            return;
+        }
         const db = await (0, db_1.getDB)();
         try {
             await db.run(`INSERT OR REPLACE INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
@@ -87,6 +111,10 @@ exports.StateManager = {
             await db.run(`DELETE FROM urls WHERE type = 'donor'`);
             for (const url of urls) {
                 const normUrl = (0, config_1.normalizeUrl)(url);
+                // Deduplication: skip if already processed
+                if (this.processedDonors.has(normUrl)) {
+                    continue;
+                }
                 await db.run(`INSERT OR REPLACE INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
             }
         }
@@ -94,6 +122,19 @@ exports.StateManager = {
             console.error('Ошибка при сохранении списка доноров:', e);
             throw e;
         }
+    },
+    async saveDonorInfo(donorData) {
+        const db = await (0, db_1.getDB)();
+        const ts = new Date().toISOString();
+        await db.run(`INSERT OR REPLACE INTO donors (username, name, bio, photo, followers_count, last_updated) VALUES (?, ?, ?, ?, ?, ?)`, [
+            donorData.username,
+            donorData.name || '',
+            donorData.bio || '',
+            donorData.photo || '',
+            donorData.followers_count || 0,
+            ts
+        ]);
+        console.log(`📡 [ДОНОР СОХРАНЕН] ${donorData.username}`);
     }
 };
 exports.PATHS = {};

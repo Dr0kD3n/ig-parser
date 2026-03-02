@@ -1,14 +1,9 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.humanType = exports.shuffleArray = exports.randomDelay = exports.wait = exports.getRootPath = void 0;
-const path_1 = __importDefault(require("path"));
+const path = require('path');
 const getRootPath = () => {
-    return process.pkg
-        ? path_1.default.dirname(process.execPath)
-        : path_1.default.join(__dirname, '..', '..');
+    if (process.env.APP_ROOT) return process.env.APP_ROOT;
+    return process['pkg']
+        ? path.dirname(process.execPath)
+        : path.join(__dirname, '..', '..');
 };
 exports.getRootPath = getRootPath;
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -29,12 +24,16 @@ exports.shuffleArray = shuffleArray;
  */
 const humanType = async (page, selector, text, timeouts) => {
     try {
-        await page.click(selector);
+        const element = typeof selector === 'string' ? page.locator(selector).first() : selector;
+        await element.click();
+        const delayMin = timeouts?.typingDelayMin || 50;
+        const delayMax = timeouts?.typingDelayMax || 150;
         for (const char of text) {
             await page.keyboard.type(char);
-            let delay = Math.floor(Math.random() * (timeouts.typingDelayMax - timeouts.typingDelayMin + 1)) + timeouts.typingDelayMin;
+            let delay = Math.floor(Math.random() * (delayMax - delayMin + 1)) + delayMin;
+            // Occasional "human" pause
             if (Math.random() < 0.05)
-                delay += Math.floor(Math.random() * 300) + 300;
+                await (0, exports.wait)(Math.floor(Math.random() * 300) + 300);
             await (0, exports.wait)(delay);
         }
     }
@@ -43,3 +42,55 @@ const humanType = async (page, selector, text, timeouts) => {
     }
 };
 exports.humanType = humanType;
+/**
+ * Эмуляция наведения мыши
+ */
+const humanHover = async (page, selector) => {
+    try {
+        const element = typeof selector === 'string' ? page.locator(selector).first() : selector;
+        const box = await element.boundingBox();
+        if (box) {
+            const x = box.x + box.width * (0.3 + Math.random() * 0.4);
+            const y = box.y + box.height * (0.3 + Math.random() * 0.4);
+            // Move to the element
+            await page.mouse.move(x, y, { steps: 5 + Math.floor(Math.random() * 5) });
+            await (0, exports.wait)(500 + Math.random() * 1000);
+        }
+    }
+    catch (e) { }
+};
+exports.humanHover = humanHover;
+/**
+ * Режим "Раздумье" (длительная пауза)
+ */
+const daydream = async (chance = 0.05) => {
+    if (Math.random() < chance) {
+        const delay = 15000 + Math.random() * 25000;
+        console.log(`👤 [HUMAN] Задумался на ${Math.round(delay / 1000)}с...`);
+        await (0, exports.wait)(delay);
+    }
+};
+exports.daydream = daydream;
+/**
+ * Плавный скролл через JS ивенты
+ */
+const humanScroll = async (page, selector, direction = 'down', amount = 300) => {
+    try {
+        const steps = 10 + Math.floor(Math.random() * 10);
+        const delta = direction === 'down' ? (amount / steps) : -(amount / steps);
+
+        for (let i = 0; i < steps; i++) {
+            const ease = 1 - Math.pow(1 - (i / steps), 2); // Quadratic ease out
+            const stepDelta = delta * (1 + (Math.random() - 0.5) * 0.2); // Random variation
+
+            await page.mouse.wheel(0, stepDelta);
+            await (0, exports.wait)(30 + Math.random() * 40);
+        }
+    } catch (e) {
+        // Fallback to JS scroll
+        await page.evaluate(({ dir, amt }) => {
+            window.scrollBy({ top: dir === 'down' ? amt : -amt, behavior: 'smooth' });
+        }, { dir: direction, amt: amount });
+    }
+};
+exports.humanScroll = humanScroll;

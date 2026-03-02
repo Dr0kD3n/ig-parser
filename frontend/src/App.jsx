@@ -22,7 +22,7 @@ export default function App() {
     const [messagesText, setMessagesText] = useState('');
     const [settingsData, setSettingsData] = useState({
         accounts: [], activeParserAccountIds: [], activeServerAccountIds: [], activeIndexAccountIds: [], activeProfilesAccountIds: [],
-        names: [], cities: [], niches: [], donors: [], showBrowser: false
+        names: [], cities: [], niches: [], donors: [], showBrowser: false, humanEmulation: false
     });
     const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false });
     const [logs, setLogs] = useState([]);
@@ -69,7 +69,8 @@ export default function App() {
                 niches: data.niches || [],
                 donors: data.donors || [],
                 showBrowser: data.showBrowser || false,
-                concurrentProfiles: data.concurrentProfiles
+                concurrentProfiles: data.concurrentProfiles,
+                humanEmulation: data.humanEmulation || false
             });
             settingsLoaded.current = true;
         }
@@ -199,13 +200,13 @@ export default function App() {
                 signal: controller.signal
             })
                 .then(() => {
-                setSaveStatus('saved');
-                setTimeout(() => setSaveStatus('idle'), 2000);
-            })
+                    setSaveStatus('saved');
+                    setTimeout(() => setSaveStatus('idle'), 2000);
+                })
                 .catch((err) => {
-                if (err.name !== 'AbortError')
-                    setSaveStatus('error');
-            });
+                    if (err.name !== 'AbortError')
+                        setSaveStatus('error');
+                });
         }, 800);
         return () => clearTimeout(timer);
     }, [settingsData]);
@@ -214,85 +215,111 @@ export default function App() {
     const likesCount = Object.values(votes).filter(v => v === 'like').length;
     return (<div className="app">
 
-            <header className="header">
-                <div className="header-left">
-                    <div className="logo">{tr('logo')}</div>
-                    <div className="stats">
-                        <span>{tr('unopened')} <b>{unopenedCount}</b></span>
-                        <span>{tr('viewed')} <b>{viewed.length}</b></span>
-                        <span>{tr('dm_sent')} <b style={{ color: 'hsl(var(--accent))' }}>{sentDM.length}</b></span>
-                        <div className="stats-divider"/>
-                        <span>{tr('likes')} <b style={{ color: 'hsl(var(--success))' }}>{likesCount}</b></span>
-                    </div>
+        <header className="header">
+            <div className="header-left">
+                <div className="logo">{tr('logo')}</div>
+                <div className="stats">
+                    <span>{tr('unopened')} <b>{unopenedCount}</b></span>
+                    <span>{tr('viewed')} <b>{viewed.length}</b></span>
+                    <span>{tr('dm_sent')} <b style={{ color: 'hsl(var(--accent))' }}>{sentDM.length}</b></span>
+                    <div className="stats-divider" />
+                    <span>{tr('likes')} <b style={{ color: 'hsl(var(--success))' }}>{likesCount}</b></span>
                 </div>
-                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    {saveStatus !== 'idle' && (<div style={{
-                fontSize: '12px',
-                color: saveStatus === 'error' ? 'hsl(var(--danger))' : 'hsl(var(--text-muted))',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-            }}>
-                            {saveStatus === 'saving' && <div className="loader-ring" style={{ width: '12px', height: '12px', borderWidth: '2px' }}/>}
-                            {saveStatus === 'saving' ? 'Сохранение...' : saveStatus === 'saved' ? '✓ Сохранено' : 'Ошибка сохранения'}
-                        </div>)}
-                    <button className="btn-primary" style={{
-            background: 'transparent',
-            fontSize: '12px',
-            padding: '4px 8px',
-            minWidth: '40px'
-        }} onClick={toggleLang}>
-                        {lang.toUpperCase()}
-                    </button>
-                    <button className="btn-primary" onClick={() => setModalOpen(true)}>
-                        {tr('templates')}
-                    </button>
-                </div>
-            </header>
-
-            <nav className="tabs-nav">
-                <div style={{ display: 'flex', gap: '8px' }}>
-                    {[
-            { id: 'main', label: tr('tab_profiles') },
-            { id: 'controls', label: tr('tab_execution') },
-            { id: 'settings', label: tr('tab_configuration') },
-        ].map(({ id, label }) => (<button key={id} className={`tab-btn${activeTab === id ? ' active' : ''}`} onClick={() => setActiveTab(id)}>
-                            {label}
-                        </button>))}
-                </div>
-                <button className="btn-primary" style={{ marginLeft: 'auto', background: 'hsl(210 100% 50%)', borderColor: 'transparent' }} onClick={fetchData} title={tr('btn_update')}>
-                    {tr('btn_update')}
-                </button>
-            </nav>
-
-            {activeTab === 'main' && (<ProfilesTab girls={girls} votes={votes} viewed={viewed} sentDM={sentDM} failedImages={failedImages} onVote={handleVote} onOpen={handleOpen} onSendDM={handleSendDM} onImageError={handleImageError} onRefresh={fetchData} useProxyImages={(settingsData.activeProfilesAccountIds || []).length > 0} tr={tr} onTgCheck={handleTgCheck} isLoading={isLoading}/>)}
-
-            {activeTab === 'controls' && (<ControlsTab botStatus={botStatus} onBotControl={handleBotControl} onClearLogs={handleClearLogs} logs={logs} tr={tr} isLoading={isLoading}/>)}
-
-            {activeTab === 'settings' && (<SettingsTab settingsData={settingsData} onSettingsChange={setSettingsData} onSave={handleSaveSettings} tr={tr} isLoading={isLoading}/>)}
-
-            {modalOpen && (<div className="modal" onClick={() => setModalOpen(false)}>
-                    <div className="modalContent" onClick={e => e.stopPropagation()}>
-                        <h3 style={{ margin: 0, marginBottom: 18, color: '#fff' }}>{tr('modal_templates_title')}</h3>
-                        <textarea className="msg-textarea" value={messagesText} onChange={e => setMessagesText(e.target.value)} placeholder={tr('one_msg_per_line')}/>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                            <button className="btn-primary" style={{ background: 'transparent', border: 'none', boxShadow: 'none' }} onClick={() => setModalOpen(false)}>
-                                {tr('cancel')}
-                            </button>
-                            <button className="btn-primary" onClick={() => {
-                localStorage.setItem('ig_first_messages', JSON.stringify(messagesText.split('\n').filter(l => l.trim())));
-                setModalOpen(false);
-            }}>
-                                {tr('save_changes')}
-                            </button>
-                        </div>
-                    </div>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {saveStatus !== 'idle' && (<div style={{
+                    fontSize: '12px',
+                    color: saveStatus === 'error' ? 'hsl(var(--danger))' : 'hsl(var(--text-muted))',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                }}>
+                    {saveStatus === 'saving' && <div className="loader-ring" style={{ width: '12px', height: '12px', borderWidth: '2px' }} />}
+                    {saveStatus === 'saving' ? 'Сохранение...' : saveStatus === 'saved' ? '✓ Сохранено' : 'Ошибка сохранения'}
                 </div>)}
-            <Toaster position="bottom-right" toastOptions={{
+                <button className="btn-primary" style={{
+                    background: 'transparent',
+                    fontSize: '12px',
+                    padding: '4px 8px',
+                    minWidth: '40px'
+                }} onClick={toggleLang}>
+                    {lang.toUpperCase()}
+                </button>
+                <button className="btn-primary" onClick={() => setModalOpen(true)}>
+                    {tr('templates')}
+                </button>
+            </div>
+        </header>
+
+        <nav className="tabs-nav">
+            <div style={{ display: 'flex', gap: '8px' }}>
+                {[
+                    { id: 'main', label: tr('tab_profiles') },
+                    { id: 'controls', label: tr('tab_execution') },
+                    { id: 'settings', label: tr('tab_configuration') },
+                ].map(({ id, label }) => (<button key={id} className={`tab-btn${activeTab === id ? ' active' : ''}`} onClick={() => setActiveTab(id)}>
+                    {label}
+                </button>))}
+            </div>
+            {activeTab === 'controls' && (<div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '20px', paddingRight: '20px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'hsl(var(--text-muted))' }} title={tr('human_emulation_desc')}>
+                    <input type="checkbox" checked={settingsData.humanEmulation || false} style={{ width: '15px', height: '15px', accentColor: 'hsl(var(--primary))' }} onChange={e => setSettingsData({ ...settingsData, humanEmulation: e.target.checked })} />
+                    {tr('human_emulation')}
+                </label>
+                <hr style={{ height: '16px', width: '1px', background: 'hsl(var(--border))', border: 'none' }} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'hsl(var(--text-muted))' }}>
+                    <input type="checkbox" checked={settingsData.showBrowser || false} style={{ width: '15px', height: '15px', accentColor: 'hsl(var(--primary))' }} onChange={e => setSettingsData({ ...settingsData, showBrowser: e.target.checked })} />
+                    {tr('show_browser')}
+                </label>
+                <hr style={{ height: '16px', width: '1px', background: 'hsl(var(--border))', border: 'none' }} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'hsl(var(--text-muted))' }}>
+                    {tr('concurrent_profiles')}
+                    <input type="number" min="1" max="20" value={settingsData.concurrentProfiles || 3} style={{
+                        width: '44px',
+                        height: '24px',
+                        background: 'hsl(var(--bg-elevated))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '4px',
+                        color: 'hsl(var(--text))',
+                        textAlign: 'center',
+                        fontSize: '11px',
+                        fontWeight: 600
+                    }} onChange={e => setSettingsData({ ...settingsData, concurrentProfiles: parseInt(e.target.value) || 1 })} />
+                </label>
+            </div>)}
+            <button className="btn-primary" style={{ marginLeft: activeTab === 'controls' ? '0' : 'auto', background: 'hsl(210 100% 50%)', borderColor: 'transparent' }} onClick={fetchData} title={tr('btn_update')}>
+                {tr('btn_update')}
+            </button>
+        </nav>
+
+        {activeTab === 'main' && (<ProfilesTab girls={girls} votes={votes} viewed={viewed} sentDM={sentDM} failedImages={failedImages} onVote={handleVote} onOpen={handleOpen} onSendDM={handleSendDM} onImageError={handleImageError} onRefresh={fetchData} useProxyImages={(settingsData.activeProfilesAccountIds || []).length > 0} tr={tr} onTgCheck={handleTgCheck} isLoading={isLoading} />)}
+
+        {activeTab === 'controls' && (<ControlsTab botStatus={botStatus} onBotControl={handleBotControl} onClearLogs={handleClearLogs} logs={logs} tr={tr} isLoading={isLoading} />)}
+
+        {activeTab === 'settings' && (<SettingsTab settingsData={settingsData} onSettingsChange={setSettingsData} onSave={handleSaveSettings} tr={tr} isLoading={isLoading} />)}
+
+        {modalOpen && (<div className="modal" onClick={() => setModalOpen(false)}>
+            <div className="modalContent" onClick={e => e.stopPropagation()}>
+                <h3 style={{ margin: 0, marginBottom: 18, color: '#fff' }}>{tr('modal_templates_title')}</h3>
+                <textarea className="msg-textarea" value={messagesText} onChange={e => setMessagesText(e.target.value)} placeholder={tr('one_msg_per_line')} />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                    <button className="btn-primary" style={{ background: 'transparent', border: 'none', boxShadow: 'none' }} onClick={() => setModalOpen(false)}>
+                        {tr('cancel')}
+                    </button>
+                    <button className="btn-primary" onClick={() => {
+                        localStorage.setItem('ig_first_messages', JSON.stringify(messagesText.split('\n').filter(l => l.trim())));
+                        setModalOpen(false);
+                    }}>
+                        {tr('save_changes')}
+                    </button>
+                </div>
+            </div>
+        </div>)}
+        <Toaster position="bottom-right" toastOptions={{
             style: {
                 background: '#333',
                 color: '#fff',
             }
-        }}/>
-        </div>);
+        }} />
+    </div>);
 }

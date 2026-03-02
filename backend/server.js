@@ -1,13 +1,8 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express"));
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
-const http_1 = __importDefault(require("http"));
-const https_1 = __importDefault(require("https"));
+const express_1 = require("express");
+const fs_1 = require("fs");
+const path_1 = require("path");
+const http_1 = require("http");
+const https_1 = require("https");
 const browser_1 = require("./lib/browser");
 const utils_1 = require("./lib/utils");
 const state_1 = require("./lib/state");
@@ -18,7 +13,7 @@ const fingerprint_1 = require("./lib/fingerprint");
 const reporter_1 = require("./lib/reporter");
 const config_1 = require("./lib/config");
 const logEmitter = new events_1.EventEmitter();
-const LOGS_FILE = path_1.default.join((0, utils_1.getRootPath)(), 'data', 'logs.json');
+const LOGS_FILE = path_1.join(utils_1.getRootPath(), 'data', 'logs.json');
 let botProcesses = {
     index: null,
     parser: null
@@ -33,8 +28,8 @@ const originalLog = console.log;
 const originalError = console.error;
 const originalWarn = console.warn;
 try {
-    if (fs_1.default.existsSync(LOGS_FILE)) {
-        historicalLogs = JSON.parse(fs_1.default.readFileSync(LOGS_FILE, 'utf8'));
+    if (fs_1.existsSync(LOGS_FILE)) {
+        historicalLogs = JSON.parse(fs_1.readFileSync(LOGS_FILE, 'utf8'));
     }
 }
 catch (e) {
@@ -42,7 +37,7 @@ catch (e) {
 }
 function saveLogs() {
     try {
-        fs_1.default.writeFileSync(LOGS_FILE, JSON.stringify(historicalLogs.slice(-1000)));
+        fs_1.writeFileSync(LOGS_FILE, JSON.stringify(historicalLogs.slice(-1000)));
     }
     catch (e) {
         originalLog('Error saving logs:', e);
@@ -82,8 +77,8 @@ console.error = (...args) => {
 console.warn = (...args) => {
     broadcastLog('server-warn', args.join(' '));
 };
-const app = (0, express_1.default)();
-const PORT = 1337;
+const app = express_1();
+const PORT = process.env.PORT || 1337;
 // ==========================================
 // 1. CONFIGURATION & SELECTORS
 // ==========================================
@@ -94,7 +89,7 @@ const CONFIG = {
         typingDelayMin: 50,
         typingDelayMax: 180,
     },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     selectors: {
         directMessageBtn: [
             // RU
@@ -142,6 +137,8 @@ async function getSettings() {
     const showBrowser = showBrowserStr ? showBrowserStr.value === 'true' : false;
     const concurrentProfilesStr = await db.get(`SELECT value FROM settings WHERE key = 'concurrentProfiles'`);
     const concurrentProfiles = concurrentProfilesStr ? parseInt(concurrentProfilesStr.value) : 3;
+    const humanEmulationStr = await db.get(`SELECT value FROM settings WHERE key = 'humanEmulation'`);
+    const humanEmulation = humanEmulationStr ? humanEmulationStr.value === 'true' : false;
     return {
         accounts,
         activeParserAccountIds: activeParserIds,
@@ -149,16 +146,17 @@ async function getSettings() {
         activeIndexAccountIds: activeIndexIds,
         activeProfilesAccountIds: activeProfilesIds,
         showBrowser,
-        concurrentProfiles
+        concurrentProfiles,
+        humanEmulation
     };
 }
-app.use(express_1.default.json());
+app.use(express_1.json());
 // --- Static frontend (production build from frontend/) ---
-const baseDir = path_1.default.basename(__dirname) === 'dist' ? path_1.default.join(__dirname, '..') : __dirname;
-const publicDir = path_1.default.join(baseDir, 'public');
-const legacyHtml = path_1.default.join(baseDir, 'index.html');
-if (fs_1.default.existsSync(publicDir)) {
-    app.use(express_1.default.static(publicDir));
+const baseDir = path_1.basename(__dirname) === 'dist' ? path_1.join(__dirname, '..') : __dirname;
+const publicDir = path_1.join(baseDir, 'public');
+const legacyHtml = path_1.join(baseDir, 'index.html');
+if (fs_1.existsSync(publicDir)) {
+    app.use(express_1.static(publicDir));
 }
 else {
     // --- Fallback to old single-file index.html during migration
@@ -174,7 +172,16 @@ async function getGirlsCached() {
         return girlsCache;
     try {
         const db = await (0, db_1.getDB)();
-        let profiles = await db.all(`SELECT * FROM profiles ORDER BY timestamp DESC`);
+        let profiles = await db.all(`
+            SELECT p.*, 
+                   d.name as donor_name, 
+                   d.bio as donor_bio, 
+                   d.followers_count as donor_followers_count,
+                   d.photo as donor_photo
+            FROM profiles p
+            LEFT JOIN donors d ON p.donor = d.username
+            ORDER BY p.timestamp DESC
+        `);
         girlsCache = profiles;
         girlsCacheTime = now;
     }
@@ -189,6 +196,16 @@ function invalidateGirlsCache() {
 }
 app.get('/api/girls', async (req, res) => {
     res.json(await getGirlsCached());
+});
+app.get('/api/donors-collected', async (req, res) => {
+    try {
+        const db = await (0, db_1.getDB)();
+        const rows = await db.all(`SELECT DISTINCT donor FROM profiles WHERE donor IS NOT NULL AND donor != '' ORDER BY donor ASC`);
+        res.json(rows.map(r => r.donor));
+    }
+    catch (e) {
+        res.status(500).json([]);
+    }
 });
 app.get('/api/votes', async (req, res) => {
     const profiles = await getGirlsCached();
@@ -219,7 +236,7 @@ app.post('/api/vote', async (req, res) => {
 async function checkTelegramProfile(url) {
     const fetchUrl = url.startsWith('http') ? url : `https://t.me/${url}`;
     return new Promise((resolve, reject) => {
-        const req = https_1.default.get(fetchUrl, {
+        const req = https_1.get(fetchUrl, {
             headers: { 'User-Agent': CONFIG.userAgent }
         }, (res) => {
             // Follow redirects manually if needed for t.me
@@ -253,15 +270,15 @@ async function checkTelegramProfile(url) {
     });
 }
 app.get('/api/check-telegram', async (req, res) => {
-    const { url } = req.query;
-    if (!url)
-        return res.status(400).json({ success: false, error: 'Missing url' });
+    const url = req.query.url;
+    if (!url || typeof url !== 'string')
+        return res.status(400).json({ success: false, error: 'Missing or invalid url' });
     console.log(`[TG CHECK] Checking: ${url}`);
     try {
         const status = await checkTelegramProfile(url);
         console.log(`[TG CHECK] Result for ${url}: ${status}`);
         // Update DB
-        const db = await (0, db_1.getDB)();
+        const db = await db_1.getDB();
         await db.run(`UPDATE profiles SET tg_status = ? WHERE url = ? OR name = ?`, [status, url, url.replace('https://t.me/', '')]);
         invalidateGirlsCache();
         res.json({ success: true, status });
@@ -320,7 +337,8 @@ app.get('/api/settings', async (req, res) => {
         niches,
         donors,
         showBrowser: settings.showBrowser,
-        concurrentProfiles: settings.concurrentProfiles
+        concurrentProfiles: settings.concurrentProfiles,
+        humanEmulation: settings.humanEmulation
     });
 });
 app.post('/api/settings', async (req, res) => {
@@ -405,6 +423,9 @@ app.post('/api/settings', async (req, res) => {
             if (req.body.hasOwnProperty('concurrentProfiles')) {
                 await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['concurrentProfiles', req.body.concurrentProfiles.toString()]);
             }
+            if (req.body.hasOwnProperty('humanEmulation')) {
+                await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['humanEmulation', req.body.humanEmulation ? 'true' : 'false']);
+            }
             await db.run('COMMIT');
         }
         catch (txErr) {
@@ -418,9 +439,52 @@ app.post('/api/settings', async (req, res) => {
         res.status(500).json({ success: false });
     }
 });
+const authorizer_1 = require("./lib/authorizer");
+// ... existing code ...
+app.post('/api/accounts/:id/authorize/start', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const db = await (0, db_1.getDB)();
+        const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [id]);
+        if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
+
+        const result = await authorizer_1.startAuthorization(id, acc.name, acc.proxy, acc.fingerprint ? JSON.parse(acc.fingerprint) : null);
+        res.json(result);
+    } catch (e) {
+        console.error('Error starting auth:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/accounts/:id/authorize/status', (req, res) => {
+    const { id } = req.params;
+    res.json({ active: authorizer_1.getAuthorizationStatus(id) });
+});
+
+app.post('/api/accounts/:id/authorize/stop', async (req, res) => {
+    const { id } = req.params;
+    const result = await authorizer_1.stopAuthorization(id);
+    res.json(result);
+});
+
+app.post('/api/accounts/:id/browser/start', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const db = await (0, db_1.getDB)();
+        const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [id]);
+        if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
+
+        const result = await authorizer_1.startAuthorization(id, acc.name, acc.proxy, acc.fingerprint ? JSON.parse(acc.fingerprint) : null, false);
+        res.json(result);
+    } catch (e) {
+        console.error('Error starting browser:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 app.put('/api/accounts/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, proxy, cookies, regenerateFingerprint } = req.body;
+    const { name, proxy, cookies, fingerprint, regenerateFingerprint } = req.body;
     try {
         const db = await (0, db_1.getDB)();
         const existing = await db.get('SELECT id FROM accounts WHERE id = ?', [id]);
@@ -441,6 +505,10 @@ app.put('/api/accounts/:id', async (req, res) => {
             updates.push('cookies = ?');
             values.push(cookies);
         }
+        if (fingerprint !== undefined) {
+            updates.push('fingerprint = ?');
+            values.push(typeof fingerprint === 'object' ? JSON.stringify(fingerprint) : fingerprint);
+        }
         if (regenerateFingerprint) {
             updates.push('fingerprint = ?');
             values.push(JSON.stringify((0, fingerprint_1.generateFingerprint)()));
@@ -460,12 +528,12 @@ app.put('/api/accounts/:id', async (req, res) => {
 // --- Proxy image endpoint: fetches images through configured account proxy ---
 app.get('/api/proxy-image', async (req, res) => {
     const imageUrl = req.query.url;
-    if (!imageUrl)
-        return res.status(400).send('Missing url parameter');
+    if (!imageUrl || typeof imageUrl !== 'string')
+        return res.status(400).send('Missing or invalid url parameter');
     try {
-        const proxy = await (0, config_1.getProxy)('profiles');
+        const proxy = await config_1.getProxy('donors');
         const parsedUrl = new URL(imageUrl);
-        const transport = parsedUrl.protocol === 'https:' ? https_1.default : http_1.default;
+        const transport = parsedUrl.protocol === 'https:' ? https_1 : http_1;
         const fetchOptions = {
             hostname: parsedUrl.hostname,
             path: parsedUrl.pathname + parsedUrl.search,
@@ -475,37 +543,72 @@ app.get('/api/proxy-image', async (req, res) => {
                 'Referer': 'https://www.instagram.com/'
             }
         };
+        async function fetchWithRetry(url, options, transport, retries = 3) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    return await new Promise((resolve, reject) => {
+                        const proxyReq = transport.request(options, (res) => {
+                            resolve(res);
+                        });
+                        proxyReq.on('error', (e) => {
+                            if (i === retries - 1)
+                                reject(e);
+                            else
+                                reject(e); // Will be caught by catch block
+                        });
+                        proxyReq.setTimeout(15000, () => {
+                            proxyReq.destroy();
+                            reject(new Error('Timeout'));
+                        });
+                        proxyReq.end();
+                    });
+                }
+                catch (e) {
+                    console.warn(`[IMAGE PROXY] Fetch attempt ${i + 1} failed: ${e.message}`);
+                    if (i === retries - 1)
+                        throw e;
+                    await (0, utils_1.wait)(1000 * (i + 1));
+                }
+            }
+        }
         // If proxy is configured, route through it via HTTP CONNECT
         if (proxy) {
             const proxyUrl = new URL(proxy.server);
             const authHeader = 'Basic ' + Buffer.from(`${proxy.username}:${proxy.password}`).toString('base64');
             // For HTTPS targets, use HTTP CONNECT tunnel
             if (parsedUrl.protocol === 'https:') {
-                const connectReq = http_1.default.request({
+                const connectReq = http_1.request({
                     host: proxyUrl.hostname,
                     port: proxyUrl.port || 80,
                     method: 'CONNECT',
                     path: `${parsedUrl.hostname}:443`,
                     headers: { 'Proxy-Authorization': authHeader }
                 });
-                connectReq.on('connect', (_res, socket) => {
+                connectReq.on('connect', async (_res, socket) => {
                     if (_res.statusCode !== 200) {
                         return res.status(502).send('Proxy CONNECT failed');
                     }
-                    const tlsReq = https_1.default.request({
+                    const connector = parsedUrl.protocol === 'https:' ? https_1 : http_1;
+                    const proxyReqOptions = {
                         ...fetchOptions,
                         socket: socket,
                         agent: false
-                    }, handleImageResponse);
-                    tlsReq.on('error', () => res.status(502).send('Image fetch error'));
-                    tlsReq.end();
+                    };
+                    try {
+                        const imgRes = await fetchWithRetry(imageUrl, proxyReqOptions, connector);
+                        handleImageResponse(imgRes);
+                    }
+                    catch (e) {
+                        console.error('Proxy HTTPS request error after retries:', e);
+                        res.status(502).send('Proxy HTTPS image fetch error');
+                    }
                 });
                 connectReq.on('error', () => res.status(502).send('Proxy connect error'));
                 connectReq.end();
             }
             else {
-                // HTTP target through proxy
-                const proxyReq = http_1.default.request({
+                // For HTTP targets, use standard HTTP request
+                const proxyReqOptions = {
                     hostname: proxyUrl.hostname,
                     port: proxyUrl.port || 80,
                     path: imageUrl,
@@ -514,22 +617,33 @@ app.get('/api/proxy-image', async (req, res) => {
                         'Proxy-Authorization': authHeader,
                         'Host': parsedUrl.hostname
                     }
-                }, handleImageResponse);
-                proxyReq.on('error', () => res.status(502).send('Proxy request error'));
-                proxyReq.end();
+                };
+                try {
+                    const imgRes = await fetchWithRetry(imageUrl, proxyReqOptions, http_1);
+                    handleImageResponse(imgRes);
+                }
+                catch (e) {
+                    console.error('Proxy HTTP error after retries:', e);
+                    res.status(502).send('Proxy HTTP error');
+                }
             }
         }
         else {
             // No proxy — direct fetch
-            const directReq = transport.request(fetchOptions, handleImageResponse);
-            directReq.on('error', () => res.status(502).send('Direct fetch error'));
-            directReq.end();
+            try {
+                const imgRes = await fetchWithRetry(imageUrl, fetchOptions, transport);
+                handleImageResponse(imgRes);
+            }
+            catch (e) {
+                console.error('Direct fetch error after retries:', e);
+                res.status(502).send('Direct image fetch error: ' + e.message);
+            }
         }
         function handleImageResponse(imgRes) {
             // Follow redirects (Instagram CDN does 301/302)
             if ([301, 302, 307, 308].includes(imgRes.statusCode) && imgRes.headers.location) {
                 // Redirect — fetch again without proxy (CDN URLs are public)
-                const redirectTransport = imgRes.headers.location.startsWith('https') ? https_1.default : http_1.default;
+                const redirectTransport = imgRes.headers.location.startsWith('https') ? https_1 : http_1;
                 redirectTransport.get(imgRes.headers.location, (redirRes) => {
                     res.setHeader('Content-Type', redirRes.headers['content-type'] || 'image/jpeg');
                     res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -546,7 +660,8 @@ app.get('/api/proxy-image', async (req, res) => {
         }
     }
     catch (e) {
-        res.status(500).send('Proxy image error');
+        console.error('Image proxy error:', e);
+        res.status(500).send('Internal server error');
     }
 });
 app.post('/api/logs/clear', (req, res) => {
@@ -572,7 +687,7 @@ app.get('/api/logs', (req, res) => {
     });
 });
 app.get('/api/live-view', (req, res) => {
-    const liveViewPath = path_1.default.join((0, utils_1.getRootPath)(), 'data', 'screenshots', 'live_view.jpg');
+    const liveViewPath = path_1.join(utils_1.getRootPath(), 'data', 'screenshots', 'live_view.jpg');
     res.sendFile(liveViewPath, { headers: { 'Cache-Control': 'no-store' } }, err => {
         if (err)
             res.status(404).send('Not generated yet');
@@ -593,13 +708,17 @@ app.post('/api/bot/start', (req, res) => {
         return res.json({ success: false, error: 'Bot already running' });
     }
     refreshSession();
-    const isPkg = process.pkg !== undefined;
+    const isPkg = process['pkg'] !== undefined;
     const scriptExt = 'js';
-    const scriptPath = path_1.default.join(__dirname, `${type}.${scriptExt}`);
+    const scriptPath = path_1.join(__dirname, `${type}.${scriptExt}`);
+    if (!fs_1.existsSync(scriptPath)) {
+        return res.status(404).json({ success: false, error: `Script for ${type} not found at ${scriptPath}` });
+    }
     const runner = isPkg ? process.execPath : 'node';
     const args = isPkg ? [scriptPath] : [scriptPath];
-    const child = (0, child_process_1.spawn)(runner, args, {
-        cwd: __dirname,
+    const cwdPath = isPkg ? path_1.dirname(process.execPath) : __dirname;
+    const child = child_process_1.spawn(runner, args, {
+        cwd: cwdPath,
         env: { ...process.env, FORCE_COLOR: '1' },
         shell: false
     });
@@ -621,32 +740,49 @@ app.post('/api/bot/stop', (req, res) => {
     const { type } = req.body;
     const child = botProcesses[type];
     if (child) {
+        let finished = false;
+        const timeout = setTimeout(() => {
+            if (!finished) {
+                finished = true;
+                if (botProcesses[type] === child) {
+                    botProcesses[type] = null;
+                }
+                if (!res.headersSent) {
+                    res.json({ success: true, message: 'Stop timeout' });
+                }
+            }
+        }, 5000);
+
+        child.once('close', () => {
+            if (!finished) {
+                finished = true;
+                clearTimeout(timeout);
+                if (!res.headersSent) {
+                    res.json({ success: true });
+                }
+            }
+        });
+
         if (process.platform === 'win32') {
-            try {
-                (0, child_process_1.exec)(`taskkill /F /T /PID ${child.pid}`, (err) => {
-                    if (err) {
-                        console.error(`[SYSTEM] Error killing process ${child.pid}:`, err);
-                        child.kill();
-                    }
-                });
-            }
-            catch (e) {
-                child.kill();
-            }
+            (0, child_process_1.exec)(`taskkill /F /T /PID ${child.pid}`, (err) => {
+                if (err) {
+                    console.error(`[SYSTEM] Error killing process ${child.pid}:`, err);
+                    child.kill();
+                }
+            });
         }
         else {
             child.kill();
         }
-        res.json({ success: true });
     }
     else {
         res.json({ success: false, error: 'Bot not running' });
     }
 });
-app.post('/api/bot/skip-donor', (req, res) => {
+app.post('/api/skip-donor', async (req, res) => {
     try {
         console.log('📢 [API] Получен запрос на пропуск текущего донора...');
-        fs_1.default.writeFileSync(path_1.default.join((0, utils_1.getRootPath)(), 'data', 'skip_donor.flag'), 'skip');
+        fs_1.writeFileSync(path_1.join((0, utils_1.getRootPath)(), 'data', 'skip_donor.flag'), 'skip');
         res.json({ success: true, message: 'Сигнал пропуска донора отправлен' });
     }
     catch (e) {
@@ -662,10 +798,16 @@ app.post('/api/dm', async (req, res) => {
         const accountsData = await (0, config_1.getAllAccounts)('server');
         const firstAccount = accountsData[0] || {};
         const reqConfig = {
+            id: firstAccount.id,
             proxy: firstAccount.proxy,
             cookies: firstAccount.cookies,
             fingerprint: firstAccount.fingerprint
         };
+
+        if (!reqConfig.cookies || reqConfig.cookies.length === 0) {
+            return res.status(400).json({ success: false, error: 'Выбранный аккаунт не имеет куки. Пожалуйста, авторизуйте его сначала.' });
+        }
+
         const showBrowser = await (0, config_1.getSetting)('showBrowser');
         refreshSession();
         const { browser, context } = await (0, browser_1.createBrowserContext)(reqConfig, !(showBrowser === 'true' || showBrowser === true));
@@ -718,13 +860,14 @@ app.get('/api/stats', async (req, res) => {
         res.status(500).json({ success: false, error: 'Ошибка сервера' });
     }
 });
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+    await state_1.StateManager.init();
     console.log(`Сервер запущен: http://localhost:${PORT}`);
 });
 // SPA catch-all (must be after all API routes)
 app.use((req, res) => {
-    if (fs_1.default.existsSync(publicDir)) {
-        res.sendFile(path_1.default.join(publicDir, 'index.html'));
+    if (fs_1.existsSync(publicDir)) {
+        res.sendFile(path_1.join(publicDir, 'index.html'));
     }
     else {
         res.status(404).send('Not Found');
@@ -774,11 +917,11 @@ const sendMessageToProfile = async (context, url, message) => {
         }
         if (!accessButton) {
             console.log(`⛔ [SKIP] Кнопки нет. Делаю скриншот...`);
-            await page.screenshot({ path: path_1.default.join(__dirname, 'debug_error.png'), fullPage: true });
+            await page.screenshot({ path: path_1.join(__dirname, 'debug_error.png'), fullPage: true });
             return false;
         }
         await accessButton.click();
-        await (0, browser_1.takeLiveScreenshot)(page);
+        await browser_1.takeLiveScreenshot(page);
         try {
             await Promise.race([
                 page.waitForSelector(CONFIG.selectors.chatInput, { state: 'visible', timeout: 15000 }),
