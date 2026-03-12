@@ -1,4 +1,5 @@
-@echo off 
-title IG-Bot Server 
-ig-bot.exe 
-pause 
+@echo off
+title IG-Bot Server
+cd /d "%~dp0"
+ig-bot.exe
+pause

@@ -17,6 +17,7 @@ const WEBGL_RENDERERS = [
 
 const CPU_OPTIONS = [4, 6, 8, 12, 16];
 const MEMORY_OPTIONS = [8, 16, 32, 64];
+const { pickRandom, getScreenResolution } = require('./utils');
 
 function generateFingerprint() {
     const baseFP = fingerprintGenerator.getFingerprint({
@@ -25,20 +26,23 @@ function generateFingerprint() {
         browsers: ['chrome']
     });
 
-    const webgl = WEBGL_RENDERERS[Math.floor(Math.random() * WEBGL_RENDERERS.length)];
-    const cpuCores = CPU_OPTIONS[Math.floor(Math.random() * CPU_OPTIONS.length)];
-    const memoryGB = MEMORY_OPTIONS[Math.floor(Math.random() * MEMORY_OPTIONS.length)];
+    const webgl = pickRandom(WEBGL_RENDERERS);
+    const cpuCores = pickRandom(CPU_OPTIONS);
+    const memoryGB = pickRandom(MEMORY_OPTIONS);
 
     // Update the base fingerprint with our specific overrides if needed
     // or just return them as separate fields for the UI and injector
 
+    const screen = getScreenResolution();
+    // Randomize viewport to be 60-80% of screen size, accounting for taskbar/UI
+    const safeHeight = Math.max(600, screen.height - 120);
+    const width = Math.floor(screen.width * (0.6 + Math.random() * 0.2));
+    const height = Math.floor(safeHeight * (0.6 + Math.random() * 0.2));
+
     return {
         ...baseFP,
         userAgent: baseFP.fingerprint.navigator.userAgent,
-        viewport: {
-            width: baseFP.fingerprint.screen.width,
-            height: baseFP.fingerprint.screen.height
-        },
+        viewport: { width, height },
         timezoneId: 'Auto', // Let browser.js handle Auto logic
         locale: 'en-US',
         webgl: webgl,

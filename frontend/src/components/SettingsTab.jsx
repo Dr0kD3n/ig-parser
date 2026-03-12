@@ -19,14 +19,151 @@ const SkeletonSettings = memo(function SkeletonSettings() {
     </div>);
 });
 
+const DonorsInput = memo(function DonorsInput({ settingsData, onSettingsChange }) {
+    const donorsText = (settingsData.donors || []).join('\n');
+    const checkedDonors = settingsData.checkedDonors || [];
+    const backdropRef = React.useRef(null);
+
+    const handleScroll = (e) => {
+        if (backdropRef.current) {
+            backdropRef.current.scrollTop = e.target.scrollTop;
+        }
+    };
+
+    const renderBackdropText = () => {
+        return (settingsData.donors || []).map((line, i) => {
+            const normLine = line.trim().replace(/\/$/, '');
+            const isChecked = checkedDonors.some(cd => cd.replace(/\/$/, '') === normLine);
+            return (
+                <span key={i} className={`highlighted-line${isChecked ? ' checked' : ''}`}>
+                    {line}{'\n'}
+                </span>
+            );
+        });
+    };
+
+    return (
+        <div className="highlighter-container">
+            <div ref={backdropRef} className="highlighter-backdrop">
+                {renderBackdropText()}
+            </div>
+            <textarea
+                className="highlighter-textarea"
+                value={donorsText}
+                spellCheck="false"
+                onScroll={handleScroll}
+                onChange={e => onSettingsChange({ ...settingsData, donors: e.target.value.split('\n') })}
+            />
+        </div>
+    );
+});
+
 export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoading }) {
-    const [settingsTab, setSettingsTab] = useState('accounts');
+    const [settingsTab, setSettingsTab] = useState(() => localStorage.getItem('ig_settings_tab') || 'accounts');
     const [draggedItem, setDraggedItem] = useState(null);
     const [editingAccount, setEditingAccount] = useState(null);
     const [editForm, setEditForm] = useState({ name: '', proxy: '', cookies: '', fingerprint: '' });
     const [dolphinProfiles, setDolphinProfiles] = useState([]);
     const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
     const [warmupProgress, setWarmupProgress] = useState({}); // { accountId: { running, percent, site } }
+    const [presets, setPresets] = useState([]);
+    const [currentPreset, setCurrentPreset] = useState(() => localStorage.getItem('ig_settings_current_preset') || '');
+    const [isAddingPreset, setIsAddingPreset] = useState(false);
+    const [newPresetName, setNewPresetName] = useState('');
+
+    React.useEffect(() => {
+        localStorage.setItem('ig_settings_tab', settingsTab);
+    }, [settingsTab]);
+
+    React.useEffect(() => {
+        localStorage.setItem('ig_settings_current_preset', currentPreset);
+    }, [currentPreset]);
+
+    React.useEffect(() => {
+        fetchPresets();
+    }, []);
+
+    const fetchPresets = async () => {
+        try {
+            const res = await fetch('/api/presets');
+            const data = await res.json();
+            setPresets(data);
+        } catch (e) {
+            console.error('Error fetching presets:', e);
+        }
+    };
+
+    const handleSavePreset = async () => {
+        let name = currentPreset;
+        if (isAddingPreset) {
+            name = newPresetName.trim();
+        }
+
+        if (!name) {
+            toast.error(tr('error_name_required') || 'Имя обязательно');
+            return;
+        }
+
+        const presetData = {
+            names: settingsData.names,
+            cities: settingsData.cities,
+            niches: settingsData.niches,
+            donors: settingsData.donors,
+            activeParserAccountIds: settingsData.activeParserAccountIds,
+            activeIndexAccountIds: settingsData.activeIndexAccountIds,
+            activeServerAccountIds: settingsData.activeServerAccountIds,
+            activeProfilesAccountIds: settingsData.activeProfilesAccountIds
+        };
+
+        try {
+            const res = await fetch('/api/presets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, data: presetData })
+            });
+            const result = await res.json();
+            if (result.success) {
+                toast.success(tr('preset_saved') || 'Пресет сохранен');
+                fetchPresets();
+                setCurrentPreset(name);
+                setIsAddingPreset(false);
+                setNewPresetName('');
+            }
+        } catch (e) {
+            toast.error('Ошибка сохранения пресета');
+        }
+    };
+
+    const handleLoadPreset = (name) => {
+        const preset = presets.find(p => p.name === name);
+        if (!preset) return;
+
+        onSettingsChange({
+            ...settingsData,
+            ...preset.data
+        });
+        setCurrentPreset(name);
+        toast.success(tr('preset_loaded') || `Пресет "${name}" загружен`);
+    };
+
+    const handleDeletePreset = async () => {
+        if (!currentPreset) return;
+        if (!confirm(tr('confirm_delete_preset') || `Удалить пресет "${currentPreset}"?`)) return;
+
+        try {
+            const res = await fetch(`/api/presets/${encodeURIComponent(currentPreset)}`, {
+                method: 'DELETE'
+            });
+            const result = await res.json();
+            if (result.success) {
+                toast.success(tr('preset_deleted') || 'Пресет удален');
+                fetchPresets();
+                setCurrentPreset('');
+            }
+        } catch (e) {
+            toast.error('Ошибка удаления пресета');
+        }
+    };
 
     React.useEffect(() => {
         const interval = setInterval(async () => {
@@ -215,6 +352,26 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
             const data = await res.json();
             if (data.success) {
                 toast.success(tr('browser_opened'));
+
+                // Poll for authorization status to refresh when browser closes
+                let pollCount = 0;
+                const pollInterval = setInterval(async () => {
+                    pollCount++;
+                    try {
+                        const statusRes = await fetch(`/api/accounts/${id}/authorize/status`);
+                        const statusData = await statusRes.json();
+
+                        if (!statusData.active || pollCount > 600) { // Stop after 10 mins or if closed
+                            clearInterval(pollInterval);
+                            // Refresh settings to get new cookies
+                            const settingsRes = await fetch('/api/settings');
+                            const settings = await settingsRes.json();
+                            onSettingsChange(settings);
+                        }
+                    } catch (e) {
+                        clearInterval(pollInterval);
+                    }
+                }, 1000);
             } else {
                 toast.error(data.error || 'Error opening browser');
             }
@@ -315,9 +472,62 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
     return (<div className="settings-wrap tab-content-fade">
         <div className="settings-header">
             <div className="settings-nested-tabs">
-                {['accounts', 'names', 'cities', 'niches', 'donors', 'dolphin'].map(tab => (<button key={tab} className={`tab-btn${settingsTab === tab ? ' active' : ''}`} onClick={() => setSettingsTab(tab)}>
-                    {tr(`tab_${tab}`) || (tab === 'dolphin' ? 'Dolphin Anty' : tab)}
+                {['accounts', 'names', 'cities', 'niches', 'donors'].map(tab => (<button key={tab} className={`tab-btn${settingsTab === tab ? ' active' : ''}`} onClick={() => setSettingsTab(tab)}>
+                    {tr(`tab_${tab}`)}
                 </button>))}
+            </div>
+
+            <div className="presets-controls">
+                {isAddingPreset ? (
+                    <div className="preset-add-group">
+                        <input
+                            type="text"
+                            className="search-input preset-name-input"
+                            placeholder={tr('name_placeholder')}
+                            value={newPresetName}
+                            onChange={(e) => setNewPresetName(e.target.value)}
+                            autoFocus
+                        />
+                        <button className="btn-primary" onClick={handleSavePreset}>
+                            {tr('save_preset')}
+                        </button>
+                        <button className="btn-primary btn-danger" onClick={() => { setIsAddingPreset(false); setNewPresetName(''); }}>
+                            ✕
+                        </button>
+                    </div>
+                ) : (
+                    <>
+                        <div className="preset-select-group">
+                            <select
+                                className="search-input preset-select"
+                                value={currentPreset}
+                                onChange={(e) => handleLoadPreset(e.target.value)}
+                            >
+                                <option value="" disabled>{tr('select_preset') || 'Выберите пресет...'}</option>
+                                {presets.map(p => (
+                                    <option key={p.name} value={p.name}>{p.name}</option>
+                                ))}
+                            </select>
+                            <button
+                                className="actionBtn editBtn btn-add-preset"
+                                onClick={() => setIsAddingPreset(true)}
+                                title={tr('add_preset') || 'Добавить пресет'}
+                            >
+                                +
+                            </button>
+                        </div>
+                        {currentPreset && (
+                            <>
+                                <button className="btn-primary" onClick={handleSavePreset} title={tr('save_preset') || 'Сохранить пресет'}>
+                                    {tr('save_preset')}
+                                </button>
+                                <button className="btn-primary btn-danger" onClick={handleDeletePreset} title={tr('delete_preset') || 'Удалить пресет'}>
+                                    <TrashIcon />
+                                </button>
+                            </>
+                        )}
+                    </>
+                )}
             </div>
         </div>
 
@@ -518,7 +728,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
         {settingsTab === 'names' && (<textarea className="msg-textarea settings-list-textarea" value={(settingsData.names || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, names: e.target.value.split('\n') })} />)}
         {settingsTab === 'cities' && (<textarea className="msg-textarea settings-list-textarea" value={(settingsData.cities || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, cities: e.target.value.split('\n') })} />)}
         {settingsTab === 'niches' && (<textarea className="msg-textarea settings-list-textarea" value={(settingsData.niches || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, niches: e.target.value.split('\n') })} />)}
-        {settingsTab === 'donors' && (<textarea className="msg-textarea settings-list-textarea" value={(settingsData.donors || []).join('\n')} onChange={e => onSettingsChange({ ...settingsData, donors: e.target.value.split('\n') })} />)}
+        {settingsTab === 'donors' && (<DonorsInput settingsData={settingsData} onSettingsChange={onSettingsChange} />)}
         {settingsTab === 'dolphin' && (<div className="flex-col-gap-20">
             <div className="add-account-form dolphin-settings-container">
                 <h4 className="add-account-title">Настройки Dolphin Anty</h4>

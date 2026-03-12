@@ -15,6 +15,10 @@ const config_1 = require("./lib/config");
 const warmup_1 = require("./lib/warmup");
 const logEmitter = new events_1.EventEmitter();
 const LOGS_FILE = path_1.join(utils_1.getRootPath(), 'data', 'logs.json');
+const { handleError, expressErrorHandler, setupProcessHandlers } = require('./lib/error-handler');
+
+setupProcessHandlers();
+
 let botProcesses = {
     index: null,
     parser: null
@@ -68,16 +72,18 @@ function broadcastLog(source, message) {
     debouncedSaveLogs();
     logEmitter.emit('log', logEntry);
 }
-// Override console methods to broadcast logs
-console.log = (...args) => {
-    broadcastLog('server', args.join(' '));
-};
-console.error = (...args) => {
-    broadcastLog('server-error', args.join(' '));
-};
-console.warn = (...args) => {
-    broadcastLog('server-warn', args.join(' '));
-};
+// Override console methods to broadcast logs (only if not in test env)
+if (process.env.NODE_ENV !== 'test') {
+    console.log = (...args) => {
+        broadcastLog('server', args.join(' '));
+    };
+    console.error = (...args) => {
+        broadcastLog('server-error', args.join(' '));
+    };
+    console.warn = (...args) => {
+        broadcastLog('server-warn', args.join(' '));
+    };
+}
 const app = express_1();
 const PORT = process.env.PORT || 1337;
 // ==========================================
@@ -162,7 +168,7 @@ async function getSettings() {
 }
 app.use(express_1.json());
 // --- Static frontend (production build from frontend/) ---
-const baseDir = path_1.basename(__dirname) === 'dist' ? path_1.join(__dirname, '..') : __dirname;
+const baseDir = (0, utils_1.getRootPath)();
 const publicDir = path_1.join(baseDir, 'public');
 const legacyHtml = path_1.join(baseDir, 'index.html');
 if (fs_1.existsSync(publicDir)) {
@@ -187,6 +193,7 @@ async function getGirlsCached() {
                    d.name as donor_name, 
                    d.bio as donor_bio, 
                    d.followers_count as donor_followers_count,
+                   d.posts_count as donor_posts_count,
                    d.photo as donor_photo
             FROM profiles p
             LEFT JOIN donors d ON p.donor = d.username
@@ -241,6 +248,23 @@ app.post('/api/vote', async (req, res) => {
     catch (e) {
         console.log(`[GOLOS ERROR] Ошибка при голосовании: ${e.message}`);
         res.status(500).json({ success: false, error: 'Ошибка сервера при сохранении' });
+    }
+});
+app.post('/api/profiles/delete', async (req, res) => {
+    const { url } = req.body;
+    if (!url) {
+        return res.status(400).json({ success: false, error: 'Нет url' });
+    }
+    try {
+        const db = await (0, db_1.getDB)();
+        await db.run(`DELETE FROM profiles WHERE url = ?`, [url]);
+        invalidateGirlsCache();
+        console.log(`[DELETE] Профиль удален: ${url}`);
+        res.json({ success: true });
+    }
+    catch (e) {
+        console.log(`[DELETE ERROR] Ошибка при удалении профиля: ${e.message}`);
+        res.status(500).json({ success: false, error: 'Ошибка сервера при удалении' });
     }
 });
 async function checkTelegramProfile(url) {
@@ -336,6 +360,10 @@ app.get('/api/settings', async (req, res) => {
     const cities = await (0, config_1.getList)('cityKeywords.txt');
     const niches = await (0, config_1.getList)('nicheKeywords.txt');
     const donors = await state_1.StateManager.loadDonors();
+    const db = await (0, db_1.getDB)();
+    const historyRows = await db.all(`SELECT url FROM urls WHERE type = 'history'`);
+    const checkedDonors = historyRows.map(r => r.url);
+
     res.json({
         accounts: settings.accounts || [],
         activeParserAccountIds: settings.activeParserAccountIds,
@@ -346,6 +374,7 @@ app.get('/api/settings', async (req, res) => {
         cities,
         niches,
         donors,
+        checkedDonors,
         showBrowser: settings.showBrowser,
         concurrentProfiles: settings.concurrentProfiles,
         humanEmulation: settings.humanEmulation,
@@ -353,81 +382,79 @@ app.get('/api/settings', async (req, res) => {
     });
 });
 app.post('/api/settings', async (req, res) => {
+    console.log(`[DEBUG] POST /api/settings received. Keys: ${Object.keys(req.body)}`);
     const { accounts, names, cities, niches, donors, showBrowser } = req.body;
     try {
         const db = await (0, db_1.getDB)();
         await db.run('BEGIN TRANSACTION');
+        console.log(`[DEBUG] Transaction started`);
         try {
             if (req.body.hasOwnProperty('accounts')) {
-                // Safeguard: don't delete all accounts if list is empty but we had accounts, 
-                // unless it's a deliberate choice (e.g. forceEmpty flag)
-                const existingAccounts = await db.all('SELECT id FROM accounts');
-                if (existingAccounts.length > 0 && (!accounts || accounts.length === 0) && !req.body.forceEmpty) {
-                    console.warn('Blocked attempt to clear accounts list without forceEmpty flag');
+                const incomingIds = (accounts || []).map((a) => a.id);
+                if (incomingIds.length > 0) {
+                    const placeholders = incomingIds.map(() => '?').join(',');
+                    await db.run(`DELETE FROM accounts WHERE id NOT IN (${placeholders})`, incomingIds);
+                } else {
+                    await db.run(`DELETE FROM accounts`);
                 }
-                else {
-                    const incomingIds = (accounts || []).map((a) => a.id);
-                    if (incomingIds.length > 0) {
-                        const placeholders = incomingIds.map(() => '?').join(',');
-                        await db.run(`DELETE FROM accounts WHERE id NOT IN (${placeholders})`, incomingIds);
+                for (const a of (accounts || [])) {
+                    const getPriority = (arr, id) => {
+                        const idx = (arr || []).indexOf(id);
+                        return idx === -1 ? 0 : idx + 1;
+                    };
+
+                    let fingerprint = a.fingerprint;
+                    if (!fingerprint) {
+                        fingerprint = JSON.stringify((0, fingerprint_1.generateFingerprint)());
+                    } else if (typeof fingerprint !== 'string') {
+                        fingerprint = JSON.stringify(fingerprint);
                     }
-                    else {
-                        await db.run(`DELETE FROM accounts`);
-                    }
-                    for (const a of (accounts || [])) {
-                        const getPriority = (arr, id) => {
-                            const idx = (arr || []).indexOf(id);
-                            return idx === -1 ? 0 : idx + 1;
-                        };
-                        let fingerprint = a.fingerprint;
-                        if (!fingerprint) {
-                            fingerprint = JSON.stringify((0, fingerprint_1.generateFingerprint)());
+
+                    // [FIX] Protect existing cookies/localStorage from being overwritten by empty data
+                    let finalCookies = a.cookies || '';
+                    let finalLocalStorage = a.local_storage || null;
+
+                    if (!finalCookies || !finalLocalStorage) {
+                        const existing = await db.get('SELECT cookies, local_storage FROM accounts WHERE id = ?', [a.id]);
+                        if (existing) {
+                            if (!finalCookies && existing.cookies) finalCookies = existing.cookies;
+                            if (!finalLocalStorage && existing.local_storage) finalLocalStorage = existing.local_storage;
                         }
-                        else if (typeof fingerprint !== 'string') {
-                            fingerprint = JSON.stringify(fingerprint);
-                        }
-                        await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, fingerprint, local_storage, warmup_score, last_warmup)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
-                            a.id, a.name, a.proxy || '', a.cookies || '',
-                            getPriority(req.body.activeParserAccountIds, a.id),
-                            getPriority(req.body.activeServerAccountIds, a.id),
-                            getPriority(req.body.activeIndexAccountIds, a.id),
-                            getPriority(req.body.activeProfilesAccountIds, a.id),
-                            fingerprint,
-                            a.local_storage || null,
-                            a.warmup_score || 0,
-                            a.last_warmup || null
-                        ]);
                     }
+
+                    await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, fingerprint, local_storage, warmup_score, last_warmup)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                        a.id, a.name, a.proxy || '', finalCookies,
+                        getPriority(req.body.activeParserAccountIds, a.id),
+                        getPriority(req.body.activeServerAccountIds, a.id),
+                        getPriority(req.body.activeIndexAccountIds, a.id),
+                        getPriority(req.body.activeProfilesAccountIds, a.id),
+                        fingerprint,
+                        finalLocalStorage,
+                        a.warmup_score || 0,
+                        a.last_warmup || null
+                    ]);
                 }
             }
             // Only update keywords if they are explicitly provided in the request
-            const updateList = async (type, items) => {
-                if (!req.body.hasOwnProperty(type + 's'))
-                    return;
-                const cleanItems = (items || []).map(i => i.trim()).filter(Boolean);
-                // Safeguard: if incoming is empty but DB has many, block it unless forceEmpty
+            const updateList = async (type, requestKey, items) => {
+                if (!req.body.hasOwnProperty(requestKey)) return;
+                const cleanItems = (items || []).map(i => String(i).trim()).filter(Boolean);
                 const existing = await db.get(`SELECT count(*) as c FROM keywords WHERE type = ?`, [type]);
-                if (existing.c > 5 && cleanItems.length === 0 && !req.body.forceEmpty) {
-                    console.warn(`Blocked attempt to clear ${type} list without forceEmpty flag`);
-                    return;
-                }
+                if (existing.c > 5 && cleanItems.length === 0 && !req.body.forceEmpty) return;
+
                 await db.run(`DELETE FROM keywords WHERE type = ?`, [type]);
                 for (const val of cleanItems) {
                     await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, [type, val]);
                 }
             };
-            await updateList('name', names);
-            await updateList('city', cities);
-            await updateList('niche', niches);
+            await updateList('name', 'names', names);
+            await updateList('city', 'cities', cities);
+            await updateList('niche', 'niches', niches);
             if (req.body.hasOwnProperty('donors')) {
                 const cleanDonors = (donors || []).map((d) => d.trim()).filter(Boolean);
-                // Safeguard: if incoming is empty but DB has many, block it unless forceEmpty
-                const existingDonors = await state_1.StateManager.loadDonors();
-                if (existingDonors.length > 5 && cleanDonors.length === 0 && !req.body.forceEmpty) {
-                    console.warn('Blocked attempt to clear donors list without forceEmpty flag');
-                }
-                else {
+                const existingDonorsCount = (await state_1.StateManager.loadDonors()).length;
+                if (!(existingDonorsCount > 5 && cleanDonors.length === 0 && !req.body.forceEmpty)) {
                     await state_1.StateManager.saveDonors(cleanDonors);
                 }
             }
@@ -708,6 +735,60 @@ app.get('/api/proxy-image', async (req, res) => {
         res.status(500).send('Internal server error');
     }
 });
+
+// --- Presets API ---
+app.get('/api/presets', async (req, res) => {
+    try {
+        const db = await (0, db_1.getDB)();
+        const rows = await db.all(`SELECT name, data FROM presets ORDER BY name ASC`);
+        res.json(rows.map(r => ({ name: r.name, data: JSON.parse(r.data) })));
+    } catch (e) {
+        console.error('Error fetching presets:', e);
+        res.status(500).json([]);
+    }
+});
+
+app.post('/api/presets', async (req, res) => {
+    const { name, data } = req.body;
+    if (!name || !data) {
+        return res.status(400).json({ success: false, error: 'Name and data are required' });
+    }
+    try {
+        const db = await (0, db_1.getDB)();
+        await db.run(`INSERT OR REPLACE INTO presets (name, data) VALUES (?, ?)`, [name, JSON.stringify(data)]);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error saving preset:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.delete('/api/presets/:name', async (req, res) => {
+    const { name } = req.params;
+    try {
+        const db = await (0, db_1.getDB)();
+        await db.run(`DELETE FROM presets WHERE name = ?`, [name]);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error deleting preset:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/donors', async (req, res) => {
+    const { url } = req.body;
+    if (!url) {
+        return res.status(400).json({ success: false, error: 'Missing url' });
+    }
+    try {
+        await state_1.StateManager.saveDonor(url);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error saving donor:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 app.post('/api/logs/clear', (req, res) => {
     historicalLogs = [];
     debouncedSaveLogs();
@@ -794,6 +875,7 @@ app.get('/api/bot/status', (req, res) => {
         parser: !!botProcesses.parser
     });
 });
+app.use(expressErrorHandler);
 app.post('/api/bot/start', (req, res) => {
     const { type } = req.body;
     if (!['index', 'parser'].includes(type)) {
@@ -955,10 +1037,12 @@ app.get('/api/stats', async (req, res) => {
         res.status(500).json({ success: false, error: 'Ошибка сервера' });
     }
 });
-app.listen(PORT, async () => {
-    await state_1.StateManager.init();
-    console.log(`Сервер запущен: http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, async () => {
+        await state_1.StateManager.init();
+        console.log(`Сервер запущен: http://localhost:${PORT}`);
+    });
+}
 // SPA catch-all (must be after all API routes)
 app.use((req, res) => {
     if (fs_1.existsSync(publicDir)) {
@@ -1074,3 +1158,4 @@ const sendMessageToProfile = async (context, url, message) => {
         await page.close();
     }
 };
+module.exports = app;

@@ -1,9 +1,9 @@
 const path = require('path');
 const getRootPath = () => {
-    if (process.env.APP_ROOT) return process.env.APP_ROOT;
+    if (process.env.APP_ROOT) return path.resolve(process.env.APP_ROOT);
     return process['pkg']
         ? path.dirname(process.execPath)
-        : path.join(__dirname, '..', '..');
+        : path.resolve(__dirname, '..', '..');
 };
 exports.getRootPath = getRootPath;
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -20,7 +20,44 @@ const shuffleArray = (array) => {
 };
 exports.shuffleArray = shuffleArray;
 
+const pickRandom = (array) => array[Math.floor(Math.random() * array.length)];
+exports.pickRandom = pickRandom;
+
+const parseProxyString = (proxyStr) => {
+    if (!proxyStr) return null;
+    const parts = proxyStr.trim().split(':');
+    if (parts.length >= 4) {
+        return {
+            server: `http://${parts[0]}:${parts[1]}`,
+            username: parts[2],
+            password: parts[3]
+        };
+    }
+    return null;
+};
+exports.parseProxyString = parseProxyString;
+
+const asyncPool = async (iterable, concurrency, task) => {
+    const results = [];
+    const executing = [];
+    for (const item of iterable) {
+        const p = Promise.resolve().then(() => task(item, iterable));
+        results.push(p);
+        if (concurrency <= iterable.length) {
+            const e = p.then(() => executing.splice(executing.indexOf(e), 1));
+            executing.push(e);
+            if (executing.length >= concurrency) {
+                await Promise.race(executing);
+            }
+        }
+    }
+    return Promise.all(results);
+};
+exports.asyncPool = asyncPool;
+
 const mouseTracker = new WeakMap();
+
+const { SelectorError, AppError } = require('./errors');
 
 /**
  * Функция эмуляции человеческого ввода текста
@@ -28,6 +65,9 @@ const mouseTracker = new WeakMap();
 const humanType = async (page, selector, text, timeouts) => {
     try {
         const element = typeof selector === 'string' ? page.locator(selector).first() : selector;
+        const exists = await element.count() > 0;
+        if (!exists) throw new SelectorError(typeof selector === 'string' ? selector : 'Locator', 'Element for typing not found');
+
         await element.click();
         const delayMin = timeouts?.typingDelayMin || 50;
         const delayMax = timeouts?.typingDelayMax || 150;
@@ -49,10 +89,12 @@ const humanType = async (page, selector, text, timeouts) => {
         }
     }
     catch (e) {
-        console.error('Ошибка печати:', e.message);
+        if (e instanceof SelectorError) throw e;
+        throw new AppError(`Typing failed: ${e.message}`, { selector: typeof selector === 'string' ? selector : 'Locator' });
     }
 };
 exports.humanType = humanType;
+
 /**
  * Генерирует массив точек для кубической кривой Безье
  */
@@ -126,11 +168,13 @@ const humanMove = async (page, targetX, targetY, options = {}) => {
         await page.mouse.move(targetX, targetY);
         mouseTracker.set(page, { x: targetX, y: targetY });
     } catch (e) {
-        await page.mouse.move(targetX, targetY);
+        // Fallback or ignore for movement
+        await page.mouse.move(targetX, targetY).catch(() => { });
         mouseTracker.set(page, { x: targetX, y: targetY });
     }
 };
 exports.humanMove = humanMove;
+exports.humanMouseMove = humanMove;
 
 /**
  * Эмуляция наведения мыши
@@ -145,9 +189,14 @@ const humanHover = async (page, selector) => {
 
             await humanMove(page, targetX, targetY);
             await wait(500 + Math.random() * 1000);
+        } else {
+            throw new SelectorError(typeof selector === 'string' ? selector : 'Locator', 'Bounding box not found for hover');
         }
     }
-    catch (e) { }
+    catch (e) {
+        if (e instanceof SelectorError) throw e;
+        throw new AppError(`Hover failed: ${e.message}`, { selector: typeof selector === 'string' ? selector : 'Locator' });
+    }
 };
 exports.humanHover = humanHover;
 
@@ -166,10 +215,16 @@ const humanClick = async (page, selectorOrHandle, options = {}) => {
             await wait(100 + Math.random() * 200);
             await element.click(options);
         } else {
-            await element.click(options);
+            const count = await element.count();
+            if (count > 0) {
+                await element.click(options);
+            } else {
+                throw new SelectorError(typeof selectorOrHandle === 'string' ? selectorOrHandle : 'Locator', 'Element for click not found');
+            }
         }
     } catch (e) {
-        console.error('Ошибка клика:', e.message);
+        if (e instanceof SelectorError) throw e;
+        throw new AppError(`Click failed: ${e.message}`, { selector: typeof selectorOrHandle === 'string' ? selectorOrHandle : 'Locator' });
     }
 };
 exports.humanClick = humanClick;
@@ -270,3 +325,23 @@ const humanSelection = async (page) => {
     } catch (e) { }
 };
 exports.humanSelection = humanSelection;
+const { execSync } = require('child_process');
+const getScreenResolution = () => {
+    try {
+        if (process.platform === 'win32') {
+            // Use Windows Forms to get logical screen bounds (accounts for Scaling)
+            const output = execSync('powershell "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height"').toString();
+            const lines = output.trim().split(/\r?\n/);
+            if (lines.length >= 2) {
+                const width = parseInt(lines[0]);
+                const height = parseInt(lines[1]);
+                if (!isNaN(width) && !isNaN(height)) {
+                    return { width, height };
+                }
+            }
+        }
+    } catch (e) { }
+    // Fallback to a common logical resolution
+    return { width: 1280, height: 720 };
+};
+exports.getScreenResolution = getScreenResolution;

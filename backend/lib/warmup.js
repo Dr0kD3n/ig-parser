@@ -1,12 +1,12 @@
 const { createBrowserContext } = require('./browser');
 const { getDB } = require('./db');
-const { wait, humanClick, humanMouseLeave, humanOverscroll, humanSelection } = require('./utils');
+const { wait, humanClick, humanMouseLeave, humanOverscroll, humanSelection, parseProxyString, asyncPool, pickRandom } = require('./utils');
 const http = require('http');
 
 const GLOBAL_SITES = [
     'https://www.google.com', 'https://www.youtube.com', 'https://www.facebook.com',
     'https://www.wikipedia.org', 'https://www.amazon.com', 'https://www.reddit.com',
-    'https://www.twitter.com', 'https://www.instagram.com', 'https://www.linkedin.com',
+    'https://www.twitter.com', 'https://www.linkedin.com',
     'https://www.netflix.com', 'https://www.bing.com', 'https://www.yahoo.com'
 ];
 
@@ -89,29 +89,17 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
     const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [accountId]);
     if (!acc) throw new Error('Account not found');
 
-    let proxy = null;
-    if (acc.proxy) {
-        const parts = acc.proxy.trim().split(':');
-        if (parts.length >= 4) {
-            proxy = {
-                server: `http://${parts[0]}:${parts[1]}`,
-                username: parts[2],
-                password: parts[3]
-            };
-        }
-    }
-
     const config = {
         id: accountId,
-        proxy: proxy,
+        proxy: parseProxyString(acc.proxy),
         fingerprint: acc.fingerprint ? JSON.parse(acc.fingerprint) : null
     };
 
-    const countryCode = await getRegionFromProxy(proxy);
+    const countryCode = await getRegionFromProxy(config.proxy);
     const regionalSites = REGIONAL_SITES[countryCode] || [];
 
     const showBrowserRow = await db.get(`SELECT value FROM settings WHERE key = 'showBrowser'`);
-    const showBrowser = showBrowserRow ? showBrowserRow.value === 'true' : false;
+    const showBrowser = showBrowserRow?.value === 'true';
     const headless = !showBrowser;
 
     let sitePool = [...GLOBAL_SITES];
@@ -135,115 +123,69 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
     }, headless);
 
     try {
-        const CONCURRENCY_LIMIT = 5;
         let completed = 0;
 
-        // Helper to process tasks in parallel with limit
-        const processPool = async (sites) => {
-            const results = [];
-            const executing = [];
+        await asyncPool(sitesToVisit, 5, async (currentSite) => {
+            const page = await context.newPage();
+            try {
+                console.log(`🔥 [WARMUP] Visiting [${countryCode}]: ${currentSite}`);
+                await page.goto(currentSite, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-            for (const site of sites) {
-                const p = (async (currentSite) => {
-                    const page = await context.newPage();
-                    try {
-                        console.log(`🔥 [WARMUP] Visiting [${countryCode}]: ${currentSite}`);
-                        await page.goto(currentSite, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-                        // Accept cookies logic
-                        try {
-                            const cookieButtons = [
-                                'Accept', 'Allow', 'Agree', 'I accept', 'Accept all', 'Allow all',
-                                'Принять', 'Согласен', 'Разрешить', 'Принять все', 'ОК', 'OK'
-                            ];
-                            const selectors = [
-                                'button', 'a', '[role="button"]'
-                            ];
-
-                            for (const text of cookieButtons) {
-                                for (const selector of selectors) {
-                                    const handle = await page.$(`${selector}:has-text("${text}")`);
-                                    if (handle && await handle.isVisible()) {
-                                        await humanClick(page, handle, { timeout: 2000 }).catch(() => { });
-                                        console.log(`🍪 [WARMUP] Clicked cookie button: "${text}" on ${currentSite}`);
-                                        break;
-                                    }
-                                }
-                            }
-                        } catch (e) { }
-
-                        await wait(Math.random() * 3000 + 3000);
-
-                        // New hardcore humanization injection
-                        if (Math.random() > 0.3) {
-                            if (Math.random() > 0.5) {
-                                await humanOverscroll(page, 'down', Math.random() * 800 + 400);
-                            } else {
-                                await page.mouse.wheel(0, Math.random() * 800 + 400);
-                            }
-                            await wait(Math.random() * 2000);
+                // Accept cookies logic
+                try {
+                    const cookieButtons = [
+                        'Accept', 'Allow', 'Agree', 'I accept', 'Accept all', 'Allow all',
+                        'Принять', 'Согласен', 'Разрешить', 'Принять все', 'ОК', 'OK'
+                    ];
+                    for (const text of cookieButtons) {
+                        const handle = await page.$(`button:has-text("${text}"), a:has-text("${text}"), [role="button"]:has-text("${text}")`);
+                        if (handle && await handle.isVisible()) {
+                            await humanClick(page, handle, { timeout: 2000 }).catch(() => { });
+                            console.log(`🍪 [WARMUP] Clicked cookie button: "${text}" on ${currentSite}`);
+                            break;
                         }
-
-                        if (Math.random() > 0.6) {
-                            await humanSelection(page);
-                        }
-
-                        if (Math.random() > 0.7) {
-                            await humanMouseLeave(page);
-                        }
-
-                        // Deep page navigation
-                        try {
-                            if (Math.random() > 0.4) {
-                                const links = await page.$$('a');
-                                const validLinks = [];
-                                for (const link of links) {
-                                    const href = await link.getAttribute('href');
-                                    if (href && (href.startsWith('/') || href.includes(new URL(currentSite).hostname))) {
-                                        try {
-                                            const isVisible = await link.isVisible();
-                                            if (isVisible) validLinks.push(link);
-                                        } catch (e) { }
-                                    }
-                                }
-                                if (validLinks.length > 0) {
-                                    const randomLink = validLinks[Math.floor(Math.random() * validLinks.length)];
-                                    console.log(`🔗 [WARMUP] Navigating deeper into ${currentSite}`);
-                                    await humanClick(page, randomLink, { timeout: 3000 }).catch(() => { });
-                                    await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => { });
-                                    await wait(Math.random() * 4000 + 3000);
-                                    if (Math.random() > 0.3) {
-                                        await page.mouse.wheel(0, Math.random() * 600 + 300);
-                                        await wait(Math.random() * 2000);
-                                    }
-                                }
-                            }
-                        } catch (innerError) {
-                            // Ignored
-                        }
-                    } catch (e) {
-                        console.warn(`⚠️ [WARMUP] Failed site ${currentSite}: ${e.message}`);
-                    } finally {
-                        await page.close();
-                        completed++;
-                        progressCallback({ current: completed, total: sitesToVisit.length, site: currentSite });
                     }
-                })(site);
+                } catch (e) { }
 
-                results.push(p);
+                await wait(Math.random() * 3000 + 3000);
 
-                if (CONCURRENCY_LIMIT <= sites.length) {
-                    const e = p.then(() => executing.splice(executing.indexOf(e), 1));
-                    executing.push(e);
-                    if (executing.length >= CONCURRENCY_LIMIT) {
-                        await Promise.race(executing);
+                // Human interaction
+                if (Math.random() > 0.3) {
+                    const scrollAmount = Math.random() * 800 + 400;
+                    if (Math.random() > 0.5) await humanOverscroll(page, 'down', scrollAmount);
+                    else await page.mouse.wheel(0, scrollAmount);
+                    await wait(Math.random() * 2000);
+                }
+
+                if (Math.random() > 0.6) await humanSelection(page);
+                if (Math.random() > 0.7) await humanMouseLeave(page);
+
+                // Deep page navigation
+                if (Math.random() > 0.4) {
+                    const links = await page.$$('a');
+                    const validLinks = [];
+                    for (const link of links) {
+                        const href = await link.getAttribute('href');
+                        if (href && (href.startsWith('/') || href.includes(new URL(currentSite).hostname))) {
+                            if (await link.isVisible()) validLinks.push(link);
+                        }
+                    }
+                    if (validLinks.length > 0) {
+                        const randomLink = pickRandom(validLinks);
+                        console.log(`🔗 [WARMUP] Navigating deeper into ${currentSite}`);
+                        await humanClick(page, randomLink, { timeout: 3000 }).catch(() => { });
+                        await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => { });
+                        await wait(Math.random() * 4000 + 3000);
                     }
                 }
+            } catch (e) {
+                console.warn(`⚠️ [WARMUP] Failed site ${currentSite}: ${e.message}`);
+            } finally {
+                await page.close();
+                completed++;
+                progressCallback({ current: completed, total: sitesToVisit.length, site: currentSite });
             }
-            return Promise.all(results);
-        };
-
-        await processPool(sitesToVisit);
+        });
 
         const cookies = await context.cookies();
         // Since we closed all pages, we might need one more page to get localStorage if needed, 

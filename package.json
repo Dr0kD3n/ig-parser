@@ -4,7 +4,9 @@
     "scripts": {
         "dev": "npm run dev --workspace=frontend",
         "dev:proxy": "set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend",
-        "dev:all": "concurrently \"set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend\" \"node backend/server.js\""
+        "dev:all": "concurrently \"set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend\" \"node backend/server.js\"",
+        "test": "set NODE_ENV=test&& vitest run",
+        "test:e2e": "playwright test"
     },
     "private": true,
     "workspaces": [
@@ -22,6 +24,7 @@
         "sqlite3": "^5.1.7"
     },
     "devDependencies": {
+        "@playwright/test": "^1.58.2",
         "@vitejs/plugin-react": "^4.3.4",
         "concurrently": "^9.2.1",
         "pkg": "^5.8.1",

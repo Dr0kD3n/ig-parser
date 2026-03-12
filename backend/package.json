@@ -15,9 +15,13 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "fingerprint-generator": "^2.1.81",
     "fingerprint-injector": "^2.1.81",
+    "google-auth-library": "^10.6.1",
+    "google-spreadsheet": "^5.2.0",
+    "jsonwebtoken": "^9.0.3",
     "playwright": "^1.58.1",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
@@ -27,11 +31,15 @@
   "pkg": {
     "assets": [
       "public/**/*",
-      "node_modules/playwright-core/**/*",
-      "node_modules/@playwright/test/**/*",
-      "node_modules/playwright-extra/**/*",
-      "node_modules/puppeteer-extra-plugin-stealth/**/*",
-      "node_modules/puppeteer-extra-plugin/**/*"
+      "scripts/**/*",
+      "../node_modules/playwright-core/**/*",
+      "../node_modules/@playwright/test/**/*",
+      "../node_modules/playwright-extra/**/*",
+      "../node_modules/puppeteer-extra-plugin-stealth/**/*",
+      "../node_modules/puppeteer-extra-plugin/**/*",
+      "../node_modules/header-generator/data_files/**/*",
+      "../node_modules/fingerprint-generator/data_files/**/*",
+      "../node_modules/fingerprint-injector/**/*"
     ],
     "scripts": [
       "lib/**/*.js",

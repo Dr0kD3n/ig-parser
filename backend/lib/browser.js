@@ -8,13 +8,18 @@ const { FingerprintGenerator } = require('fingerprint-generator');
 const { FingerprintInjector } = require('fingerprint-injector');
 const http = require('http');
 
+const { BrowserError, NetworkError } = require('./errors');
+const { handleError } = require('./error-handler');
+const { getDB } = require('./db');
+
 const fingerprintGenerator = new FingerprintGenerator();
 const fingerprintInjector = new FingerprintInjector();
 
 playwright_extra_1.chromium.use(stealth);
 
-async function createBrowserContext(config, headless = true) {
-    const viewport = (config.fingerprint && config.fingerprint.viewport) || config.viewport || { width: 1280, height: 720 };
+async function createBrowserContext(config, headless = false) {
+    const defaultViewport = { width: 1280, height: 720 };
+    const viewport = (config.fingerprint && config.fingerprint.viewport) || config.viewport || defaultViewport;
     const userAgent = (config.fingerprint && config.fingerprint.userAgent) || config.userAgent;
     const locale = 'en-US';
 
@@ -58,7 +63,6 @@ async function createBrowserContext(config, headless = true) {
 
     if (!dolphinToken && dolphinProfileId) {
         try {
-            const { getDB } = require('./db');
             const db = await getDB();
             const row = await db.get(`SELECT value FROM settings WHERE key = 'dolphinToken'`);
             if (row?.value) {
@@ -74,67 +78,69 @@ async function createBrowserContext(config, headless = true) {
         try {
             console.log(`🐬 [DOLPHIN] Launching profile: ${dolphinProfileId}`);
             const launchUrl = `http://127.0.0.1:3001/v1.0/browser_profiles/${dolphinProfileId}/start?automation=1`;
-            const launchResult = await new Promise((resolve, reject) => {
+
+            const response = await new Promise((resolve, reject) => {
                 const req = http.get(launchUrl, (res) => {
                     let data = '';
                     res.on('data', chunk => data += chunk);
-                    res.on('end', () => {
-                        try {
-                            resolve({ statusCode: res.statusCode, data: JSON.parse(data) });
-                        } catch (e) {
-                            resolve({ statusCode: res.statusCode, data: { success: false, message: 'Invalid JSON' } });
-                        }
-                    });
+                    res.on('end', () => resolve({ statusCode: res.statusCode, data: JSON.parse(data) }));
                 }).on('error', reject);
                 req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')); });
-            });
+            }).catch(e => ({ statusCode: 500, error: e.message }));
 
-            if (launchResult.statusCode === 200 && launchResult.data.success && launchResult.data.automation?.wsEndpoint) {
-                browser = await playwright_extra_1.chromium.connectOverCDP(launchResult.data.automation.wsEndpoint);
+            if (response.statusCode === 200 && response.data?.success && response.data.automation?.wsEndpoint) {
+                browser = await playwright_extra_1.chromium.connectOverCDP(response.data.automation.wsEndpoint);
                 context = browser.contexts()[0];
                 dolphinSuccess = true;
-            } else if (launchResult.statusCode === 402 || launchResult.data.error?.includes('free plan')) {
-                console.warn(`⚠️ [DOLPHIN] Automation restricted (Free Plan). Falling back to local browser (Nightly).`);
             } else {
-                console.error(`❌ [DOLPHIN] Launch failed: ${launchResult.data.message || launchResult.data.error || 'Unknown error'}`);
-                console.warn(`⚠️ Falling back to local browser.`);
+                const msg = response.data?.message || response.data?.error || response.error || 'Unknown error';
+                handleError(new NetworkError(`[DOLPHIN] ${msg}`, { profileId: dolphinProfileId }));
+                console.warn(`⚠️ [DOLPHIN] Falling back to local browser.`);
             }
         } catch (e) {
-            console.error(`❌ [DOLPHIN] Connection error: ${e.message}`);
-            console.warn(`⚠️ Falling back to local browser.`);
+            handleError(new NetworkError(`[DOLPHIN] Connection error: ${e.message}`, { profileId: dolphinProfileId }));
+            console.warn(`⚠️ [DOLPHIN] Falling back to local browser.`);
         }
-    } else if (dolphinProfileId || dolphinToken) {
-        console.warn(`⚠️ [DOLPHIN] Missing token or profile ID. Falling back to local browser.`);
     }
 
-    if (!dolphinSuccess) {
-        if (config.id) {
-            const userDataDir = path_1.join((0, utils_1.getRootPath)(), 'data', 'profiles', config.id);
-            context = await playwright_extra_1.chromium.launchPersistentContext(userDataDir, {
-                headless,
-                ...contextOptions,
-                args: [
-                    '--lang=en-US',
-                    '--disable-blink-features=AutomationControlled',
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-infobars',
-                    '--window-position=0,0',
-                    '--ignore-certificate-errors',
-                    '--ignore-certificate-errors-spki-list',
-                    '--disable-web-security'
-                ],
-                ignoreDefaultArgs: ['--enable-automation']
-            });
-            browser = context.browser();
-        } else {
-            browser = await playwright_extra_1.chromium.launch({
-                headless,
-                args: ['--disable-blink-features=AutomationControlled'],
-                ignoreDefaultArgs: ['--enable-automation']
-            });
-            context = await browser.newContext(contextOptions);
+    try {
+        if (!dolphinSuccess) {
+            if (config.id) {
+                const userDataDir = path_1.join((0, utils_1.getRootPath)(), 'data', 'profiles', config.id);
+                context = await playwright_extra_1.chromium.launchPersistentContext(userDataDir, {
+                    headless,
+                    ...contextOptions,
+                    channel: 'chrome-beta',
+                    args: [
+                        '--lang=en-US',
+                        '--disable-blink-features=AutomationControlled',
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-infobars',
+                        '--window-position=0,0',
+                        '--ignore-certificate-errors',
+                        '--ignore-certificate-errors-spki-list',
+                        '--disable-web-security',
+                        `--window-size=${viewport.width},${viewport.height}`
+                    ],
+                    ignoreDefaultArgs: ['--enable-automation']
+                });
+                browser = context.browser();
+            } else {
+                browser = await playwright_extra_1.chromium.launch({
+                    headless,
+                    channel: 'chrome-beta',
+                    args: [
+                        '--disable-blink-features=AutomationControlled',
+                        `--window-size=${viewport.width},${viewport.height}`
+                    ],
+                    ignoreDefaultArgs: ['--enable-automation']
+                });
+                context = await browser.newContext(contextOptions);
+            }
         }
+    } catch (e) {
+        throw new BrowserError(`Failed to launch browser: ${e.message}`, { configId: config.id });
     }
 
     await applyFingerprint(context, config.fingerprint);
@@ -274,8 +280,52 @@ async function takeLiveScreenshot(page) {
     } catch (e) { }
 }
 
+async function watchStory(page) {
+    try {
+        const storyAriaLabel = ['Смотреть историю', 'Watch story', 'Сториз', 'Story'];
+        const storyBtn = page.locator('div[role="button"]').filter({
+            has: page.locator('canvas')
+        }).first();
+
+        if (await storyBtn.count() > 0 && await storyBtn.isVisible()) {
+            await storyBtn.click();
+            console.log(`👤 [HUMAN] Watching story...`);
+            // Watch for 5-10 seconds
+            await (0, utils_1.wait)(5000 + Math.random() * 5000);
+
+            // Close story if still open
+            const closeBtn = page.locator('svg[aria-label="Закрыть"], svg[aria-label="Close"]').first();
+            if (await closeBtn.count() > 0) {
+                await closeBtn.click();
+            } else {
+                await page.keyboard.press('Escape');
+            }
+            await (0, utils_1.wait)(1000);
+        }
+    } catch (e) {
+        console.warn(`⚠️ [HUMAN] Failed to watch story: ${e.message}`);
+    }
+}
+
+async function checkLoginPage(page) {
+    try {
+        return await page.evaluate(() => {
+            const loginMarkers = [
+                'input[name="username"]',
+                'input[name="password"]',
+                'form#loginForm'
+            ];
+            return loginMarkers.some(sel => !!document.querySelector(sel));
+        });
+    } catch (e) {
+        return false;
+    }
+}
+
 exports.createBrowserContext = createBrowserContext;
 exports.applyFingerprint = applyFingerprint;
 exports.optimizeContextForScraping = optimizeContextForScraping;
 exports.startLiveView = startLiveView;
 exports.takeLiveScreenshot = takeLiveScreenshot;
+exports.watchStory = watchStory;
+exports.checkLoginPage = checkLoginPage;

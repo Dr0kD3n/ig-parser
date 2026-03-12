@@ -12,7 +12,8 @@ function log(message, level = 'INFO') {
     const formattedMessage = `[${timestamp}] [${level}] ${message}`;
     // Print to console
     if (level === 'ERROR') {
-        console.error(message);
+        const errorMsg = typeof message === 'object' ? (message.message || JSON.stringify(message)) : message;
+        console.error(errorMsg);
     }
     else {
         console.log(message);

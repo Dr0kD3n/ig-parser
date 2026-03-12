@@ -1,38 +1,68 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { t } from './i18n';
+import { toast, Toaster } from 'react-hot-toast';
 import ProfilesTab from './components/ProfilesTab';
 import ControlsTab from './components/ControlsTab';
 import SettingsTab from './components/SettingsTab';
-import { Toaster } from 'react-hot-toast';
+
 const LOG_BUFFER = 200;
+
+const safeStorage = {
+    getItem: (key, def) => {
+        try {
+            return localStorage.getItem(key) || def;
+        } catch (e) { return def; }
+    },
+    setItem: (key, val) => {
+        try {
+            localStorage.setItem(key, val);
+        } catch (e) { }
+    },
+    parse: (key, def) => {
+        try {
+            const val = localStorage.getItem(key);
+            return val ? JSON.parse(val) : def;
+        } catch (e) { return def; }
+    }
+};
+
 export default function App() {
-    const [lang, setLang] = useState(() => localStorage.getItem('ig_lang') || 'ru');
+    const [lang, setLang] = useState(() => safeStorage.getItem('ig_lang', 'ru'));
     const tr = (key) => t(lang, key);
     const toggleLang = () => {
         const next = lang === 'ru' ? 'en' : 'ru';
         setLang(next);
-        localStorage.setItem('ig_lang', next);
+        safeStorage.setItem('ig_lang', next);
     };
+
     const [girls, setGirls] = useState([]);
     const [votes, setVotes] = useState({});
-    const [viewed, setViewed] = useState(() => JSON.parse(localStorage.getItem('ig_viewed_profiles') || '[]'));
-    const [sentDM, setSentDM] = useState(() => JSON.parse(localStorage.getItem('ig_sent_dm') || '[]'));
+    const [viewed, setViewed] = useState(() => safeStorage.parse('ig_viewed_profiles', []));
+    const [sentDM, setSentDM] = useState(() => safeStorage.parse('ig_sent_dm', []));
     const [failedImages, setFailedImages] = useState(new Set());
     const [modalOpen, setModalOpen] = useState(false);
     const [messagesText, setMessagesText] = useState('');
-    const [settingsData, setSettingsData] = useState({
-        accounts: [], activeParserAccountIds: [], activeServerAccountIds: [], activeIndexAccountIds: [], activeProfilesAccountIds: [],
-        names: [], cities: [], niches: [], donors: [], showBrowser: false, humanEmulation: false
+
+    const [settingsData, setSettingsData] = useState(() => {
+        const defaultState = {
+            accounts: [], activeParserAccountIds: [], activeServerAccountIds: [], activeIndexAccountIds: [], activeProfilesAccountIds: [],
+            names: [], cities: [], niches: [], donors: [], showBrowser: false, humanEmulation: false, concurrentProfiles: 3
+        };
+        return { ...defaultState, ...safeStorage.parse('ig_settings', {}) };
     });
+
     const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false });
     const [logs, setLogs] = useState([]);
-    const [activeTab, setActiveTab] = useState(() => localStorage.getItem('ig_active_tab') || 'main');
+    const [activeTab, setActiveTab] = useState(() => safeStorage.getItem('ig_active_tab', 'main'));
     const [isLoading, setIsLoading] = useState(true);
     const [saveStatus, setSaveStatus] = useState('idle');
-    // Persist active tab
-    useEffect(() => { localStorage.setItem('ig_active_tab', activeTab); }, [activeTab]);
+
+    useEffect(() => { safeStorage.setItem('ig_active_tab', activeTab); }, [activeTab]);
+
     const settingsLoaded = useRef(false);
-    // Fetch profiles + votes
+    const pendingSave = useRef(false);
+    const saveAbortRef = useRef(null);
+
     const fetchData = useCallback(async () => {
         try {
             const [girlsRes, votesRes] = await Promise.all([
@@ -41,285 +71,335 @@ export default function App() {
             ]);
             const girlsData = await girlsRes.json();
             const votesData = await votesRes.json();
-            const viewedArr = JSON.parse(localStorage.getItem('ig_viewed_profiles') || '[]');
-            const sentArr = JSON.parse(localStorage.getItem('ig_sent_dm') || '[]');
+            const viewedArr = safeStorage.parse('ig_viewed_profiles', []);
+            const sentArr = safeStorage.parse('ig_sent_dm', []);
+
             girlsData.forEach(g => {
                 g.viewed = viewedArr.includes(g.url);
                 g.dmSent = sentArr.includes(g.url);
             });
             setGirls(girlsData);
             setVotes(votesData);
-        }
-        catch (e) {
+        } catch (e) {
             console.error('Error loading data', e);
         }
     }, []);
+
     const fetchSettings = useCallback(async () => {
         try {
             const res = await fetch('/api/settings');
             const data = await res.json();
-            setSettingsData({
-                accounts: data.accounts || [],
-                activeParserAccountIds: data.activeParserAccountIds || [],
-                activeServerAccountIds: data.activeServerAccountIds || [],
-                activeIndexAccountIds: data.activeIndexAccountIds || [],
-                activeProfilesAccountIds: data.activeProfilesAccountIds || [],
+            setSettingsData(prev => ({
+                ...prev,
+                ...data,
                 names: data.names || [],
                 cities: data.cities || [],
                 niches: data.niches || [],
                 donors: data.donors || [],
                 showBrowser: data.showBrowser || false,
-                concurrentProfiles: data.concurrentProfiles,
-                humanEmulation: data.humanEmulation || false
-            });
+                humanEmulation: data.humanEmulation || false,
+                concurrentProfiles: data.concurrentProfiles || 3
+            }));
             settingsLoaded.current = true;
-        }
-        catch (e) {
+            setIsLoading(false);
+        } catch (e) {
             console.error('Error fetching settings', e);
         }
     }, []);
+
     const fetchBotStatus = useCallback(async () => {
         try {
             const res = await fetch('/api/bot/status');
             const data = await res.json();
             setBotStatus(data);
-        }
-        catch (e) { }
+        } catch (e) { }
     }, []);
-    // Initial data load + SSE
+
     useEffect(() => {
         fetchData();
         fetchSettings();
         fetchBotStatus();
-        const saved = JSON.parse(localStorage.getItem('ig_first_messages') || '[]');
-        setMessagesText(saved.join('\n'));
-        // SSE log stream
-        const es = new EventSource('/api/logs');
-        let initialBurst = true;
-        const burstTimer = setTimeout(() => { initialBurst = false; }, 1500);
-        es.onmessage = (ev) => {
-            const log = JSON.parse(ev.data);
-            const entry = { ...log, id: Math.random().toString(36).slice(2, 9) };
-            setLogs(prev => [...prev, entry].slice(-LOG_BUFFER));
-        };
-        // Poll bot status every 10s (instead of 3s)
-        const statusInterval = setInterval(fetchBotStatus, 10000);
-        // Remove loader after a tick (no artificial delay)
-        const loaderTimer = setTimeout(() => setIsLoading(false), 50);
-        return () => {
-            es.close();
-            clearInterval(statusInterval);
-            clearTimeout(burstTimer);
-            clearTimeout(loaderTimer);
-        };
+        const interval = setInterval(fetchBotStatus, 5000);
+        return () => clearInterval(interval);
     }, [fetchData, fetchSettings, fetchBotStatus]);
-    // Actions
-    const handleVote = useCallback(async (g, status) => {
-        setVotes(prev => ({ ...prev, [g.url]: status || '' }));
-        setGirls(prev => prev.map(p => p.url === g.url ? { ...p, status } : p));
-        fetch('/api/vote', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: g.url, status })
-        });
-    }, []);
-    const handleOpen = useCallback(async (g) => {
-        if (!viewed.includes(g.url)) {
-            const newV = [...viewed, g.url];
-            setViewed(newV);
-            localStorage.setItem('ig_viewed_profiles', JSON.stringify(newV));
-            setGirls(prev => prev.map(p => p.url === g.url ? { ...p, viewed: true } : p));
-        }
-        fetch('/api/view', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: g.url })
-        });
-        window.open(g.url, '_blank');
-    }, [viewed]);
-    const handleSendDM = useCallback(async (g) => {
-        const msgs = JSON.parse(localStorage.getItem('ig_first_messages') || '[]');
-        const m = msgs[Math.floor(Math.random() * msgs.length)] || 'Hello!';
-        const newSent = [...sentDM, g.url];
-        setSentDM(newSent);
-        localStorage.setItem('ig_sent_dm', JSON.stringify(newSent));
-        setGirls(prev => prev.map(p => p.url === g.url ? { ...p, dmSent: true } : p));
-        fetch('/api/dm', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: g.url, message: m })
-        });
-    }, [sentDM]);
-    const handleTgCheck = useCallback((url, status) => {
-        setGirls(prev => prev.map(p => p.url === url ? { ...p, tg_status: status } : p));
-    }, []);
-    const handleImageError = useCallback((url) => {
-        setFailedImages(prev => new Set([...prev, url]));
-    }, []);
-    const handleBotControl = useCallback(async (type, action) => {
-        await fetch(`/api/bot/${action}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type })
-        });
-        fetchBotStatus();
-    }, [fetchBotStatus]);
-    const handleClearLogs = useCallback(async () => {
-        setLogs([]);
-        try {
-            await fetch('/api/logs/clear', { method: 'POST' });
-        }
-        catch (e) {
-            console.error('Failed to clear logs on server', e);
-        }
-    }, []);
-    const handleSaveSettings = useCallback(async () => {
-        if (!settingsLoaded.current)
-            return;
-        await fetch('/api/settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(settingsData)
-        });
-    }, [settingsData]);
-    // Auto-save settings on change (debounced, skip initial load)
-    const saveAbortRef = useRef(null);
+
     useEffect(() => {
-        if (!settingsLoaded.current)
-            return;
+        if (!settingsLoaded.current) return;
         setSaveStatus('saving');
         const timer = setTimeout(() => {
-            if (saveAbortRef.current)
-                saveAbortRef.current.abort();
-            const controller = new AbortController();
-            saveAbortRef.current = controller;
-            fetch('/api/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(settingsData),
-                signal: controller.signal
-            })
-                .then(() => {
+            if (saveAbortRef.current) saveAbortRef.current.abort();
+            if (pendingSave.current) {
+                const controller = new AbortController();
+                saveAbortRef.current = controller;
+                fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...settingsData, forceEmpty: true }),
+                    signal: controller.signal
+                }).then(() => {
                     setSaveStatus('saved');
                     setTimeout(() => setSaveStatus('idle'), 2000);
-                })
-                .catch((err) => {
-                    if (err.name !== 'AbortError')
-                        setSaveStatus('error');
+                }).catch(err => {
+                    if (err.name !== 'AbortError') setSaveStatus('error');
+                }).finally(() => {
+                    pendingSave.current = false;
+                    saveAbortRef.current = null;
                 });
+            }
         }, 800);
         return () => clearTimeout(timer);
     }, [settingsData]);
-    // Header stats (memoized-ish via inline)
-    const unopenedCount = girls.filter(g => !g.viewed).length;
-    const likesCount = Object.values(votes).filter(v => v === 'like').length;
-    return (<div className="app">
 
-        <header className="header">
-            <div className="header-left">
-                <div className="logo">{tr('logo')}</div>
-                <div className="stats">
-                    <span>{tr('unopened')} <b>{unopenedCount}</b></span>
-                    <span>{tr('viewed')} <b>{viewed.length}</b></span>
-                    <span>{tr('dm_sent')} <b style={{ color: 'hsl(var(--accent))' }}>{sentDM.length}</b></span>
-                    <div className="stats-divider" />
-                    <span>{tr('likes')} <b style={{ color: 'hsl(var(--success))' }}>{likesCount}</b></span>
-                </div>
-            </div>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                {saveStatus !== 'idle' && (<div style={{
-                    fontSize: '12px',
-                    color: saveStatus === 'error' ? 'hsl(var(--danger))' : 'hsl(var(--text-muted))',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                }}>
-                    {saveStatus === 'saving' && <div className="loader-ring" style={{ width: '12px', height: '12px', borderWidth: '2px' }} />}
-                    {saveStatus === 'saving' ? 'Сохранение...' : saveStatus === 'saved' ? '✓ Сохранено' : 'Ошибка сохранения'}
-                </div>)}
-                <button className="btn-primary" style={{
-                    background: 'transparent',
-                    fontSize: '12px',
-                    padding: '4px 8px',
-                    minWidth: '40px'
-                }} onClick={toggleLang}>
-                    {lang.toUpperCase()}
-                </button>
-                <button className="btn-primary" onClick={() => setModalOpen(true)}>
-                    {tr('templates')}
-                </button>
-            </div>
-        </header>
+    const onSettingsChange = (newSettings) => {
+        setSettingsData(prev => ({ ...prev, ...newSettings }));
+        pendingSave.current = true;
+    };
 
-        <nav className="tabs-nav">
-            <div style={{ display: 'flex', gap: '8px' }}>
-                {[
-                    { id: 'main', label: tr('tab_profiles') },
-                    { id: 'controls', label: tr('tab_execution') },
-                    { id: 'settings', label: tr('tab_configuration') },
-                ].map(({ id, label }) => (<button key={id} className={`tab-btn${activeTab === id ? ' active' : ''}`} onClick={() => setActiveTab(id)}>
-                    {label}
-                </button>))}
-            </div>
-            {activeTab === 'controls' && (<div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '20px', paddingRight: '20px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'hsl(var(--text-muted))' }} title={tr('human_emulation_desc')}>
-                    <input type="checkbox" checked={settingsData.humanEmulation || false} style={{ width: '15px', height: '15px', accentColor: 'hsl(var(--primary))' }} onChange={e => setSettingsData({ ...settingsData, humanEmulation: e.target.checked })} />
-                    {tr('human_emulation')}
-                </label>
-                <hr style={{ height: '16px', width: '1px', background: 'hsl(var(--border))', border: 'none' }} />
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'hsl(var(--text-muted))' }}>
-                    <input type="checkbox" checked={settingsData.showBrowser || false} style={{ width: '15px', height: '15px', accentColor: 'hsl(var(--primary))' }} onChange={e => setSettingsData({ ...settingsData, showBrowser: e.target.checked })} />
-                    {tr('show_browser')}
-                </label>
-                <hr style={{ height: '16px', width: '1px', background: 'hsl(var(--border))', border: 'none' }} />
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'hsl(var(--text-muted))' }}>
-                    {tr('concurrent_profiles')}
-                    <input type="number" min="1" max="20" value={settingsData.concurrentProfiles || 3} style={{
-                        width: '44px',
-                        height: '24px',
-                        background: 'hsl(var(--bg-elevated))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '4px',
-                        color: 'hsl(var(--text))',
-                        textAlign: 'center',
-                        fontSize: '11px',
-                        fontWeight: 600
-                    }} onChange={e => setSettingsData({ ...settingsData, concurrentProfiles: parseInt(e.target.value) || 1 })} />
-                </label>
-            </div>)}
-            <button className="btn-primary" style={{ marginLeft: activeTab === 'controls' ? '0' : 'auto', background: 'hsl(210 100% 50%)', borderColor: 'transparent' }} onClick={fetchData} title={tr('btn_update')}>
-                {tr('btn_update')}
-            </button>
-        </nav>
+    const handleImageError = useCallback((url) => {
+        setFailedImages(prev => {
+            const next = new Set(prev);
+            next.add(url);
+            return next;
+        });
+    }, []);
 
-        {activeTab === 'main' && (<ProfilesTab girls={girls} votes={votes} viewed={viewed} sentDM={sentDM} failedImages={failedImages} onVote={handleVote} onOpen={handleOpen} onSendDM={handleSendDM} onImageError={handleImageError} onRefresh={fetchData} useProxyImages={(settingsData.activeProfilesAccountIds || []).length > 0} tr={tr} onTgCheck={handleTgCheck} isLoading={isLoading} />)}
+    const handleTgCheck = useCallback((url, status) => {
+        setGirls(prev => prev.map(g => g.url === url ? { ...g, tg_status: status } : g));
+    }, []);
 
-        {activeTab === 'controls' && (<ControlsTab botStatus={botStatus} onBotControl={handleBotControl} onClearLogs={handleClearLogs} logs={logs} tr={tr} isLoading={isLoading} />)}
+    const markViewed = useCallback((url) => {
+        setViewed(prev => {
+            if (prev.includes(url)) return prev;
+            const next = [...prev, url];
+            safeStorage.setItem('ig_viewed_profiles', JSON.stringify(next));
+            return next;
+        });
+        setGirls(prev => prev.map(g => g.url === url ? { ...g, viewed: true } : g));
+    }, []);
 
-        {activeTab === 'settings' && (<SettingsTab settingsData={settingsData} onSettingsChange={setSettingsData} onSave={handleSaveSettings} tr={tr} isLoading={isLoading} />)}
+    const handleOpenProfile = useCallback((g) => {
+        markViewed(g.url);
+        window.open(g.url, '_blank');
+    }, [markViewed]);
 
-        {modalOpen && (<div className="modal" onClick={() => setModalOpen(false)}>
-            <div className="modalContent" onClick={e => e.stopPropagation()}>
-                <h3 style={{ margin: 0, marginBottom: 18, color: '#fff' }}>{tr('modal_templates_title')}</h3>
-                <textarea className="msg-textarea" value={messagesText} onChange={e => setMessagesText(e.target.value)} placeholder={tr('one_msg_per_line')} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                    <button className="btn-primary" style={{ background: 'transparent', border: 'none', boxShadow: 'none' }} onClick={() => setModalOpen(false)}>
-                        {tr('cancel')}
-                    </button>
-                    <button className="btn-primary" onClick={() => {
-                        localStorage.setItem('ig_first_messages', JSON.stringify(messagesText.split('\n').filter(l => l.trim())));
-                        setModalOpen(false);
-                    }}>
-                        {tr('save_changes')}
-                    </button>
-                </div>
-            </div>
-        </div>)}
-        <Toaster position="bottom-right" toastOptions={{
-            style: {
-                background: '#333',
-                color: '#fff',
+    const handleSendDM = useCallback((g) => {
+        setMessagesText(`Привет, ${g.name}! У тебя отличный профиль.`);
+        setModalOpen(true);
+    }, []);
+
+    const handleVote = async (url, status) => {
+        try {
+            const res = await fetch('/api/vote', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, status })
+            });
+            if (res.ok) {
+                setVotes(prev => ({ ...prev, [url]: status }));
+                setGirls(prev => prev.map(g => g.url === url ? { ...g, vote: status } : g));
             }
-        }} />
-    </div>);
+        } catch (e) { console.error('Vote error', e); }
+    };
+
+    const handleDeleteProfile = async (url) => {
+        try {
+            const res = await fetch('/api/profiles/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            if (res.ok) {
+                setGirls(prev => prev.filter(g => g.url !== url));
+                toast.success(tr('profile_deleted_success'));
+            } else {
+                toast.error(tr('profile_deleted_error'));
+            }
+        } catch (e) {
+            console.error('Delete profile error', e);
+            toast.error('Network error');
+        }
+    };
+
+    const handleSaveAsDonor = async (url) => {
+        try {
+            const res = await fetch('/api/donors', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const data = await res.json();
+            if (data.success) {
+                toast.success(tr('preset_saved') || 'Saved as donor');
+                // Refresh settings to update donor list in filters
+                fetchSettings();
+            } else {
+                toast.error(data.error || 'Error saving donor');
+            }
+        } catch (e) {
+            console.error('Save as donor error', e);
+            toast.error('Network error');
+        }
+    };
+
+    useEffect(() => {
+        const eventSource = new EventSource('/api/logs');
+        eventSource.onmessage = (e) => {
+            const log = JSON.parse(e.data);
+            setLogs(prev => [...prev.slice(-(LOG_BUFFER - 1)), log]);
+        };
+        return () => eventSource.close();
+    }, []);
+
+    const handleBotControl = useCallback(async (type, command) => {
+        try {
+            if (command === 'skip-donor') {
+                await fetch('/api/skip-donor', { method: 'POST' });
+                return;
+            }
+            const res = await fetch(`/api/bot/${command}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type })
+            });
+            if (res.ok) {
+                fetchBotStatus();
+            }
+        } catch (e) {
+            console.error('Bot control error', e);
+        }
+    }, [fetchBotStatus]);
+
+    const handleClearLogs = useCallback(async () => {
+        try {
+            const res = await fetch('/api/logs/clear', { method: 'POST' });
+            if (res.ok) {
+                setLogs([]);
+            }
+        } catch (e) {
+            console.error('Clear logs error', e);
+        }
+    }, []);
+
+    if (isLoading) return <div className="loading">Loading...</div>;
+
+    return (
+        <div className="app">
+            <header className="header">
+                <div className="logo-section">
+                    <div className="logo">{tr('logo')}</div>
+                    <div className="header-stats">
+                        <div className="stat-item">
+                            <span className="stat-label">{tr('tab_profiles')}:</span>
+                            <span className="stat-value">{girls.length}</span>
+                        </div>
+                        <div className="stat-divider" />
+                        <div className="stat-item">
+                            <span className="stat-label">{tr('likes')}:</span>
+                            <span className="stat-value">{Object.values(votes).filter(v => v === 'like').length}</span>
+                        </div>
+                        <div className="stat-divider" />
+                        <div className="stat-item">
+                            <span className="stat-label">{tr('dm_sent')}:</span>
+                            <span className="stat-value">{girls.filter(g => g.dmSent).length}</span>
+                        </div>
+                    </div>
+                </div>
+                <div className="header-actions">
+                    <button className="lang-toggle-btn" onClick={toggleLang}>{lang.toUpperCase()}</button>
+                </div>
+            </header>
+
+            <div className="nav-bar">
+                <div className="tabs-nav">
+                    <button className={`tab-btn ${activeTab === 'main' ? 'active' : ''}`} onClick={() => setActiveTab('main')}>{tr('tab_profiles')}</button>
+                    <button className={`tab-btn ${activeTab === 'controls' ? 'active' : ''}`} onClick={() => setActiveTab('controls')}>{tr('tab_execution')}</button>
+                    <button className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>{tr('tab_configuration')}</button>
+                </div>
+                <div className="nav-right-group">
+                    {activeTab === 'controls' && (
+                        <div className="header-bot-configs">
+                            <label className="header-checkbox">
+                                <input type="checkbox" checked={settingsData.humanEmulation || false} onChange={e => onSettingsChange({ humanEmulation: e.target.checked })} />
+                                <span>{tr('human_emulation')}</span>
+                            </label>
+                            <label className="header-checkbox">
+                                <input type="checkbox" checked={settingsData.showBrowser || false} onChange={e => onSettingsChange({ showBrowser: e.target.checked })} />
+                                <span>{tr('show_browser')}</span>
+                            </label>
+                            <label className="header-number-input">
+                                <span>{tr('concurrent_profiles')}</span>
+                                <input type="number" min="1" max="20" value={settingsData.concurrentProfiles || 3} onChange={e => onSettingsChange({ concurrentProfiles: parseInt(e.target.value) || 1 })} />
+                            </label>
+                        </div>
+                    )}
+                    <button className="btn-primary update-btn" onClick={fetchData}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                        {tr('btn_update')}
+                    </button>
+                </div>
+            </div>
+
+            <main className="content content-fade" key={activeTab}>
+                {activeTab === 'main' && (
+                    <ProfilesTab
+                        girls={girls}
+                        votes={votes}
+                        tr={tr}
+                        onVote={handleVote}
+                        onDeleteProfile={handleDeleteProfile}
+                        onSaveAsDonor={handleSaveAsDonor}
+                        useProxyImages={settingsData.showBrowser}
+                        isLoading={isLoading}
+                        failedImages={failedImages}
+                        onImageError={handleImageError}
+                        onOpen={handleOpenProfile}
+                        onSendDM={handleSendDM}
+                        onTgCheck={handleTgCheck}
+                        onRefresh={fetchData}
+                    />
+                )}
+                {activeTab === 'controls' && (
+                    <ControlsTab
+                        botStatus={botStatus}
+                        onBotControl={handleBotControl}
+                        onClearLogs={handleClearLogs}
+                        logs={logs}
+                        tr={tr}
+                        isLoading={isLoading}
+                    />
+                )}
+                {activeTab === 'settings' && <SettingsTab settingsData={settingsData} onSettingsChange={onSettingsChange} tr={tr} isLoading={isLoading} />}
+            </main>
+
+            {
+                modalOpen && (
+                    <div className="modal" onClick={() => setModalOpen(false)}>
+                        <div className="modalContent" onClick={e => e.stopPropagation()}>
+                            <h2>{tr('modal_send_dm')}</h2>
+                            <textarea
+                                className="select-input"
+                                style={{ width: '100%', height: '120px', padding: '12px', marginTop: '16px', resize: 'none' }}
+                                value={messagesText}
+                                onChange={e => setMessagesText(e.target.value)}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+                                <button className="btn-primary" style={{ background: 'hsl(var(--text-dim))' }} onClick={() => setModalOpen(false)}>
+                                    {tr('btn_cancel')}
+                                </button>
+                                <button className="btn-primary" onClick={() => {
+                                    toast.success('DM Sent (Demo)');
+                                    setModalOpen(false);
+                                }}>
+                                    {tr('btn_send')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+            <Toaster position="bottom-right" />
+        </div >
+    );
 }

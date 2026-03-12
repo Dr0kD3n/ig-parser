@@ -81,7 +81,7 @@ async function getCookies(type = '') {
         try {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) {
-                return parsed.filter(c => names.includes(c.name));
+                return parsed; // Return all cookies, don't filter only Instagram ones
             }
         }
         catch (e) { }
@@ -165,7 +165,7 @@ async function getAllAccounts(type = '') {
             column = 'active_parser';
         if (!column)
             return [];
-        const rows = await db.all(`SELECT proxy, cookies, fingerprint FROM accounts WHERE ${column} > 0 ORDER BY ${column} ASC`);
+        const rows = await db.all(`SELECT id, name, proxy, cookies, fingerprint, local_storage FROM accounts WHERE ${column} > 0 ORDER BY ${column} ASC`);
         if (!rows || rows.length === 0)
             return [];
         return rows.map(row => {
@@ -187,7 +187,7 @@ async function getAllAccounts(type = '') {
                 try {
                     const parsed = JSON.parse(raw);
                     if (Array.isArray(parsed)) {
-                        cookiesArr = parsed.filter(c => names.includes(c.name));
+                        cookiesArr = parsed; // Preserve all cookies for the UI/storage
                     }
                 }
                 catch (e) {
@@ -223,7 +223,14 @@ async function getAllAccounts(type = '') {
                     console.error('Error parsing fingerprint:', e);
                 }
             }
-            return { proxy: proxyObj, cookies: cookiesArr, fingerprint: fingerprintObj, local_storage: row.local_storage };
+            return {
+                id: row.id,
+                name: row.name,
+                proxy: proxyObj,
+                cookies: cookiesArr,
+                fingerprint: fingerprintObj,
+                local_storage: row.local_storage
+            };
         });
     }
     catch (e) {
