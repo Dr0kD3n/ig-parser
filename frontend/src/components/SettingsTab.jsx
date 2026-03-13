@@ -85,7 +85,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
 
     const fetchPresets = async () => {
         try {
-            const res = await fetch('/api/presets');
+            const res = await fetch(`/api/presets`);
             const data = await res.json();
             setPresets(data);
         } catch (e) {
@@ -116,7 +116,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
         };
 
         try {
-            const res = await fetch('/api/presets', {
+            const res = await fetch(`/api/presets`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, data: presetData })
@@ -191,7 +191,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                             [acc.id]: { running: false }
                         }));
                         // Refresh settings to get final score
-                        const sRes = await fetch('/api/settings');
+                        const sRes = await fetch(`/api/settings`);
                         onSettingsChange(await sRes.json());
                     }
                 } catch (e) { }
@@ -325,7 +325,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
             const data = await res.json();
             if (data.success) {
                 if (editingAccount === id) {
-                    const settingsRes = await fetch('/api/settings');
+                    const settingsRes = await fetch(`/api/settings`);
                     const settings = await settingsRes.json();
                     onSettingsChange(settings);
                     const acc = settings.accounts.find(a => a.id === id);
@@ -333,7 +333,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                     setEditForm(prev => ({ ...prev, fingerprint: fp }));
                 }
                 else {
-                    const settingsRes = await fetch('/api/settings');
+                    const settingsRes = await fetch(`/api/settings`);
                     const settings = await settingsRes.json();
                     onSettingsChange(settings);
                 }
@@ -364,7 +364,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                         if (!statusData.active || pollCount > 600) { // Stop after 10 mins or if closed
                             clearInterval(pollInterval);
                             // Refresh settings to get new cookies
-                            const settingsRes = await fetch('/api/settings');
+                            const settingsRes = await fetch(`/api/settings`);
                             const settings = await settingsRes.json();
                             onSettingsChange(settings);
                         }

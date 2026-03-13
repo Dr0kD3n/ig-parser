@@ -319,7 +319,7 @@ export default function ProfilesTab({
     const ITEMS_PER_PAGE = 24;
 
     React.useEffect(() => {
-        fetch('/api/donors-collected')
+        fetch(`/api/donors-collected`)
             .then(res => res.json())
             .then(setDonors)
             .catch(err => console.error('Failed to fetch donors', err));
@@ -333,7 +333,7 @@ export default function ProfilesTab({
         }
         setCheckingAllTg(true);
         try {
-            const resp = await fetch('/api/check-telegram-batch', {
+            const resp = await fetch(`/api/check-telegram-batch`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ urls: toCheck })

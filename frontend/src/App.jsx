@@ -4,6 +4,7 @@ import { toast, Toaster } from 'react-hot-toast';
 import ProfilesTab from './components/ProfilesTab';
 import ControlsTab from './components/ControlsTab';
 import SettingsTab from './components/SettingsTab';
+import AuthPage from './components/AuthPage';
 
 const LOG_BUFFER = 200;
 
@@ -16,6 +17,11 @@ const safeStorage = {
     setItem: (key, val) => {
         try {
             localStorage.setItem(key, val);
+        } catch (e) { }
+    },
+    removeItem: (key) => {
+        try {
+            localStorage.removeItem(key);
         } catch (e) { }
     },
     parse: (key, def) => {
@@ -34,6 +40,26 @@ export default function App() {
         setLang(next);
         safeStorage.setItem('ig_lang', next);
     };
+
+    const [user, setUser] = useState(() => {
+        const saved = safeStorage.parse('ig_user', null);
+        if (saved) return saved;
+        // Auto-login for local development
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            return { id: 0, email: 'local@localhost', role: 'admin' };
+        }
+        return null;
+    });
+
+    const [token, setToken] = useState(() => {
+        const saved = safeStorage.getItem('ig_token', null);
+        if (saved) return saved;
+        // Default token for local dev
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            return 'local-bypass-token';
+        }
+        return null;
+    });
 
     const [girls, setGirls] = useState([]);
     const [votes, setVotes] = useState({});
@@ -59,15 +85,46 @@ export default function App() {
 
     useEffect(() => { safeStorage.setItem('ig_active_tab', activeTab); }, [activeTab]);
 
+    const handleLoginSuccess = (newToken, newUser) => {
+        setToken(newToken);
+        setUser(newUser);
+        safeStorage.setItem('ig_token', newToken);
+        safeStorage.setItem('ig_user', JSON.stringify(newUser));
+    };
+
+    const handleLogout = () => {
+        setToken(null);
+        setUser(null);
+        safeStorage.removeItem('ig_token');
+        safeStorage.removeItem('ig_user');
+        toast.success('Logged out successfully');
+    };
+
+    const authFetch = useCallback(async (url, options = {}) => {
+        if (!token && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            return { ok: false, status: 401 };
+        }
+        const headers = {
+            ...options.headers,
+            'Authorization': token ? `Bearer ${token}` : ''
+        };
+        const res = await fetch(url, { ...options, headers });
+        if (res.status === 401) {
+            handleLogout();
+        }
+        return res;
+    }, [token]);
+
     const settingsLoaded = useRef(false);
     const pendingSave = useRef(false);
     const saveAbortRef = useRef(null);
 
     const fetchData = useCallback(async () => {
+        if (!user) return;
         try {
             const [girlsRes, votesRes] = await Promise.all([
-                fetch('/api/girls', { cache: 'no-store' }),
-                fetch('/api/votes', { cache: 'no-store' })
+                authFetch('/api/girls', { cache: 'no-store' }),
+                authFetch('/api/votes', { cache: 'no-store' })
             ]);
             const girlsData = await girlsRes.json();
             const votesData = await votesRes.json();
@@ -78,16 +135,17 @@ export default function App() {
                 g.viewed = viewedArr.includes(g.url);
                 g.dmSent = sentArr.includes(g.url);
             });
-            setGirls(girlsData);
-            setVotes(votesData);
+            setGirls(girlsData || []);
+            setVotes(votesData || {});
         } catch (e) {
             console.error('Error loading data', e);
         }
-    }, []);
+    }, [user, authFetch]);
 
     const fetchSettings = useCallback(async () => {
+        if (!user) return;
         try {
-            const res = await fetch('/api/settings');
+            const res = await authFetch('/api/settings');
             const data = await res.json();
             setSettingsData(prev => ({
                 ...prev,
@@ -105,33 +163,38 @@ export default function App() {
         } catch (e) {
             console.error('Error fetching settings', e);
         }
-    }, []);
+    }, [user, authFetch]);
 
     const fetchBotStatus = useCallback(async () => {
+        if (!user) return;
         try {
-            const res = await fetch('/api/bot/status');
+            const res = await authFetch('/api/bot/status');
             const data = await res.json();
             setBotStatus(data);
         } catch (e) { }
-    }, []);
+    }, [user, authFetch]);
 
     useEffect(() => {
-        fetchData();
-        fetchSettings();
-        fetchBotStatus();
-        const interval = setInterval(fetchBotStatus, 5000);
-        return () => clearInterval(interval);
-    }, [fetchData, fetchSettings, fetchBotStatus]);
+        if (user) {
+            fetchData();
+            fetchSettings();
+            fetchBotStatus();
+            const interval = setInterval(fetchBotStatus, 5000);
+            return () => clearInterval(interval);
+        } else {
+            setIsLoading(false);
+        }
+    }, [user, fetchData, fetchSettings, fetchBotStatus]);
 
     useEffect(() => {
-        if (!settingsLoaded.current) return;
+        if (!settingsLoaded.current || !user) return;
         setSaveStatus('saving');
         const timer = setTimeout(() => {
             if (saveAbortRef.current) saveAbortRef.current.abort();
             if (pendingSave.current) {
                 const controller = new AbortController();
                 saveAbortRef.current = controller;
-                fetch('/api/settings', {
+                authFetch('/api/settings', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ...settingsData, forceEmpty: true }),
@@ -148,7 +211,7 @@ export default function App() {
             }
         }, 800);
         return () => clearTimeout(timer);
-    }, [settingsData]);
+    }, [settingsData, user, authFetch]);
 
     const onSettingsChange = (newSettings) => {
         setSettingsData(prev => ({ ...prev, ...newSettings }));
@@ -189,7 +252,7 @@ export default function App() {
 
     const handleVote = async (url, status) => {
         try {
-            const res = await fetch('/api/vote', {
+            const res = await authFetch('/api/vote', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url, status })
@@ -203,7 +266,7 @@ export default function App() {
 
     const handleDeleteProfile = async (url) => {
         try {
-            const res = await fetch('/api/profiles/delete', {
+            const res = await authFetch('/api/profiles/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url })
@@ -222,7 +285,7 @@ export default function App() {
 
     const handleSaveAsDonor = async (url) => {
         try {
-            const res = await fetch('/api/donors', {
+            const res = await authFetch('/api/donors', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url })
@@ -230,7 +293,6 @@ export default function App() {
             const data = await res.json();
             if (data.success) {
                 toast.success(tr('preset_saved') || 'Saved as donor');
-                // Refresh settings to update donor list in filters
                 fetchSettings();
             } else {
                 toast.error(data.error || 'Error saving donor');
@@ -242,21 +304,22 @@ export default function App() {
     };
 
     useEffect(() => {
-        const eventSource = new EventSource('/api/logs');
+        if (!user) return;
+        const eventSource = new EventSource(`/api/logs?token=${token}`);
         eventSource.onmessage = (e) => {
             const log = JSON.parse(e.data);
             setLogs(prev => [...prev.slice(-(LOG_BUFFER - 1)), log]);
         };
         return () => eventSource.close();
-    }, []);
+    }, [user, token]);
 
     const handleBotControl = useCallback(async (type, command) => {
         try {
             if (command === 'skip-donor') {
-                await fetch('/api/skip-donor', { method: 'POST' });
+                await authFetch('/api/skip-donor', { method: 'POST' });
                 return;
             }
-            const res = await fetch(`/api/bot/${command}`, {
+            const res = await authFetch(`/api/bot/${command}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type })
@@ -267,20 +330,29 @@ export default function App() {
         } catch (e) {
             console.error('Bot control error', e);
         }
-    }, [fetchBotStatus]);
+    }, [fetchBotStatus, authFetch]);
 
     const handleClearLogs = useCallback(async () => {
         try {
-            const res = await fetch('/api/logs/clear', { method: 'POST' });
+            const res = await authFetch('/api/logs/clear', { method: 'POST' });
             if (res.ok) {
                 setLogs([]);
             }
         } catch (e) {
             console.error('Clear logs error', e);
         }
-    }, []);
+    }, [authFetch]);
 
     if (isLoading) return <div className="loading">Loading...</div>;
+
+    if (!user) {
+        return (
+            <div className="app">
+                <AuthPage onLoginSuccess={handleLoginSuccess} tr={tr} />
+                <Toaster position="bottom-right" />
+            </div>
+        );
+    }
 
     return (
         <div className="app">
@@ -304,7 +376,11 @@ export default function App() {
                         </div>
                     </div>
                 </div>
-                <div className="header-actions">
+                <div className="header-actions" style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                    <div className="user-badge">
+                        <span className="user-email">{user.email}</span>
+                        <button className="btn-logout" onClick={handleLogout}>{tr('btn_logout')}</button>
+                    </div>
                     <button className="lang-toggle-btn" onClick={toggleLang}>{lang.toUpperCase()}</button>
                 </div>
             </header>
@@ -403,3 +479,4 @@ export default function App() {
         </div >
     );
 }
+

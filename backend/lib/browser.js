@@ -83,17 +83,24 @@ async function createBrowserContext(config, headless = false) {
                 const req = http.get(launchUrl, (res) => {
                     let data = '';
                     res.on('data', chunk => data += chunk);
-                    res.on('end', () => resolve({ statusCode: res.statusCode, data: JSON.parse(data) }));
+                    res.on('end', () => {
+                        try {
+                            resolve({ statusCode: res.statusCode, data: JSON.parse(data) });
+                        } catch (e) {
+                            resolve({ statusCode: res.statusCode, data: null });
+                        }
+                    });
                 }).on('error', reject);
                 req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')); });
             }).catch(e => ({ statusCode: 500, error: e.message }));
 
-            if (response.statusCode === 200 && response.data?.success && response.data.automation?.wsEndpoint) {
+            // Проверка для локального API: игнорируем HTTP 503, если websocket получен (Dolphin может возвращать 503 при проблемах с облаком)
+            if (response.data && response.data.automation && response.data.automation.wsEndpoint) {
                 browser = await playwright_extra_1.chromium.connectOverCDP(response.data.automation.wsEndpoint);
                 context = browser.contexts()[0];
                 dolphinSuccess = true;
             } else {
-                const msg = response.data?.message || response.data?.error || response.error || 'Unknown error';
+                const msg = response.data?.message || response.data?.error || response.error || `HTTP ${response.statusCode}`;
                 handleError(new NetworkError(`[DOLPHIN] ${msg}`, { profileId: dolphinProfileId }));
                 console.warn(`⚠️ [DOLPHIN] Falling back to local browser.`);
             }

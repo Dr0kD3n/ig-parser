@@ -28,6 +28,8 @@ async function getDB() {
         filename: DB_PATH,
         driver: sqlite3_1.Database
     });
+    await dbInstance.run('PRAGMA journal_mode = WAL');
+    await dbInstance.run('PRAGMA busy_timeout = 5000');
     await dbInstance.exec(`
         CREATE TABLE IF NOT EXISTS accounts (
             id TEXT PRIMARY KEY,
@@ -98,6 +100,34 @@ async function getDB() {
             name TEXT NOT NULL UNIQUE,
             data TEXT NOT NULL -- JSON string of settings
         );
+
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT DEFAULT 'user',
+            is_blocked INTEGER DEFAULT 0,
+            reset_token TEXT,
+            reset_token_expiry DATETIME,
+            last_login DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS registration_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            is_used INTEGER DEFAULT 0,
+            used_by_email TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS login_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
     `);
     try {
         await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN tg_status TEXT`);
@@ -179,11 +209,25 @@ async function getDB() {
         // Ignore if column already exists
     }
 
-    // Import legacy data if needed
-    // await importLegacyData(dbInstance);
+    // Seed initial admin if not exists (password: admin123)
+    const adminExists = await dbInstance.get("SELECT * FROM users WHERE role = 'admin'");
+    if (!adminExists) {
+        const bcrypt = require('bcryptjs');
+        const hash = bcrypt.hashSync('admin123', 10);
+        await dbInstance.run("INSERT INTO users (email, password, role) VALUES (?, ?, ?)", ['admin@igbot.com', hash, 'admin']);
+        console.log('Seeded initial admin: admin@igbot.com / admin123');
+    }
+
+    // Seed one registration code for testing
+    const codeCount = (await dbInstance.get("SELECT count(*) as count FROM registration_codes")).count;
+    if (codeCount === 0) {
+        await dbInstance.run("INSERT INTO registration_codes (code) VALUES (?)", ['WELCOME']);
+        console.log('Seeded initial registration code: WELCOME');
+    }
 
     return dbInstance;
 }
+
 
 async function importLegacyData(db) {
     const fs = require('fs/promises');

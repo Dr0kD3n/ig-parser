@@ -121,7 +121,21 @@ export const TRANSLATIONS = {
         confirm_delete_profile: 'Удалить эту карточку?',
         profile_deleted_success: 'Профиль удален',
         profile_deleted_error: 'Ошибка при удалении',
-        btn_save_as_donor: 'Сохранить как донора'
+        btn_save_as_donor: 'Сохранить как донора',
+        login_title: 'С возвращением',
+        register_title: 'Создать аккаунт',
+        login_subtitle: 'Введите свои данные для доступа к панели',
+        register_subtitle: 'Присоединяйтесь к сообществу по коду приглашения',
+        email: 'Email',
+        password: 'Пароль',
+        invite_code: 'Код приглашения',
+        btn_login: 'Войти',
+        btn_register: 'Регистрация',
+        no_account: 'Нет аккаунта?',
+        has_account: 'Уже есть аккаунт?',
+        register_link: 'Зарегистрироваться',
+        login_link: 'Вернуться ко входу',
+        btn_logout: 'Выйти'
     },
     en: {
         logo: 'InstaPanel 3.0',
@@ -242,7 +256,21 @@ export const TRANSLATIONS = {
         confirm_delete_profile: 'Delete this card?',
         profile_deleted_success: 'Profile deleted',
         profile_deleted_error: 'Error deleting profile',
-        btn_save_as_donor: 'Save as donor'
+        btn_save_as_donor: 'Save as donor',
+        login_title: 'Welcome Back',
+        register_title: 'Create Account',
+        login_subtitle: 'Enter your credentials to access your dashboard',
+        register_subtitle: 'Join our community with an invitation code',
+        email: 'Email',
+        password: 'Password',
+        invite_code: 'Invitation Code',
+        btn_login: 'Sign In',
+        btn_register: 'Sign Up',
+        no_account: "Don't have an account?",
+        has_account: 'Already have an account?',
+        register_link: 'Register now',
+        login_link: 'Back to login',
+        btn_logout: 'Logout'
     }
 };
 export const t = (lang, key) => TRANSLATIONS[lang]?.[key] ?? key;

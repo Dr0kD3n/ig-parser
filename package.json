@@ -2,9 +2,9 @@
     "name": "ig-bot",
     "version": "1.0.0",
     "scripts": {
-        "dev": "npm run dev --workspace=frontend",
+        "dev": "concurrently \"npm run dev --workspace=frontend\" \"npm start --workspace=backend\"",
         "dev:proxy": "set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend",
-        "dev:all": "concurrently \"set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend\" \"node backend/server.js\"",
+        "dev:all": "concurrently \"set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend\" \"npm start --workspace=backend\"",
         "test": "set NODE_ENV=test&& vitest run",
         "test:e2e": "playwright test"
     },
@@ -14,7 +14,11 @@
         "frontend"
     ],
     "dependencies": {
+        "bcryptjs": "^3.0.3",
+        "better-sqlite3": "^12.6.2",
         "express": "^5.2.1",
+        "jsonwebtoken": "^9.0.3",
+        "nodemailer": "^8.0.2",
         "playwright": "^1.58.1",
         "playwright-extra": "^4.3.6",
         "puppeteer-extra-plugin-stealth": "^2.11.2",

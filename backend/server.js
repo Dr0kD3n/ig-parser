@@ -16,6 +16,9 @@ const warmup_1 = require("./lib/warmup");
 const logEmitter = new events_1.EventEmitter();
 const LOGS_FILE = path_1.join(utils_1.getRootPath(), 'data', 'logs.json');
 const { handleError, expressErrorHandler, setupProcessHandlers } = require('./lib/error-handler');
+const authController = require('./lib/auth-controller');
+const { verifyToken, isAdmin } = require('./lib/auth-middleware');
+
 
 setupProcessHandlers();
 
@@ -85,7 +88,7 @@ if (process.env.NODE_ENV !== 'test') {
     };
 }
 const app = express_1();
-const PORT = process.env.PORT || 1337;
+const PORT = process.env.PORT || 5000;
 // ==========================================
 // 1. CONFIGURATION & SELECTORS
 // ==========================================
@@ -166,6 +169,15 @@ async function getSettings() {
         dolphinToken
     };
 }
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
 app.use(express_1.json());
 // --- Static frontend (production build from frontend/) ---
 const baseDir = (0, utils_1.getRootPath)();
@@ -211,7 +223,26 @@ function invalidateGirlsCache() {
     girlsCache = null;
     girlsCacheTime = 0;
 }
+
+// --- Public Auth Routes ---
+app.post('/api/auth/signup', authController.signup);
+app.post('/api/auth/login', authController.login);
+
+// --- Protected Routes ---
+// Use a regex to exclude auth routes from token verification
+app.use('/api', (req, res, next) => {
+    if (req.path.startsWith('/auth/')) return next();
+    verifyToken(req, res, next);
+});
+
+// Admin Routes
+
+app.get('/api/admin/users', isAdmin, authController.adminGetUsers);
+app.post('/api/admin/toggle-block', isAdmin, authController.adminToggleBlock);
+app.post('/api/admin/generate-code', isAdmin, authController.adminGenerateCode);
+
 app.get('/api/girls', async (req, res) => {
+
     res.json(await getGirlsCached());
 });
 app.get('/api/donors-collected', async (req, res) => {
@@ -804,40 +835,35 @@ app.get('/api/dolphin/profiles', async (req, res) => {
             console.log('🐬 [DOLPHIN] Token updated from request');
         }
 
-        const dolphinTokenRow = await db.get(`SELECT value FROM settings WHERE key = 'dolphinToken'`);
-        const token = dolphinTokenRow ? dolphinTokenRow.value : '';
-        if (!token) {
-            return res.status(400).json({ success: false, error: 'Dolphin Token not configured' });
-        }
+        // Локальное API Dolphin Anty работает на порту 3001
         const options = {
-            hostname: 'anty-api.com',
-            path: '/browser_profiles?limit=50',
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            }
+            hostname: '127.0.0.1',
+            port: 3001,
+            path: '/v1.0/browser_profiles',
+            method: 'GET'
         };
-        const reqDolphin = https_1.get(options, (dolphinRes) => {
+
+        console.log('🐬 [DOLPHIN] Fetching profiles from local API...');
+
+        const reqDolphin = http_1.get(options, (dolphinRes) => {
             let data = '';
             dolphinRes.on('data', (chunk) => data += chunk);
             dolphinRes.on('end', () => {
-                if (dolphinRes.statusCode === 200) {
-                    try {
-                        const json = JSON.parse(data);
-                        res.json({ success: true, data: json.data || [] });
-                    }
-                    catch (e) {
-                        res.status(500).json({ success: false, error: 'Failed to parse Dolphin API response' });
-                    }
+                try {
+                    const json = JSON.parse(data);
+                    // Локальное API возвращает массив или объект
+                    const profilesList = json.data || (Array.isArray(json) ? json : []);
+                    res.json({ success: true, data: profilesList });
                 }
-                else {
-                    res.status(dolphinRes.statusCode || 500).json({ success: false, error: `Dolphin API Error: ${dolphinRes.statusCode}` });
+                catch (e) {
+                    res.status(500).json({ success: false, error: 'Failed to parse Dolphin Local API response' });
                 }
             });
         });
+
         reqDolphin.on('error', (e) => {
-            res.status(500).json({ success: false, error: `Request Error: ${e.message}` });
+            console.error('Local Dolphin API Error:', e.message);
+            res.status(500).json({ success: false, error: `Local Dolphin API is not running or unreachable: ${e.message}` });
         });
     }
     catch (e) {
@@ -1045,6 +1071,9 @@ if (process.env.NODE_ENV !== 'test') {
 }
 // SPA catch-all (must be after all API routes)
 app.use((req, res) => {
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API route not found' });
+    }
     if (fs_1.existsSync(publicDir)) {
         res.sendFile(path_1.join(publicDir, 'index.html'));
     }
