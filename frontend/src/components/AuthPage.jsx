@@ -29,39 +29,45 @@ export default function AuthPage({ onLoginSuccess, tr }) {
 
             if (res.ok) {
                 if (isLogin) {
-                    toast.success('Successfully logged in!');
+                    toast.success('Access Granted');
                     onLoginSuccess(data.token, data.user);
                 } else {
-                    toast.success('Registration successful! Please log in.');
+                    toast.success('Account Created. Please Login.');
                     setIsLogin(true);
                 }
             } else {
-                toast.error(data.error || 'Something went wrong');
+                toast.error(data.error || 'Authentication Failed');
             }
         } catch (error) {
             console.error('Auth error:', error);
-            toast.error('Network error');
+            toast.error('Connection Error');
         } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <div className="auth-container content-fade">
-            <div className="auth-card">
-                <div className="auth-header">
-                    <div className="logo auth-logo">IG BOT</div>
-                    <h1>{isLogin ? tr('login_title') || 'Welcome Back' : tr('register_title') || 'Create Account'}</h1>
-                    <p>{isLogin ? tr('login_subtitle') || 'Enter your credentials to access your dashboard' : tr('register_subtitle') || 'Join our community with an invitation code'}</p>
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+            <div className="modal-card fade-in-up" style={{ width: '100%', maxWidth: '440px', padding: '48px' }}>
+                <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+                    <div className="logo-container" style={{ margin: '0 auto 24px', width: '64px', height: '64px', fontSize: '28px' }}>IG</div>
+                    <h1 style={{ fontFamily: 'Space Grotesk', fontSize: '32px', fontWeight: '700', marginBottom: '8px' }}>
+                        {isLogin ? 'WELCOME BACK' : 'ESTABLISH LINK'}
+                    </h1>
+                    <p style={{ fontSize: '14px', color: 'var(--text-dim)', maxWidth: '280px', margin: '0 auto' }}>
+                        {isLogin
+                            ? 'Securely access your automation dashboard.'
+                            : 'Enter your exclusive invitation credentials.'}
+                    </p>
                 </div>
 
-                <form onSubmit={handleSubmit} className="auth-form">
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                     <div className="input-group">
-                        <label>{tr('email') || 'Email'}</label>
+                        <label className="label">SECURE EMAIL</label>
                         <input
                             type="email"
-                            className="select-input"
-                            placeholder="name@example.com"
+                            className="text-input"
+                            placeholder="operator@nexus.com"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
@@ -69,11 +75,11 @@ export default function AuthPage({ onLoginSuccess, tr }) {
                     </div>
 
                     <div className="input-group">
-                        <label>{tr('password') || 'Password'}</label>
+                        <label className="label">ENCRYPTED KEY</label>
                         <input
                             type="password"
-                            className="select-input"
-                            placeholder="••••••••"
+                            className="text-input"
+                            placeholder="••••••••••••"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
@@ -81,12 +87,12 @@ export default function AuthPage({ onLoginSuccess, tr }) {
                     </div>
 
                     {!isLogin && (
-                        <div className="input-group content-fade">
-                            <label>{tr('invite_code') || 'Invitation Code'}</label>
+                        <div className="input-group fade-in-up">
+                            <label className="label">AUTH CODE</label>
                             <input
                                 type="text"
-                                className="select-input"
-                                placeholder="ABCD-1234"
+                                className="text-input"
+                                placeholder="X-77"
                                 value={registrationCode}
                                 onChange={(e) => setRegistrationCode(e.target.value)}
                                 required
@@ -94,19 +100,22 @@ export default function AuthPage({ onLoginSuccess, tr }) {
                         </div>
                     )}
 
-                    <button type="submit" className="btn-primary auth-submit" disabled={isLoading}>
+                    <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '16px', fontSize: '16px', marginTop: '8px' }} disabled={isLoading}>
                         {isLoading ? (
-                            <div className="loader-mini"></div>
+                            <span className="loading-spinner-mini"></span>
                         ) : (
-                            isLogin ? tr('btn_login') || 'Sign In' : tr('btn_register') || 'Sign Up'
+                            isLogin ? 'INITIALIZE SESSION' : 'ESTABLISH ACCOUNT'
                         )}
                     </button>
                 </form>
 
-                <div className="auth-footer">
-                    <span>{isLogin ? tr('no_account') || "Don't have an account?" : tr('has_account') || "Already have an account?"}</span>
-                    <button className="auth-toggle" onClick={() => setIsLogin(!isLogin)}>
-                        {isLogin ? tr('register_link') || 'Register now' : tr('login_link') || 'Back to login'}
+                <div style={{ textAlign: 'center', marginTop: '32px', fontSize: '13px', color: 'var(--text-dim)' }}>
+                    <span>{isLogin ? 'No credentials?' : 'Already linked?'}</span>
+                    <button
+                        style={{ border: 'none', background: 'none', color: 'hsl(var(--primary))', fontWeight: '600', marginLeft: '8px', cursor: 'pointer' }}
+                        onClick={() => setIsLogin(!isLogin)}
+                    >
+                        {isLogin ? 'Register now' : 'Back to login'}
                     </button>
                 </div>
             </div>

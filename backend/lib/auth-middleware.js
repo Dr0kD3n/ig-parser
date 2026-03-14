@@ -3,46 +3,48 @@ const { getDB } = require('./db');
 const { JWT_SECRET, JWT_PUBLIC_KEY, IS_ASYMMETRIC } = require('./auth-config');
 
 exports.verifyToken = async (req, res, next) => {
-    const authHeader = req.header('Authorization');
-    const queryToken = req.query.token;
-    const token = authHeader?.split(' ')[1] || queryToken;
-
-    // Skip verification for local requests during development
-    const ip = req.ip || req.connection?.remoteAddress || '';
+    // Bypass token verification for requests originating from localhost
+    const ip = req.ip || req.connection?.remoteAddress;
     const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost';
 
     if (isLocal) {
-        req.user = {
-            id: 'local-dev',
-            email: 'local@localhost',
-            role: 'admin' // Grant admin rights for local dev
-        };
+        // Provide a default local user for requests from localhost
+        req.user = { id: 0, email: 'local-admin@localhost', role: 'admin' };
         return next();
     }
+
+    const authHeader = req.header('Authorization');
+    const queryToken = req.query.token;
+    const token = authHeader?.split(' ')[1] || queryToken;
 
     if (!token) {
         return res.status(401).json({ error: 'Access denied. No token provided.' });
     }
 
+    // Verify token with the external auth server
+    const authUrl = 'https://botback-production-1011.up.railway.app/api/auth/verify';
+
     try {
-        // Use Public Key if exists (RS256), otherwise fallback to Secret (HS256)
-        const key = IS_ASYMMETRIC ? JWT_PUBLIC_KEY : JWT_SECRET;
-        const decoded = jwt.verify(token, key, {
-            algorithms: IS_ASYMMETRIC ? ['RS256'] : ['HS256']
+        const response = await fetch(authUrl, {
+            headers: { 'Authorization': `Bearer ${token}` }
         });
 
-        if (typeof decoded === 'string') return res.status(401).json({ error: 'Invalid token payload' });
+        if (!response.ok) {
+            const errorText = await response.text();
+            let errorMessage = `Auth server returned ${response.status}`;
+            try {
+                const errorData = JSON.parse(errorText);
+                errorMessage = errorData.error || errorMessage;
+            } catch (e) { }
+            throw new Error(errorMessage);
+        }
 
-        req.user = {
-            id: decoded.id,
-            email: decoded.email,
-            role: decoded.role || 'user'
-        };
-
+        const userData = await response.json();
+        req.user = userData;
         next();
     } catch (error) {
         console.error(`[AUTH] Verification failed: ${error.message}`);
-        res.status(401).json({ error: 'Invalid token.' });
+        res.status(401).json({ error: error.message || 'Invalid token.' });
     }
 };
 

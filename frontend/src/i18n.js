@@ -69,7 +69,9 @@ export const TRANSLATIONS = {
         save_all: 'Сохранить всё',
         btn_clear: 'Очистить',
         btn_check_all_tg: 'Проверить все ТГ',
+        btn_restore_photos: 'Восстановить фото',
         modal_send_dm: 'Отправить сообщение',
+
         btn_cancel: 'Отмена',
         btn_send: 'Отправить',
         show_browser: 'Показывать браузер',
@@ -204,7 +206,9 @@ export const TRANSLATIONS = {
         save_all: 'Save all',
         btn_clear: 'Clear',
         btn_check_all_tg: 'Check all TG',
+        btn_restore_photos: 'Restore Photos',
         modal_send_dm: 'Send Message',
+
         btn_cancel: 'Cancel',
         btn_send: 'Send',
         show_browser: 'Show browser',

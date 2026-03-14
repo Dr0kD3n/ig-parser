@@ -13,6 +13,8 @@ const fingerprint_1 = require("./lib/fingerprint");
 const reporter_1 = require("./lib/reporter");
 const config_1 = require("./lib/config");
 const warmup_1 = require("./lib/warmup");
+const { restorePhotos, stopRestorePhotos } = require("./lib/photo-restorer");
+
 const logEmitter = new events_1.EventEmitter();
 const LOGS_FILE = path_1.join(utils_1.getRootPath(), 'data', 'logs.json');
 const { handleError, expressErrorHandler, setupProcessHandlers } = require('./lib/error-handler');
@@ -270,7 +272,7 @@ app.get('/api/admin/users', isAdmin, async (req, res) => {
 });
 
 app.get('/api/girls', async (req, res) => {
-
+    if (restorePhotosStatus.running) invalidateGirlsCache();
     res.json(await getGirlsCached());
 });
 app.get('/api/donors-collected', async (req, res) => {
@@ -619,6 +621,40 @@ app.get('/api/accounts/:id/warmup/status', (req, res) => {
     const { id } = req.params;
     res.json(warmupStatus.get(id) || { running: false });
 });
+
+let restorePhotosStatus = { running: false, current: 0, total: 0, status: '' };
+
+app.post('/api/profiles/restore-photos', async (req, res) => {
+    if (restorePhotosStatus.running) {
+        return res.status(400).json({ success: false, error: 'Task already in progress' });
+    }
+
+    const { concurrency } = req.body;
+    restorePhotosStatus = { running: true, current: 0, total: 0, status: 'Starting...' };
+
+    // Run in background
+    restorePhotos((progress) => {
+        restorePhotosStatus = { running: true, ...progress };
+    }, concurrency).then((result) => {
+        restorePhotosStatus = { running: false, done: true, result, current: restorePhotosStatus.current, total: restorePhotosStatus.total, status: 'Done' };
+        invalidateGirlsCache();
+    }).catch((e) => {
+        restorePhotosStatus = { running: false, error: e.message, current: restorePhotosStatus.current, total: restorePhotosStatus.total, status: 'Error' };
+    });
+
+
+    res.json({ success: true });
+});
+
+app.post('/api/profiles/restore-photos/stop', async (req, res) => {
+    stopRestorePhotos();
+    res.json({ success: true });
+});
+
+app.get('/api/profiles/restore-photos/status', (req, res) => {
+    res.json(restorePhotosStatus);
+});
+
 
 app.put('/api/accounts/:id', async (req, res) => {
     const { id } = req.params;

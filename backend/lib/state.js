@@ -91,7 +91,7 @@ exports.StateManager = {
     },
     async loadDonors() {
         const db = await (0, db_1.getDB)();
-        const rows = await db.all(`SELECT url FROM urls WHERE type = 'donor'`);
+        const rows = await db.all(`SELECT url FROM urls WHERE type = 'donor' ORDER BY id DESC`);
         return rows.map(r => r.url);
     },
     async saveDonor(url) {
