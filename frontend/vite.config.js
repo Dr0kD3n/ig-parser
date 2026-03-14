@@ -5,10 +5,17 @@ export default defineConfig({
     plugins: [react()],
     server: {
         port: 5173,
-        // Proxy API requests to Express backend during dev
         proxy: {
-            '/api/auth': 'http://127.0.0.1:5001',
-            '/api': 'http://127.0.0.1:5000'
+            '/api/auth': {
+                target: 'https://botback-production-1011.up.railway.app',
+                changeOrigin: true,
+                secure: false
+            },
+            '/api': {
+                target: 'http://localhost:5000',
+                changeOrigin: true,
+                secure: false
+            }
         }
     },
     build: {

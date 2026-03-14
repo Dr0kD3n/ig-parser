@@ -17,6 +17,28 @@ const logEmitter = new events_1.EventEmitter();
 const LOGS_FILE = path_1.join(utils_1.getRootPath(), 'data', 'logs.json');
 const { handleError, expressErrorHandler, setupProcessHandlers } = require('./lib/error-handler');
 const { verifyToken, isAdmin } = require('./lib/auth-middleware');
+const { rateLimit } = require('express-rate-limit');
+
+// Rate limiters
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 20, // limit each IP to 20 requests per windowMs
+    message: { error: 'Too many requests, please try again later.' },
+    skip: (req) => {
+        const ip = req.ip || req.connection.remoteAddress;
+        return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost';
+    }
+});
+
+const apiLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 100, // limit each IP to 100 requests per minute
+    message: { error: 'Rate limit exceeded' },
+    skip: (req) => {
+        const ip = req.ip || req.connection.remoteAddress;
+        return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost';
+    }
+});
 
 
 setupProcessHandlers();
@@ -57,7 +79,7 @@ function debouncedSaveLogs() {
     saveLogsTimer = setTimeout(() => {
         saveLogsTimer = null;
         saveLogs();
-    }, 2000);
+    }, 10000); // Save every 10 seconds instead of 2 to reduce I/O
 }
 function broadcastLog(source, message) {
     const logEntry = {
@@ -187,7 +209,13 @@ if (fs_1.existsSync(publicDir)) {
 }
 else {
     // --- Fallback to old single-file index.html during migration
-    app.get('/', (req, res) => res.sendFile(legacyHtml));
+    app.get('/', (req, res) => {
+        if (fs_1.existsSync(legacyHtml)) {
+            res.sendFile(legacyHtml);
+        } else {
+            res.send('API Server is running. Frontend build not found.');
+        }
+    });
 }
 // --- In-memory cache for profiles ---
 let girlsCache = null;
@@ -222,9 +250,17 @@ function invalidateGirlsCache() {
     girlsCache = null;
     girlsCacheTime = 0;
 }
+// --- Public Routes ---
+const authController = require('./lib/auth-controller');
+app.use('/api', apiLimiter); // Apply rate limiting to all /api routes
+app.post('/api/auth/login', authLimiter, authController.login);
+app.post('/api/auth/signup', authLimiter, authController.signup);
 
 // --- Protected Routes ---
 app.use('/api', verifyToken);
+
+// Apply strict rate limiting to bot start
+app.use('/api/bot/start', authLimiter);
 
 // Admin Routes (these still use req.user from verifyToken)
 app.get('/api/admin/users', isAdmin, async (req, res) => {
@@ -388,7 +424,15 @@ app.get('/api/settings', async (req, res) => {
     const checkedDonors = historyRows.map(r => r.url);
 
     res.json({
-        accounts: settings.accounts || [],
+        accounts: (settings.accounts || []).map(a => ({
+            id: a.id,
+            name: a.name,
+            proxy: a.proxy,
+            warmup_score: a.warmup_score,
+            last_warmup: a.last_warmup,
+            has_cookies: !!a.cookies
+            // cookies and fingerprint are hidden for security
+        })),
         activeParserAccountIds: settings.activeParserAccountIds,
         activeServerAccountIds: settings.activeServerAccountIds,
         activeIndexAccountIds: settings.activeIndexAccountIds,
@@ -1066,11 +1110,15 @@ app.use((req, res) => {
     if (req.path.startsWith('/api/')) {
         return res.status(404).json({ error: 'API route not found' });
     }
-    if (fs_1.existsSync(publicDir)) {
-        res.sendFile(path_1.join(publicDir, 'index.html'));
+    const publicIndex = path_1.join(publicDir, 'index.html');
+    if (fs_1.existsSync(publicDir) && fs_1.existsSync(publicIndex)) {
+        res.sendFile(publicIndex);
+    }
+    else if (fs_1.existsSync(legacyHtml)) {
+        res.sendFile(legacyHtml);
     }
     else {
-        res.status(404).send('Not Found');
+        res.status(404).send('Not Found: Frontend build missing. API Server is running.');
     }
 });
 const getSelectorString = (key) => {

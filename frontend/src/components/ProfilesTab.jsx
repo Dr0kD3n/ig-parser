@@ -1,6 +1,7 @@
 import React, { useState, memo } from 'react';
 import { HeartIcon, XIcon, InstagramIcon, TelegramIcon, HelpIcon, SendIcon, InfoIcon, PlusIcon } from './Icons';
 import { toast } from 'react-hot-toast';
+import { API_BASE, LOCAL_API_BASE } from '../config';
 
 function parseSmartBio(text, username) {
     if (!text)
@@ -86,7 +87,7 @@ const ProfileCard = memo(function ProfileCard({
 
         const photoSrc = g.photo
             ? (useProxyImages
-                ? `/api/proxy-image?url=${encodeURIComponent(g.photo)}&token=${token}`
+                ? `${LOCAL_API_BASE}/api/proxy-image?url=${encodeURIComponent(g.photo)}&token=${token}`
                 : `https://images.weserv.nl/?url=${encodeURIComponent(g.photo)}`)
             : null;
 
@@ -126,7 +127,7 @@ const ProfileCard = memo(function ProfileCard({
 
         const donorPhotoSrc = g.donor_photo
             ? (useProxyImages
-                ? `/api/proxy-image?url=${encodeURIComponent(g.donor_photo)}&token=${token}`
+                ? `${LOCAL_API_BASE}/api/proxy-image?url=${encodeURIComponent(g.donor_photo)}&token=${token}`
                 : `https://images.weserv.nl/?url=${encodeURIComponent(g.donor_photo)}`)
             : null;
 

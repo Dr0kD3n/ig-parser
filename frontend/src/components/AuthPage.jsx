@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'react-hot-toast';
+import { API_BASE } from '../config';
 
 export default function AuthPage({ onLoginSuccess, tr }) {
     const [isLogin, setIsLogin] = useState(true);
@@ -18,7 +19,7 @@ export default function AuthPage({ onLoginSuccess, tr }) {
             : { email, password, registrationCode };
 
         try {
-            const res = await fetch(endpoint, {
+            const res = await fetch(`${API_BASE}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)

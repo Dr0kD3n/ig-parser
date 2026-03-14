@@ -1,14 +1,9 @@
 const fs = require('fs');
-const path = require('path');
-const logsFile = path.join(process.cwd(), 'data', 'logs.json');
 
 try {
-    const data = fs.readFileSync(logsFile, 'utf8');
+    const data = fs.readFileSync('data/logs.json', 'utf8');
     const logs = JSON.parse(data);
-    const lastLogs = logs.slice(-20);
-    lastLogs.forEach(log => {
-        console.log(`[${log.timestamp}] [${log.source}] ${log.message}`);
-    });
+    console.log(JSON.stringify(logs.slice(-10), null, 2));
 } catch (e) {
-    console.error('Error reading logs:', e);
+    console.error('Error:', e.message);
 }

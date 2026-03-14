@@ -1,35 +1,47 @@
 const jwt = require('jsonwebtoken');
 const { getDB } = require('./db');
-
-const { JWT_SECRET } = require('./auth-config');
-
+const { JWT_SECRET, JWT_PUBLIC_KEY, IS_ASYMMETRIC } = require('./auth-config');
 
 exports.verifyToken = async (req, res, next) => {
     const authHeader = req.header('Authorization');
     const queryToken = req.query.token;
     const token = authHeader?.split(' ')[1] || queryToken;
 
+    // Skip verification for local requests during development
+    const ip = req.ip || req.connection?.remoteAddress || '';
+    const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost';
+
+    if (isLocal) {
+        req.user = {
+            id: 'local-dev',
+            email: 'local@localhost',
+            role: 'admin' // Grant admin rights for local dev
+        };
+        return next();
+    }
+
     if (!token) {
-        console.warn(`[AUTH] No token provided for ${req.method} ${req.path}`);
         return res.status(401).json({ error: 'Access denied. No token provided.' });
     }
 
     try {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        // Use Public Key if exists (RS256), otherwise fallback to Secret (HS256)
+        const key = IS_ASYMMETRIC ? JWT_PUBLIC_KEY : JWT_SECRET;
+        const decoded = jwt.verify(token, key, {
+            algorithms: IS_ASYMMETRIC ? ['RS256'] : ['HS256']
+        });
+
         if (typeof decoded === 'string') return res.status(401).json({ error: 'Invalid token payload' });
 
-        // We trust the token because it's signed with the shared JWT_SECRET.
-        // We set req.user from the decoded token which contains id, email, role.
         req.user = {
             id: decoded.id,
             email: decoded.email,
             role: decoded.role || 'user'
         };
 
-        console.log(`[AUTH] Token verified (stateless) for ${req.user.email} on ${req.method} ${req.path}`);
         next();
     } catch (error) {
-        console.error(`[AUTH] Token verification failed: ${error.message}`);
+        console.error(`[AUTH] Verification failed: ${error.message}`);
         res.status(401).json({ error: 'Invalid token.' });
     }
 };

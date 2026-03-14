@@ -38,10 +38,7 @@ exports.signup = async (req, res) => {
     } catch (error) {
         console.error('Signup error:', error);
         console.error('Error stack:', error.stack);
-        if (error.message.includes('UNIQUE constraint failed')) {
-            return res.status(400).json({ error: 'Email already exists' });
-        }
-        res.status(500).json({ error: 'Internal server error: ' + error.message, stack: error.stack });
+        res.status(500).json({ error: 'Internal server error' });
     }
 };
 
@@ -76,8 +73,7 @@ exports.login = async (req, res) => {
         res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
     } catch (error) {
         console.error('Login error:', error);
-        console.error('Error stack:', error.stack);
-        res.status(500).json({ error: 'Internal server error: ' + error.message, stack: error.stack });
+        res.status(500).json({ error: 'Internal server error' });
     }
 };
 

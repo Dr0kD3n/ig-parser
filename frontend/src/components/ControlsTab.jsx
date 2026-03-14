@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
 import { FileIcon } from './Icons';
+import { API_BASE, LOCAL_API_BASE } from '../config';
 const LogGroup = memo(function LogGroup({ group, tr }) {
     const [collapsed, setCollapsed] = useState(false);
     const source = group.source.split('-')[0].toUpperCase();
@@ -183,7 +184,7 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
                 </div>
             </div>
             {!streamCollapsed && (<div className="stream-container" onClick={() => setIsZoomed(true)}>
-                <img src={`/api/live-view?t=${liveViewTimestamp}&token=${token}`} style={{ display: (botStatus.index || botStatus.parser) ? 'block' : 'none' }} alt="Live View" onError={(e) => {
+                <img src={`${LOCAL_API_BASE}/api/live-view?t=${liveViewTimestamp}&token=${token}`} style={{ display: (botStatus.index || botStatus.parser) ? 'block' : 'none' }} alt="Live View" onError={(e) => {
                     e.target.style.display = 'none'; if (e.target.nextSibling)
                         e.target.nextSibling.style.display = 'block';
                 }} onLoad={(e) => {
@@ -198,7 +199,7 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
 
         {/* Fullscreen Popup */}
         {isZoomed && (<div className="stream-overlay-full" onClick={() => setIsZoomed(false)}>
-            <img src={`/api/live-view?t=${liveViewTimestamp}&token=${token}`} alt="Live View Full" />
+            <img src={`${LOCAL_API_BASE}/api/live-view?t=${liveViewTimestamp}&token=${token}`} alt="Live View Full" />
         </div>)}
     </div>);
 }

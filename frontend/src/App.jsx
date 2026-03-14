@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { t } from './i18n';
+import { API_BASE, LOCAL_API_BASE } from './config';
 import { toast, Toaster } from 'react-hot-toast';
 import ProfilesTab from './components/ProfilesTab';
 import ControlsTab from './components/ControlsTab';
@@ -104,7 +105,8 @@ export default function App() {
         console.log(`[AUTH] Fetching ${url}, token present: ${!!currentToken}`);
 
         try {
-            const res = await fetch(url, { ...options, headers });
+            const baseUrl = url.startsWith('/api/auth/') ? API_BASE : LOCAL_API_BASE;
+            const res = await fetch(`${baseUrl}${url}`, { ...options, headers });
             console.log(`[AUTH] Response for ${url}: ${res.status} ${res.statusText}`);
 
             if (res.status === 401 && currentToken) {
@@ -311,7 +313,8 @@ export default function App() {
         const normalizedToken = (token === 'null' || token === 'undefined') ? null : token;
         if (!normalizedToken) return;
 
-        const eventSource = new EventSource(`/api/logs?token=${normalizedToken}`);
+        const baseUrl = LOCAL_API_BASE; // Logs are on local server
+        const eventSource = new EventSource(`${baseUrl}/api/logs?token=${normalizedToken}`);
         eventSource.onmessage = (e) => {
             const log = JSON.parse(e.data);
             setLogs(prev => [...prev.slice(-(LOG_BUFFER - 1)), log]);
