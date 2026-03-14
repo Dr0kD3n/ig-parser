@@ -66,7 +66,9 @@ const ProfileCard = memo(function ProfileCard({
     tr = (k) => k,
     onTgCheck,
     onDeleteProfile,
-    onSaveAsDonor
+    onSaveAsDonor,
+    authFetch,
+    token
 }) {
     const [checkingTg, setCheckingTg] = useState(false);
     const [showDetails, setShowDetails] = useState(false);
@@ -84,7 +86,7 @@ const ProfileCard = memo(function ProfileCard({
 
         const photoSrc = g.photo
             ? (useProxyImages
-                ? `/api/proxy-image?url=${encodeURIComponent(g.photo)}`
+                ? `/api/proxy-image?url=${encodeURIComponent(g.photo)}&token=${token}`
                 : `https://images.weserv.nl/?url=${encodeURIComponent(g.photo)}`)
             : null;
 
@@ -101,7 +103,7 @@ const ProfileCard = memo(function ProfileCard({
             const popup = window.open(tgUrl, '_blank', 'width=600,height=800');
             setCheckingTg(true);
             try {
-                const resp = await fetch(`/api/check-telegram?url=${encodeURIComponent(g.name)}`);
+                const resp = await authFetch(`/api/check-telegram?url=${encodeURIComponent(g.name)}`);
                 const data = await resp.json();
                 if (data.success) {
                     if (data.status === 'invalid') {
@@ -124,7 +126,7 @@ const ProfileCard = memo(function ProfileCard({
 
         const donorPhotoSrc = g.donor_photo
             ? (useProxyImages
-                ? `/api/proxy-image?url=${encodeURIComponent(g.donor_photo)}`
+                ? `/api/proxy-image?url=${encodeURIComponent(g.donor_photo)}&token=${token}`
                 : `https://images.weserv.nl/?url=${encodeURIComponent(g.donor_photo)}`)
             : null;
 
@@ -277,7 +279,9 @@ export default function ProfilesTab({
     onTgCheck,
     isLoading,
     onDeleteProfile,
-    onSaveAsDonor
+    onSaveAsDonor,
+    authFetch,
+    token
 }) {
     const [filterDonor, setFilterDonor] = useState('all');
     const [donors, setDonors] = useState([]);
@@ -319,11 +323,11 @@ export default function ProfilesTab({
     const ITEMS_PER_PAGE = 24;
 
     React.useEffect(() => {
-        fetch(`/api/donors-collected`)
+        authFetch(`/api/donors-collected`)
             .then(res => res.json())
             .then(setDonors)
             .catch(err => console.error('Failed to fetch donors', err));
-    }, [girls.length]);
+    }, [girls.length, authFetch]);
 
     const handleCheckAllTg = async () => {
         const toCheck = girls.filter(g => !g.tg_status).map(g => g.name);
@@ -333,7 +337,7 @@ export default function ProfilesTab({
         }
         setCheckingAllTg(true);
         try {
-            const resp = await fetch(`/api/check-telegram-batch`, {
+            const resp = await authFetch(`/api/check-telegram-batch`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ urls: toCheck })
@@ -458,7 +462,7 @@ export default function ProfilesTab({
                     Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
                 ) : (
                     pageData.map(g => (
-                        <ProfileCard key={g.url} g={g} votes={votes} failedImages={failedImages} onVote={onVote} onOpen={onOpen} onSendDM={onSendDM} onImageError={onImageError} useProxyImages={useProxyImages} tr={tr} onTgCheck={onTgCheck} onDeleteProfile={onDeleteProfile} onSaveAsDonor={onSaveAsDonor} />
+                        <ProfileCard key={g.url} g={g} votes={votes} failedImages={failedImages} onVote={onVote} onOpen={onOpen} onSendDM={onSendDM} onImageError={onImageError} useProxyImages={useProxyImages} tr={tr} onTgCheck={onTgCheck} onDeleteProfile={onDeleteProfile} onSaveAsDonor={onSaveAsDonor} authFetch={authFetch} token={token} />
                     ))
                 )}
                 {!isLoading && pageData.length === 0 && (

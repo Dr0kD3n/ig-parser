@@ -3,7 +3,8 @@ const jwt = require('jsonwebtoken');
 const { getDB } = require('./db');
 const crypto = require('crypto');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_key_123';
+const { JWT_SECRET } = require('./auth-config');
+
 
 exports.signup = async (req, res) => {
     const { email, password, registrationCode } = req.body;

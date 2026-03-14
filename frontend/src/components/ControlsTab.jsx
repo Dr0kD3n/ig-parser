@@ -56,7 +56,7 @@ const SkeletonControls = memo(function SkeletonControls() {
         </div>
     </div>);
 });
-export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs, tr, isLoading }) {
+export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs, tr, isLoading, authFetch, token }) {
     const logBoxRef = useRef(null);
     const [scraperCollapsed, toggleScraper] = useCollapsed('ig_scraper_collapsed', false);
     const [parserCollapsed, toggleParser] = useCollapsed('ig_parser_collapsed', false);
@@ -183,7 +183,7 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
                 </div>
             </div>
             {!streamCollapsed && (<div className="stream-container" onClick={() => setIsZoomed(true)}>
-                <img src={`/api/live-view?t=${liveViewTimestamp}`} style={{ display: (botStatus.index || botStatus.parser) ? 'block' : 'none' }} alt="Live View" onError={(e) => {
+                <img src={`/api/live-view?t=${liveViewTimestamp}&token=${token}`} style={{ display: (botStatus.index || botStatus.parser) ? 'block' : 'none' }} alt="Live View" onError={(e) => {
                     e.target.style.display = 'none'; if (e.target.nextSibling)
                         e.target.nextSibling.style.display = 'block';
                 }} onLoad={(e) => {
@@ -198,7 +198,7 @@ export default function ControlsTab({ botStatus, onBotControl, onClearLogs, logs
 
         {/* Fullscreen Popup */}
         {isZoomed && (<div className="stream-overlay-full" onClick={() => setIsZoomed(false)}>
-            <img src={`/api/live-view?t=${liveViewTimestamp}`} alt="Live View Full" />
+            <img src={`/api/live-view?t=${liveViewTimestamp}&token=${token}`} alt="Live View Full" />
         </div>)}
     </div>);
 }

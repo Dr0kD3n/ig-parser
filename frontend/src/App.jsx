@@ -11,12 +11,18 @@ const LOG_BUFFER = 200;
 const safeStorage = {
     getItem: (key, def) => {
         try {
-            return localStorage.getItem(key) || def;
+            const val = localStorage.getItem(key);
+            if (val === null || val === 'null' || val === 'undefined') return def;
+            return val;
         } catch (e) { return def; }
     },
     setItem: (key, val) => {
         try {
-            localStorage.setItem(key, val);
+            if (val === null || val === undefined) {
+                localStorage.removeItem(key);
+            } else {
+                localStorage.setItem(key, val);
+            }
         } catch (e) { }
     },
     removeItem: (key) => {
@@ -27,7 +33,8 @@ const safeStorage = {
     parse: (key, def) => {
         try {
             const val = localStorage.getItem(key);
-            return val ? JSON.parse(val) : def;
+            if (val === null || val === 'null' || val === 'undefined') return def;
+            return JSON.parse(val);
         } catch (e) { return def; }
     }
 };
@@ -41,25 +48,9 @@ export default function App() {
         safeStorage.setItem('ig_lang', next);
     };
 
-    const [user, setUser] = useState(() => {
-        const saved = safeStorage.parse('ig_user', null);
-        if (saved) return saved;
-        // Auto-login for local development
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            return { id: 0, email: 'local@localhost', role: 'admin' };
-        }
-        return null;
-    });
+    const [user, setUser] = useState(() => safeStorage.parse('ig_user', null));
 
-    const [token, setToken] = useState(() => {
-        const saved = safeStorage.getItem('ig_token', null);
-        if (saved) return saved;
-        // Default token for local dev
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            return 'local-bypass-token';
-        }
-        return null;
-    });
+    const [token, setToken] = useState(() => safeStorage.getItem('ig_token', null));
 
     const [girls, setGirls] = useState([]);
     const [votes, setVotes] = useState({});
@@ -92,28 +83,40 @@ export default function App() {
         safeStorage.setItem('ig_user', JSON.stringify(newUser));
     };
 
-    const handleLogout = () => {
+    const handleLogout = useCallback(() => {
         setToken(null);
         setUser(null);
         safeStorage.removeItem('ig_token');
         safeStorage.removeItem('ig_user');
         toast.success('Logged out successfully');
-    };
+    }, []);
 
     const authFetch = useCallback(async (url, options = {}) => {
-        if (!token && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-            return { ok: false, status: 401 };
-        }
+        let currentToken = token;
+        if (currentToken === 'null' || currentToken === 'undefined') currentToken = null;
+
+        const authHeader = currentToken ? `Bearer ${currentToken}` : '';
         const headers = {
             ...options.headers,
-            'Authorization': token ? `Bearer ${token}` : ''
+            'Authorization': authHeader
         };
-        const res = await fetch(url, { ...options, headers });
-        if (res.status === 401) {
-            handleLogout();
+
+        console.log(`[AUTH] Fetching ${url}, token present: ${!!currentToken}`);
+
+        try {
+            const res = await fetch(url, { ...options, headers });
+            console.log(`[AUTH] Response for ${url}: ${res.status} ${res.statusText}`);
+
+            if (res.status === 401 && currentToken) {
+                console.warn(`[AUTH] 401 Unauthorized for ${url}, logging out`);
+                handleLogout();
+            }
+            return res;
+        } catch (error) {
+            console.error(`[AUTH] Fetch error for ${url}:`, error);
+            throw error;
         }
-        return res;
-    }, [token]);
+    }, [token, handleLogout]);
 
     const settingsLoaded = useRef(false);
     const pendingSave = useRef(false);
@@ -304,8 +307,11 @@ export default function App() {
     };
 
     useEffect(() => {
-        if (!user) return;
-        const eventSource = new EventSource(`/api/logs?token=${token}`);
+        if (!user || !token) return;
+        const normalizedToken = (token === 'null' || token === 'undefined') ? null : token;
+        if (!normalizedToken) return;
+
+        const eventSource = new EventSource(`/api/logs?token=${normalizedToken}`);
         eventSource.onmessage = (e) => {
             const log = JSON.parse(e.data);
             setLogs(prev => [...prev.slice(-(LOG_BUFFER - 1)), log]);
@@ -434,6 +440,8 @@ export default function App() {
                         onSendDM={handleSendDM}
                         onTgCheck={handleTgCheck}
                         onRefresh={fetchData}
+                        authFetch={authFetch}
+                        token={token}
                     />
                 )}
                 {activeTab === 'controls' && (
@@ -444,9 +452,19 @@ export default function App() {
                         logs={logs}
                         tr={tr}
                         isLoading={isLoading}
+                        authFetch={authFetch}
+                        token={token}
                     />
                 )}
-                {activeTab === 'settings' && <SettingsTab settingsData={settingsData} onSettingsChange={onSettingsChange} tr={tr} isLoading={isLoading} />}
+                {activeTab === 'settings' && (
+                    <SettingsTab
+                        settingsData={settingsData}
+                        onSettingsChange={onSettingsChange}
+                        tr={tr}
+                        isLoading={isLoading}
+                        authFetch={authFetch}
+                    />
+                )}
             </main>
 
             {

@@ -2,9 +2,9 @@
     "name": "ig-bot",
     "version": "1.0.0",
     "scripts": {
-        "dev": "concurrently \"npm run dev --workspace=frontend\" \"npm start --workspace=backend\"",
+        "dev": "concurrently \"npm run dev --workspace=frontend\" \"npm start --workspace=backend\" \"set PORT=5001&& node ../ig-bot-backend/server.js\"",
         "dev:proxy": "set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend",
-        "dev:all": "concurrently \"set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend\" \"npm start --workspace=backend\"",
+        "dev:all": "concurrently \"set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend\" \"npm start --workspace=backend\" \"set PORT=5001&& node ../ig-bot-backend/server.js\"",
         "test": "set NODE_ENV=test&& vitest run",
         "test:e2e": "playwright test"
     },

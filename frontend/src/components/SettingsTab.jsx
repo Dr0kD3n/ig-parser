@@ -58,7 +58,7 @@ const DonorsInput = memo(function DonorsInput({ settingsData, onSettingsChange }
     );
 });
 
-export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoading }) {
+export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoading, authFetch }) {
     const [settingsTab, setSettingsTab] = useState(() => localStorage.getItem('ig_settings_tab') || 'accounts');
     const [draggedItem, setDraggedItem] = useState(null);
     const [editingAccount, setEditingAccount] = useState(null);
@@ -85,7 +85,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
 
     const fetchPresets = async () => {
         try {
-            const res = await fetch(`/api/presets`);
+            const res = await authFetch(`/api/presets`);
             const data = await res.json();
             setPresets(data);
         } catch (e) {
@@ -116,7 +116,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
         };
 
         try {
-            const res = await fetch(`/api/presets`, {
+            const res = await authFetch(`/api/presets`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, data: presetData })
@@ -151,7 +151,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
         if (!confirm(tr('confirm_delete_preset') || `Удалить пресет "${currentPreset}"?`)) return;
 
         try {
-            const res = await fetch(`/api/presets/${encodeURIComponent(currentPreset)}`, {
+            const res = await authFetch(`/api/presets/${encodeURIComponent(currentPreset)}`, {
                 method: 'DELETE'
             });
             const result = await res.json();
@@ -173,7 +173,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
 
             for (const acc of accountsToCheck) {
                 try {
-                    const res = await fetch(`/api/accounts/${acc.id}/warmup/status`);
+                    const res = await authFetch(`/api/accounts/${acc.id}/warmup/status`);
                     const data = await res.json();
                     if (data.running) {
                         setWarmupProgress(prev => ({
@@ -191,7 +191,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                             [acc.id]: { running: false }
                         }));
                         // Refresh settings to get final score
-                        const sRes = await fetch(`/api/settings`);
+                        const sRes = await authFetch(`/api/settings`);
                         onSettingsChange(await sRes.json());
                     }
                 } catch (e) { }
@@ -298,7 +298,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                 cookies: editForm.cookies,
                 fingerprint: typeof fpParsed === 'object' ? JSON.stringify(fpParsed) : fpParsed
             };
-            await fetch(`/api/accounts/${id}`, {
+            await authFetch(`/api/accounts/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -317,7 +317,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
 
     const handleRegenerateFingerprint = async (id) => {
         try {
-            const res = await fetch(`/api/accounts/${id}`, {
+            const res = await authFetch(`/api/accounts/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ regenerateFingerprint: true })
@@ -325,7 +325,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
             const data = await res.json();
             if (data.success) {
                 if (editingAccount === id) {
-                    const settingsRes = await fetch(`/api/settings`);
+                    const settingsRes = await authFetch(`/api/settings`);
                     const settings = await settingsRes.json();
                     onSettingsChange(settings);
                     const acc = settings.accounts.find(a => a.id === id);
@@ -333,7 +333,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                     setEditForm(prev => ({ ...prev, fingerprint: fp }));
                 }
                 else {
-                    const settingsRes = await fetch(`/api/settings`);
+                    const settingsRes = await authFetch(`/api/settings`);
                     const settings = await settingsRes.json();
                     onSettingsChange(settings);
                 }
@@ -348,7 +348,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
 
     const handleLoginBrowser = async (id) => {
         try {
-            const res = await fetch(`/api/accounts/${id}/authorize/start`, { method: 'POST' });
+            const res = await authFetch(`/api/accounts/${id}/authorize/start`, { method: 'POST' });
             const data = await res.json();
             if (data.success) {
                 toast.success(tr('browser_opened'));
@@ -358,13 +358,13 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                 const pollInterval = setInterval(async () => {
                     pollCount++;
                     try {
-                        const statusRes = await fetch(`/api/accounts/${id}/authorize/status`);
+                        const statusRes = await authFetch(`/api/accounts/${id}/authorize/status`);
                         const statusData = await statusRes.json();
 
                         if (!statusData.active || pollCount > 600) { // Stop after 10 mins or if closed
                             clearInterval(pollInterval);
                             // Refresh settings to get new cookies
-                            const settingsRes = await fetch(`/api/settings`);
+                            const settingsRes = await authFetch(`/api/settings`);
                             const settings = await settingsRes.json();
                             onSettingsChange(settings);
                         }
@@ -382,7 +382,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
 
     const handleOpenBrowser = async (id) => {
         try {
-            const res = await fetch(`/api/accounts/${id}/browser/start`, { method: 'POST' });
+            const res = await authFetch(`/api/accounts/${id}/browser/start`, { method: 'POST' });
             const data = await res.json();
             if (data.success) {
                 toast.success(tr('browser_opened_generic'));
@@ -396,7 +396,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
 
     const handleWarmup = async (id) => {
         try {
-            const res = await fetch(`/api/accounts/${id}/warmup`, { method: 'POST' });
+            const res = await authFetch(`/api/accounts/${id}/warmup`, { method: 'POST' });
             const data = await res.json();
             if (data.success) {
                 toast.success('Прогрев запущен в фоновом режиме');
@@ -411,8 +411,8 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
     const fetchDolphinProfiles = async () => {
         setIsLoadingProfiles(true);
         try {
-            const token = settingsData.dolphinToken || '';
-            const res = await fetch(`/api/dolphin/profiles?token=${encodeURIComponent(token)}`);
+            const tokenDolphin = settingsData.dolphinToken || '';
+            const res = await authFetch(`/api/dolphin/profiles?token=${encodeURIComponent(tokenDolphin)}`);
             const data = await res.json();
             if (data.success) {
                 setDolphinProfiles(data.data);
@@ -472,7 +472,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
     return (<div className="settings-wrap tab-content-fade">
         <div className="settings-header">
             <div className="settings-nested-tabs">
-                {['accounts', 'names', 'cities', 'niches', 'donors'].map(tab => (<button key={tab} className={`tab-btn${settingsTab === tab ? ' active' : ''}`} onClick={() => setSettingsTab(tab)}>
+                {['accounts', 'names', 'cities', 'niches', 'donors', 'dolphin'].map(tab => (<button key={tab} className={`tab-btn${settingsTab === tab ? ' active' : ''}`} onClick={() => setSettingsTab(tab)}>
                     {tr(`tab_${tab}`)}
                 </button>))}
             </div>

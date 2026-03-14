@@ -16,7 +16,6 @@ const warmup_1 = require("./lib/warmup");
 const logEmitter = new events_1.EventEmitter();
 const LOGS_FILE = path_1.join(utils_1.getRootPath(), 'data', 'logs.json');
 const { handleError, expressErrorHandler, setupProcessHandlers } = require('./lib/error-handler');
-const authController = require('./lib/auth-controller');
 const { verifyToken, isAdmin } = require('./lib/auth-middleware');
 
 
@@ -224,22 +223,15 @@ function invalidateGirlsCache() {
     girlsCacheTime = 0;
 }
 
-// --- Public Auth Routes ---
-app.post('/api/auth/signup', authController.signup);
-app.post('/api/auth/login', authController.login);
-
 // --- Protected Routes ---
-// Use a regex to exclude auth routes from token verification
-app.use('/api', (req, res, next) => {
-    if (req.path.startsWith('/auth/')) return next();
-    verifyToken(req, res, next);
+app.use('/api', verifyToken);
+
+// Admin Routes (these still use req.user from verifyToken)
+app.get('/api/admin/users', isAdmin, async (req, res) => {
+    // Redirection or logic for admin users would go here, 
+    // but since auth is external, we just confirm role in middleware
+    res.status(501).json({ error: 'Managed by main server' });
 });
-
-// Admin Routes
-
-app.get('/api/admin/users', isAdmin, authController.adminGetUsers);
-app.post('/api/admin/toggle-block', isAdmin, authController.adminToggleBlock);
-app.post('/api/admin/generate-code', isAdmin, authController.adminGenerateCode);
 
 app.get('/api/girls', async (req, res) => {
 

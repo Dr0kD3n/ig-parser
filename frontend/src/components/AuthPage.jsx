@@ -12,8 +12,7 @@ export default function AuthPage({ onLoginSuccess, tr }) {
         e.preventDefault();
         setIsLoading(true);
 
-        const API_BASE = 'http://localhost:5000';
-        const endpoint = isLogin ? `${API_BASE}/api/auth/login` : `${API_BASE}/api/auth/signup`;
+        const endpoint = isLogin ? `/api/auth/login` : `/api/auth/signup`;
         const body = isLogin
             ? { email, password }
             : { email, password, registrationCode };
