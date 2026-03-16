@@ -39,7 +39,8 @@
       "../node_modules/puppeteer-extra-plugin/**/*",
       "../node_modules/header-generator/data_files/**/*",
       "../node_modules/fingerprint-generator/data_files/**/*",
-      "../node_modules/fingerprint-injector/**/*"
+      "../node_modules/fingerprint-injector/**/*",
+      "package.json"
     ],
     "scripts": [
       "lib/**/*.js",

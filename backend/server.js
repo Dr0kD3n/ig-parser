@@ -20,6 +20,8 @@ const LOGS_FILE = path_1.join(utils_1.getRootPath(), 'data', 'logs.json');
 const { handleError, expressErrorHandler, setupProcessHandlers } = require('./lib/error-handler');
 const { verifyToken, isAdmin } = require('./lib/auth-middleware');
 const { rateLimit } = require('express-rate-limit');
+const updater = require('./lib/updater');
+const pkg = JSON.parse(fs_1.readFileSync(path_1.join(__dirname, 'package.json'), 'utf8'));
 
 // Rate limiters
 const authLimiter = rateLimit({
@@ -1151,6 +1153,35 @@ app.get('/api/stats', async (req, res) => {
     catch (e) {
         console.error('Ошибка получения статистики:', e);
         res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    }
+});
+
+// Update Routes
+app.get('/api/update/check', async (req, res) => {
+    try {
+        const latest = await updater.getLatestRelease();
+        const hasUpdate = latest.tag_name !== `v${pkg.version}`;
+        res.json({
+            currentVersion: pkg.version,
+            latestVersion: latest.tag_name.replace('v', ''),
+            hasUpdate,
+            releaseNotes: latest.body
+        });
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to check for updates' });
+    }
+});
+
+app.post('/api/update/install', isAdmin, async (req, res) => {
+    try {
+        const latest = await updater.getLatestRelease();
+        res.json({ success: true, message: 'Update started. The application will restart.' });
+        // Run update in next tick so response can be sent
+        setImmediate(async () => {
+            await updater.performUpdate(latest);
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 if (process.env.NODE_ENV !== 'test') {

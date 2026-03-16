@@ -93,6 +93,10 @@ export const TRANSLATIONS = {
         browser_success: 'Профиль открыт в браузере',
         warmup_started: 'Прогрев запущен',
         browser_restore_success: 'Браузер запущен (подгрузка фото)',
+        update_available: 'Доступно обновление: v{version}',
+        btn_install_update: 'Установить обновление',
+        checking_updates: 'Проверка обновлений...',
+        already_latest: 'У вас последняя версия',
     },
     en: {
         logo: 'InstaPanel 3.0',
@@ -188,6 +192,10 @@ export const TRANSLATIONS = {
         browser_success: 'Profile opened in browser',
         warmup_started: 'Warmup started',
         browser_restore_success: 'Browser started (photo-loading)',
+        update_available: 'Update available: v{version}',
+        btn_install_update: 'Install Update',
+        checking_updates: 'Checking for updates...',
+        already_latest: 'You have the latest version',
     }
 };
 export const t = (lang, key) => TRANSLATIONS[lang]?.[key] ?? key;
