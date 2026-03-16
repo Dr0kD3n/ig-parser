@@ -7,6 +7,6 @@ AUTO_CONTEXT: scoped-only
 </gates>
 
 <rules>
-THINKING: minimal
+THINKING: normal
 EXCLUSIONS: node_modules, .git, .gemini, dist, build, tmp, logs, *.sqlite*
 </rules>

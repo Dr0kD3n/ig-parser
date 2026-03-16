@@ -6,7 +6,7 @@ import SettingsTab from './components/SettingsTab';
 import AuthPage from './components/AuthPage';
 import { TelegramIcon } from './components/Icons';
 import { API_BASE, LOCAL_API_BASE } from './config';
-import { toast, Toaster } from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 
 const LOG_BUFFER = 200;
 
@@ -578,7 +578,7 @@ export default function App() {
                     </div>
                 </div>
             )}
-            <Toaster position="bottom-right" toastOptions={{ style: { background: '#333', color: '#fff' } }} />
+
         </div>
     );
 }

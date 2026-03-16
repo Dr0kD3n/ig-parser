@@ -1863,3 +1863,12 @@ body::before {
 .btn-clear {
   height: auto;
 }
+
+/* react-hot-toast production fix */
+[id^="react-hot-toast"] {
+  z-index: 99999 !important;
+}
+
+.go2072408551 {
+  z-index: 99999 !important;
+}
