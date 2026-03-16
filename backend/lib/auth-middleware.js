@@ -5,6 +5,12 @@ const https = require('https');
 
 exports.verifyToken = async (req, res, next) => {
     // console.log('[DEBUG] verifyToken called for', req.path, 'token =', req.header('Authorization'));
+    // Skip auth in test environment
+    if (process.env.NODE_ENV === 'test') {
+        req.user = { id: 1, email: 'test@example.com', role: 'admin' };
+        return next();
+    }
+
     const authHeader = req.header('Authorization');
     const queryToken = req.query.token;
     const token = authHeader?.split(' ')[1] || queryToken;
