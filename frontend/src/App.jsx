@@ -57,6 +57,7 @@ export default function App() {
     const [votes, setVotes] = useState({});
     const [viewed, setViewed] = useState(() => safeStorage.parse('ig_viewed_profiles', []));
     const [sentDM, setSentDM] = useState(() => safeStorage.parse('ig_sent_dm', []));
+    const [tgTagged, setTgTagged] = useState(() => safeStorage.parse('ig_tg_tagged', []));
     const [failedImages, setFailedImages] = useState(new Set());
     const [modalOpen, setModalOpen] = useState(false);
     const [messagesText, setMessagesText] = useState('');
@@ -130,10 +131,12 @@ export default function App() {
             const votesData = await votesRes.json();
             const viewedArr = safeStorage.parse('ig_viewed_profiles', []);
             const sentArr = safeStorage.parse('ig_sent_dm', []);
+            const taggedArr = safeStorage.parse('ig_tg_tagged', []);
 
             girlsData.forEach(g => {
                 g.viewed = viewedArr.includes(g.url);
                 g.dmSent = sentArr.includes(g.url);
+                g.tgTagged = taggedArr.includes(g.url);
             });
             setGirls(girlsData || []);
             setVotes(votesData || {});
@@ -248,8 +251,15 @@ export default function App() {
     };
 
     const handleVote = useCallback(async (g, status) => {
+        if (status === 'like') {
+            setTgTagged(prev => {
+                const next = prev.filter(u => u !== g.url);
+                safeStorage.setItem('ig_tg_tagged', JSON.stringify(next));
+                return next;
+            });
+        }
         setVotes(prev => ({ ...prev, [g.url]: status || '' }));
-        setGirls(prev => prev.map(p => p.url === g.url ? { ...p, status } : p));
+        setGirls(prev => prev.map(p => p.url === g.url ? { ...p, status, tgTagged: status === 'like' ? false : p.tgTagged } : p));
         authFetch('/api/vote', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -285,6 +295,23 @@ export default function App() {
             body: JSON.stringify({ url: g.url, message: m })
         });
     }, [sentDM, authFetch]);
+
+    const handleTagTg = useCallback(async (g) => {
+        const isCurrentlyTagged = tgTagged.includes(g.url);
+        let nextTagged;
+        if (isCurrentlyTagged) {
+            nextTagged = tgTagged.filter(u => u !== g.url);
+        } else {
+            nextTagged = [...tgTagged, g.url];
+            // If we are tagging TG, remove 'like' vote
+            if (votes[g.url] === 'like') {
+                handleVote(g, '');
+            }
+        }
+        setTgTagged(nextTagged);
+        safeStorage.setItem('ig_tg_tagged', JSON.stringify(nextTagged));
+        setGirls(prev => prev.map(p => p.url === g.url ? { ...p, tgTagged: !isCurrentlyTagged, status: (!isCurrentlyTagged && p.status === 'like') ? '' : p.status } : p));
+    }, [tgTagged, votes, handleVote]);
 
     const handleDeleteProfile = async (url) => {
         if (!confirm(tr('confirm_delete'))) return;
@@ -494,6 +521,7 @@ export default function App() {
                         onVote={handleVote}
                         onOpen={handleOpen}
                         onSendDM={handleSendDM}
+                        onTagTg={handleTagTg}
                         onDeleteProfile={handleDeleteProfile}
                         onSaveAsDonor={handleSaveAsDonor}
                         onImageError={handleImageError}

@@ -209,7 +209,7 @@ body::before {
   user-select: none;
 }
 
-.checkbox-label input {
+.checkbox-label input.checkbox {
   margin: 0;
   /* Clear default margins for better alignment */
   width: 18px;
@@ -341,6 +341,10 @@ body::before {
   background: hsla(var(--primary), 0.8);
 }
 
+.tgTag {
+  background: hsla(190, 80%, 50%, 0.8);
+}
+
 .linksStack {
   position: absolute;
   top: 16px;
@@ -407,18 +411,143 @@ body::before {
   flex-direction: column;
 }
 
+.name-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
 .name {
   font-size: 18px;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin-bottom: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
+.username-sub {
+  font-size: 13px;
+  color: hsl(var(--primary));
+  font-weight: 600;
+  opacity: 0.9;
+}
+
 .timestamp {
   font-size: 12px;
   color: hsl(var(--text-dim));
+}
+
+.donor-info {
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: hsl(var(--text-muted));
+  position: relative;
+  display: inline-block;
+  cursor: help;
+  z-index: 10;
+}
+
+.donor-label {
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.donor-value {
+  color: hsl(var(--primary));
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* Popover */
+.donor-popover {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  width: 300px;
+  background: hsl(var(--bg-elevated));
+  border: 1px solid hsl(var(--border-bright));
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  display: none;
+  pointer-events: none;
+  animation: popoverFadeIn 0.2s cubic-bezier(0.2, 1, 0.3, 1);
+  margin-bottom: 12px;
+}
+
+.donor-info:hover .donor-popover {
+  display: block;
+}
+
+@keyframes popoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.donor-popover::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 20px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: hsl(var(--border-bright)) transparent transparent transparent;
+}
+
+.donor-popover-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.donor-popover-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid hsl(var(--border-bright));
+  background: hsl(var(--bg-card));
+}
+
+.donor-popover-name {
+  font-weight: 700;
+  color: #fff;
+  font-size: 15px;
+}
+
+.donor-popover-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: hsl(var(--text-muted));
+  margin-bottom: 10px;
+}
+
+.donor-popover-bio {
+  font-size: 13px;
+  color: hsl(var(--text-muted));
+  line-height: 1.4;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.donor-popover-username {
+  font-size: 12px;
+  color: hsl(var(--primary));
+  font-weight: 600;
 }
 
 .bio-container {
@@ -456,12 +585,16 @@ body::before {
 
 .actions {
   display: grid;
-  grid-template-columns: 1fr 1fr 50px;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
   margin-top: auto;
+  margin-bottom: 12px;
 }
 
 .actionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 12px;
   border-radius: 12px;
   border: 1px solid hsl(var(--border));
@@ -489,6 +622,23 @@ body::before {
   border-color: hsl(var(--danger));
   color: white;
   box-shadow: 0 4px 12px hsla(var(--danger), 0.3);
+}
+
+.tgBtn.active {
+  background: hsl(190, 80%, 50%);
+  border-color: hsl(190, 80%, 50%);
+  color: white;
+}
+
+.tgBtn:hover {
+  border-color: hsl(190, 80%, 50%);
+}
+
+.full-send-btn {
+  width: 100%;
+  margin-top: 4px;
+  border-radius: 12px;
+  font-weight: 700;
 }
 
 /* Modals */
@@ -824,7 +974,7 @@ body::before {
 
 /* Animations & Polishing */
 .msg-textarea {
-  width: 100%;
+  margin: 0 32px;
   background: hsl(var(--bg-elevated));
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
@@ -833,6 +983,12 @@ body::before {
   resize: none;
   font-family: inherit;
   font-size: 14px;
+}
+
+.msg-textarea.cookies {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .msg-textarea:focus {
@@ -936,9 +1092,10 @@ body::before {
 
 .skeleton-card .skeleton-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr 50px;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
   margin-top: 20px;
+  margin-bottom: 12px;
 }
 
 .skeleton-card .skeleton-btn {
@@ -1130,7 +1287,7 @@ body::before {
 .tasks-columns {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 24px;
 }
 
 .all-accounts-column {
@@ -1429,7 +1586,6 @@ body::before {
 }
 
 .task-section-card {
-  margin-bottom: 24px;
   padding: 20px;
   background: hsl(var(--bg-card));
   border-radius: var(--radius);
@@ -1497,11 +1653,14 @@ body::before {
 }
 
 .add-acc-card {
-  margin-top: 32px;
   padding: 24px;
   background: hsl(var(--bg-card));
   border-radius: var(--radius);
   border: 1px solid hsl(var(--border));
+}
+
+.add-acc-card h4 {
+  margin-top: 0;
 }
 
 .acc-card-score {

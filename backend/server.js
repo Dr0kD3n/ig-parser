@@ -174,6 +174,7 @@ async function getSettings() {
     const activeServerIds = rows.filter(r => r.active_server).sort((a, b) => a.active_server - b.active_server).map(r => r.id);
     const activeIndexIds = rows.filter(r => r.active_index).sort((a, b) => a.active_index - b.active_index).map(r => r.id);
     const activeProfilesIds = rows.filter(r => r.active_profiles).sort((a, b) => a.active_profiles - b.active_profiles).map(r => r.id);
+    const activeCheckerIds = rows.filter(r => r.active_checker).sort((a, b) => a.active_checker - b.active_checker).map(r => r.id);
     const showBrowserStr = await db.get(`SELECT value FROM settings WHERE key = 'showBrowser'`);
     const showBrowser = showBrowserStr ? showBrowserStr.value === 'true' : false;
     const concurrentProfilesStr = await db.get(`SELECT value FROM settings WHERE key = 'concurrentProfiles'`);
@@ -188,6 +189,7 @@ async function getSettings() {
         activeServerAccountIds: activeServerIds,
         activeIndexAccountIds: activeIndexIds,
         activeProfilesAccountIds: activeProfilesIds,
+        activeCheckerAccountIds: activeCheckerIds,
         showBrowser,
         concurrentProfiles,
         humanEmulation,
@@ -203,7 +205,7 @@ app.use((req, res, next) => {
     }
     next();
 });
-app.use(express_1.json());
+app.use(express_1.json({ limit: '50mb' }));
 // --- Static frontend (production build from frontend/) ---
 const baseDir = (0, utils_1.getRootPath)();
 const publicDir = path_1.join(baseDir, 'public');
@@ -434,8 +436,8 @@ app.get('/api/settings', async (req, res) => {
             proxy: a.proxy,
             warmup_score: a.warmup_score,
             last_warmup: a.last_warmup,
-            has_cookies: !!a.cookies
-            // cookies and fingerprint are hidden for security
+            fingerprint: a.fingerprint,
+            cookies: a.cookies
         })),
         activeParserAccountIds: settings.activeParserAccountIds,
         activeServerAccountIds: settings.activeServerAccountIds,
@@ -493,13 +495,14 @@ app.post('/api/settings', async (req, res) => {
                         }
                     }
 
-                    await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, fingerprint, local_storage, warmup_score, last_warmup)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                    await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, active_checker, fingerprint, local_storage, warmup_score, last_warmup)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
                         a.id, a.name, a.proxy || '', finalCookies,
                         getPriority(req.body.activeParserAccountIds, a.id),
                         getPriority(req.body.activeServerAccountIds, a.id),
                         getPriority(req.body.activeIndexAccountIds, a.id),
                         getPriority(req.body.activeProfilesAccountIds, a.id),
+                        getPriority(req.body.activeCheckerAccountIds, a.id),
                         fingerprint,
                         finalLocalStorage,
                         a.warmup_score || 0,
@@ -699,20 +702,25 @@ app.put('/api/accounts/:id', async (req, res) => {
             updates.push('cookies = ?');
             values.push(cookies);
         }
+        let updatedFingerprint = null;
         if (fingerprint !== undefined) {
             updates.push('fingerprint = ?');
-            values.push(typeof fingerprint === 'object' ? JSON.stringify(fingerprint) : fingerprint);
+            const fpVal = typeof fingerprint === 'object' ? JSON.stringify(fingerprint) : fingerprint;
+            values.push(fpVal);
+            updatedFingerprint = fpVal;
         }
         if (regenerateFingerprint) {
             updates.push('fingerprint = ?');
-            values.push(JSON.stringify((0, fingerprint_1.generateFingerprint)()));
+            const fpVal = JSON.stringify((0, fingerprint_1.generateFingerprint)());
+            values.push(fpVal);
+            updatedFingerprint = fpVal;
         }
         if (updates.length === 0) {
             return res.status(400).json({ success: false, error: 'No fields to update' });
         }
         values.push(id);
         await db.run(`UPDATE accounts SET ${updates.join(', ')} WHERE id = ?`, values);
-        res.json({ success: true });
+        res.json({ success: true, fingerprint: updatedFingerprint });
     }
     catch (e) {
         console.error('Ошибка обновления аккаунта:', e);
@@ -990,13 +998,14 @@ app.get('/api/live-view', (req, res) => {
 app.get('/api/bot/status', (req, res) => {
     res.json({
         index: !!botProcesses.index,
-        parser: !!botProcesses.parser
+        parser: !!botProcesses.parser,
+        checker: !!botProcesses.checker
     });
 });
 app.use(expressErrorHandler);
 app.post('/api/bot/start', (req, res) => {
     const { type } = req.body;
-    if (!['index', 'parser'].includes(type)) {
+    if (!['index', 'parser', 'checker'].includes(type)) {
         return res.status(400).json({ success: false, error: 'Invalid bot type' });
     }
     if (botProcesses[type]) {

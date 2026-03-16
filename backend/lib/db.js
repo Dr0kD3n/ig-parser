@@ -40,6 +40,7 @@ async function getDB() {
             active_server INTEGER DEFAULT 0,
             active_index INTEGER DEFAULT 0,
             active_profiles INTEGER DEFAULT 0,
+            active_checker INTEGER DEFAULT 0,
             fingerprint TEXT
         );
 
@@ -205,6 +206,13 @@ async function getDB() {
     }
     try {
         await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN last_warmup TEXT`);
+    }
+    catch (e) {
+        // Ignore if column already exists
+    }
+
+    try {
+        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN active_checker INTEGER DEFAULT 0`);
     }
     catch (e) {
         // Ignore if column already exists

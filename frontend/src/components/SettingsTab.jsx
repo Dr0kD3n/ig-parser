@@ -21,7 +21,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
     const [settingsTab, setSettingsTab] = useState('accounts');
     const [draggedItem, setDraggedItem] = useState(null);
     const [editingAccount, setEditingAccount] = useState(null);
-    const [editForm, setEditForm] = useState({ name: '', proxy: '', cookies: '' });
+    const [editForm, setEditForm] = useState({ name: '', proxy: '', cookies: '', userAgent: '', fingerprint: '' });
     const [updateInfo, setUpdateInfo] = useState(null);
     const [isUpdating, setIsUpdating] = useState(false);
 
@@ -94,22 +94,45 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
     };
     const handleStartEdit = (acc) => {
         setEditingAccount(acc.id);
-        setEditForm({ name: acc.name, proxy: acc.proxy || '', cookies: acc.cookies || '' });
+        let fp = {};
+        try { fp = JSON.parse(acc.fingerprint || '{}'); } catch (e) { }
+        setEditForm({
+            name: acc.name,
+            proxy: acc.proxy || '',
+            cookies: acc.cookies || '',
+            userAgent: fp.userAgent || '',
+            fingerprint: acc.fingerprint || '{}'
+        });
     };
     const handleSaveEdit = async (id) => {
         try {
+            // Prepare data, only include cookies if they were changed
+            const data = { ...editForm };
+            if (!data.cookies) delete data.cookies;
+
+            // Sync userAgent back into fingerprint JSON if it was edited
+            try {
+                let fp = JSON.parse(data.fingerprint || '{}');
+                if (data.userAgent !== fp.userAgent) {
+                    fp.userAgent = data.userAgent;
+                    data.fingerprint = JSON.stringify(fp);
+                }
+            } catch (e) { }
+
             await authFetch(`/api/accounts/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(editForm)
+                body: JSON.stringify(data)
             });
             // Update local state
-            const updatedAccounts = settingsData.accounts.map(a => a.id === id ? { ...a, ...editForm } : a);
+            const updatedAccounts = settingsData.accounts.map(a => a.id === id ? { ...a, ...data, fingerprint: data.fingerprint } : a);
             onSettingsChange({ ...settingsData, accounts: updatedAccounts });
             setEditingAccount(null);
+            toast.success(tr('save_success') || 'Account updated');
         }
         catch (e) {
             console.error('Error saving account:', e);
+            toast.error('Error saving: ' + e.message);
         }
     };
     const handleLogin = async (id) => {
@@ -199,11 +222,11 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                 </button>))}
             </div>
             <div className="header-right gap-20">
-                <label className="checkbox-label">
+                <label className="checkbox-label checkbox">
                     <input type="checkbox" checked={settingsData.humanEmulation || false} onChange={e => onSettingsChange({ ...settingsData, humanEmulation: e.target.checked })} />
-                    Human
+                    {tr('human_emulation')}
                 </label>
-                <label className="checkbox-label">
+                <label className="checkbox-label checkbox">
                     <input type="checkbox" checked={settingsData.showBrowser || false} onChange={e => onSettingsChange({ ...settingsData, showBrowser: e.target.checked })} />
                     {tr('show_browser')}
                 </label>
@@ -240,7 +263,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                         <input type="text" id="new-acc-name" placeholder={tr('name_placeholder')} className="search-input w-full" />
                         <input type="text" id="new-acc-proxy" placeholder={tr('proxy_placeholder')} className="search-input w-full" />
                     </div>
-                    <textarea id="new-acc-cookies" placeholder={tr('cookies_placeholder')} className="msg-textarea h-100 mb-20" />
+                    <textarea id="new-acc-cookies" placeholder={tr('cookies_placeholder')} className="msg-textarea cookies h-100 mb-20" />
                     <button className="btn-primary w-full" onClick={handleAdd}>
                         {tr('btn_add')}
                     </button>
@@ -254,7 +277,38 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                         {editingAccount === acc.id ? (<div className="flex-v gap-10">
                             <input type="text" className="search-input" placeholder={tr('edit_name')} value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
                             <input type="text" className="search-input fs-13 font-mono" placeholder={tr('edit_proxy')} value={editForm.proxy} onChange={e => setEditForm({ ...editForm, proxy: e.target.value })} />
-                            <textarea className="msg-textarea h-80 fs-12 font-mono" placeholder={tr('edit_cookies')} value={editForm.cookies} onChange={e => setEditForm({ ...editForm, cookies: e.target.value })} />
+                            <input type="text" className="search-input fs-12 font-mono" placeholder="User-Agent" value={editForm.userAgent} onChange={e => setEditForm({ ...editForm, userAgent: e.target.value })} />
+                            <textarea className="msg-textarea cookies h-80 fs-11 font-mono" placeholder="System Data (Fingerprint JSON)" value={editForm.fingerprint} onChange={e => setEditForm({ ...editForm, fingerprint: e.target.value })} />
+                            <textarea className="msg-textarea cookies h-60 fs-12 font-mono" placeholder={tr('edit_cookies')} value={editForm.cookies} onChange={e => setEditForm({ ...editForm, cookies: e.target.value })} />
+                            <div className="flex gap-8">
+                                <button className="btn-primary btn-outline btn-sm flex-1 fs-11" onClick={async () => {
+                                    if (window.confirm('Regenerate System Data?')) {
+                                        try {
+                                            const res = await authFetch(`/api/accounts/${acc.id}`, {
+                                                method: 'PUT',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ regenerateFingerprint: true })
+                                            });
+                                            const data = await res.json();
+                                            if (data.success && data.fingerprint) {
+                                                toast.success(tr('regenerate_success'));
+                                                let fp = {};
+                                                try { fp = JSON.parse(data.fingerprint); } catch (e) { }
+                                                setEditForm(prev => ({
+                                                    ...prev,
+                                                    fingerprint: data.fingerprint,
+                                                    userAgent: fp.userAgent || prev.userAgent
+                                                }));
+                                                // Sync global state
+                                                const updatedAccs = settingsData.accounts.map(a => a.id === acc.id ? { ...a, fingerprint: data.fingerprint } : a);
+                                                onSettingsChange({ ...settingsData, accounts: updatedAccs });
+                                            }
+                                        } catch (e) { toast.error(e.message); }
+                                    }
+                                }}>
+                                    🔄 {tr('regenerate_system_data') || 'Regenerate System Data'}
+                                </button>
+                            </div>
                             <div className="flex gap-8">
                                 <button className="btn-primary btn-success btn-sm flex-1" onClick={() => handleSaveEdit(acc.id)}>
                                     {tr('save_changes')}
@@ -289,6 +343,7 @@ export default function SettingsTab({ settingsData, onSettingsChange, tr, isLoad
                                         { field: 'activeIndexAccountIds', label: tr('task_scraper') },
                                         { field: 'activeServerAccountIds', label: tr('task_sender') },
                                         { field: 'activeProfilesAccountIds', label: tr('task_profiles') },
+                                        { field: 'activeCheckerAccountIds', label: tr('task_checker') },
                                     ].map(t => {
                                         const isActive = (settingsData[t.field] || []).includes(acc.id);
                                         return (<button key={t.field} onClick={() => toggleAccountForTask(t.field, acc.id)} className={`acc-task-tag ${isActive ? 'active' : 'inactive'}`}>

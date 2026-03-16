@@ -32,7 +32,11 @@ async function restorePhotos(onProgress, options = {}) {
 
     // 1. Получаем активные профили (vote != 'dislike')
     const femaleNames = await getList('names.txt');
-    const allProfiles = await db.all(`SELECT url, username, name, photo, bio FROM profiles WHERE vote != 'dislike' ORDER BY timestamp DESC`);
+    const allProfiles = await db.all(`SELECT url, username, name, photo, bio, vote FROM profiles WHERE vote != 'dislike'`);
+
+    // Получаем список доноров, у которых нет фото
+    const donorsWithoutPhoto = await db.all(`SELECT username as name, photo, bio FROM donors WHERE photo IS NULL OR photo = '' OR photo LIKE '%placeholder%'`);
+    const donorUsernames = donorsWithoutPhoto.map(d => d.name);
 
     const profiles = allProfiles.filter(p => {
         const isFailed = failedUrls && Array.isArray(failedUrls) && failedUrls.includes(p.url);
@@ -45,12 +49,26 @@ async function restorePhotos(onProgress, options = {}) {
             (p.username && p.username.toLowerCase().includes(name.toLowerCase()))
         );
 
-        // Берем если:
-        // 1. Принудительно помечен как упавший на фронте
-        // 2. Нет фото ИЛИ нет био
-        // ПРИ УСЛОВИИ что это либо "девушка" по имени, либо мы уже это лайкнули (значит она нам нужна)
-        return (isFailed || hasNoPhoto || hasNoBio) && (nameMatches || isLiked);
+        // Также проверяем, не является ли этот профиль донором без фото
+        const isDonorWithoutPhoto = p.username && donorUsernames.includes(p.username);
+
+        return (isFailed || hasNoPhoto || hasNoBio || isDonorWithoutPhoto) && (nameMatches || isLiked || isDonorWithoutPhoto);
     });
+
+    // Добавляем доноров, которых нет в списке profiles (по url)
+    for (const donor of donorsWithoutPhoto) {
+        const donorUrl = `https://www.instagram.com/${donor.name}/`;
+        if (!profiles.some(p => p.url === donorUrl)) {
+            profiles.push({
+                url: donorUrl,
+                username: donor.name,
+                name: donor.name,
+                photo: donor.photo,
+                bio: donor.bio,
+                is_donor_only: true
+            });
+        }
+    }
 
     if (profiles.length === 0) {
         console.log('⚠️ Нет подходящих профилей (девушек без фото) для восстановления.');
@@ -218,6 +236,7 @@ async function restorePhotos(onProgress, options = {}) {
                     }, username);
 
                     if (profileData.photo || profileData.bio) {
+                        // Обновляем в таблице profiles
                         await db.run(
                             `UPDATE profiles SET 
                                 photo = COALESCE(NULLIF(?, ''), photo), 
@@ -227,7 +246,7 @@ async function restorePhotos(onProgress, options = {}) {
                                 publications_count = CASE WHEN ? > 0 THEN ? ELSE publications_count END,
                                 name = COALESCE(NULLIF(?, ''), name),
                                 timestamp = ?
-                             WHERE url = ?`,
+                             WHERE url = ? OR username = ?`,
                             [
                                 profileData.photo,
                                 profileData.bio,
@@ -236,11 +255,33 @@ async function restorePhotos(onProgress, options = {}) {
                                 profileData.publications, profileData.publications,
                                 profileData.name,
                                 new Date().toISOString(),
-                                url
+                                url,
+                                username
+                            ]
+                        );
+
+                        // Также обновляем в таблице donors, если такой существует
+                        await db.run(
+                            `UPDATE donors SET 
+                                photo = COALESCE(NULLIF(?, ''), photo), 
+                                bio = COALESCE(NULLIF(?, ''), bio), 
+                                followers_count = CASE WHEN ? > 0 THEN ? ELSE followers_count END,
+                                publications_count = CASE WHEN ? > 0 THEN ? ELSE publications_count END,
+                                name = COALESCE(NULLIF(?, ''), name),
+                                last_updated = ?
+                             WHERE username = ?`,
+                            [
+                                profileData.photo,
+                                profileData.bio,
+                                profileData.followers,
+                                profileData.publications,
+                                profileData.name,
+                                new Date().toISOString(),
+                                username
                             ]
                         );
                         updatedCount++;
-                        console.log(`   ✅ [Поток ${workerId}] Профиль обновлен для ${username}`);
+                        console.log(`   ✅ [Поток ${workerId}] Профиль и данные донора обновлены для ${username}`);
                     } else {
                         console.log(`   ⚠️ [Поток ${workerId}] Данные не найдены для ${username}`);
                     }

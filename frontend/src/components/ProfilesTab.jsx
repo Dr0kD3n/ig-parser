@@ -46,10 +46,11 @@ const SkeletonCard = memo(function SkeletonCard() {
                 <div className="skeleton skeleton-btn" />
                 <div className="skeleton skeleton-btn" />
             </div>
+            <div className="skeleton skeleton-btn w-full" style={{ marginTop: 4 }} />
         </div>
     </div>);
 });
-const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, onOpen, onSendDM, onDeleteProfile, onSaveAsDonor, onImageError, useProxyImages, tr, onTgCheck, authFetch, token }) {
+const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, onOpen, onSendDM, onTagTg, onDeleteProfile, onSaveAsDonor, onImageError, useProxyImages, tr, onTgCheck, authFetch, token }) {
     const { bio, stats } = parseSmartBio(g.bio, g.name);
     const isLiked = votes[g.url] === 'like';
     const isDisliked = votes[g.url] === 'dislike';
@@ -58,6 +59,11 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
         ? (useProxyImages
             ? `/api/proxy-image?url=${encodeURIComponent(g.photo)}&token=${token}`
             : `https://images.weserv.nl/?url=${encodeURIComponent(g.photo)}`)
+        : null;
+    const donorPhotoSrc = g.donor_photo
+        ? (useProxyImages
+            ? `/api/proxy-image?url=${encodeURIComponent(g.donor_photo)}&token=${token}`
+            : `https://images.weserv.nl/?url=${encodeURIComponent(g.donor_photo)}`)
         : null;
     const handleTgClick = async (e) => {
         e.stopPropagation();
@@ -92,7 +98,8 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
                 {isLiked && <div className="badge likedTag">{tr('badge_like')}</div>}
                 {isDisliked && <div className="badge dislikedTag">{tr('badge_skip')}</div>}
                 {g.viewed && <div className="badge viewedTag">{tr('badge_viewed')}</div>}
-                {g.dmSent && <div className="badge dmTag">{tr('badge_dm_sent')}</div>}
+                {g.dmSent && <div className="badge dmTag">{tr('badge_send_dm')}</div>}
+                {g.tgTagged && <div className="badge tgTag">{tr('badge_tg_tagged')}</div>}
             </div>
             <div className="linksStack">
                 {g.tg_status !== 'invalid' && (<div className={`socialBtn ${g.tg_status === 'valid' ? 'tg-valid' : ''} ${checkingTg ? 'loading' : ''}`} title="Telegram" onClick={handleTgClick}>
@@ -116,10 +123,35 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
             </div>
         </div>
         <div className="cardBody">
-            <div className="name">
-                <span>{g.name}</span>
-                <span className="timestamp">{new Date(g.timestamp).toLocaleDateString()}</span>
+            <div className="name-row">
+                <div className="name">
+                    <span>{g.name}</span>
+                    <span className="timestamp">{new Date(g.timestamp).toLocaleDateString()}</span>
+                </div>
+                {g.username && g.username !== g.name && (<div className="username-sub">@{g.username}</div>)}
             </div>
+
+            {g.donor && (
+                <div className="donor-info">
+                    <span className="donor-label">донор:</span>
+                    <span className="donor-value">@{g.donor}</span>
+                    <div className="donor-popover">
+                        <div className="donor-popover-header">
+                            {donorPhotoSrc && <img src={donorPhotoSrc} className="donor-popover-img" alt="" />}
+                            <div>
+                                <div className="donor-popover-name">{g.donor_name || g.donor}</div>
+                                <div className="donor-popover-username">@{g.donor}</div>
+                            </div>
+                        </div>
+                        <div className="donor-popover-stats">
+                            {g.donor_followers_count > 0 && <span>👥 {g.donor_followers_count.toLocaleString()}</span>}
+                            {g.donor_posts_count > 0 && <span>📸 {g.donor_posts_count.toLocaleString()}</span> || g.donor_publications_count > 0 && <span>📸 {g.donor_publications_count.toLocaleString()}</span>}
+                        </div>
+                        {g.donor_bio && <div className="donor-popover-bio">{g.donor_bio}</div>}
+                    </div>
+                </div>
+            )}
+
             <div className="bio-container">
                 <div className="bio-text" title={g.bio}>{bio}</div>
                 <div className="profile-stats-row">
@@ -136,14 +168,17 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
                 <button className={`actionBtn dislikeBtn${isDisliked ? ' active' : ''}`} onClick={() => onVote(g, 'dislike')} title={tr('badge_skip')}>
                     <XIcon />
                 </button>
-                <button className="actionBtn sendBtn" onClick={() => onSendDM(g)} title="Send DM">
-                    <SendIcon />
+                <button className={`actionBtn tgBtn${g.tgTagged ? ' active' : ''}`} onClick={() => onTagTg(g)} title={tr('btn_tag_tg')}>
+                    <TelegramIcon />
                 </button>
             </div>
+            <button className="btn-primary full-send-btn" onClick={() => onSendDM(g)}>
+                <SendIcon /> {tr('badge_send_dm')}
+            </button>
         </div>
     </div>);
 });
-export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onDeleteProfile, onSaveAsDonor, onImageError, onRefresh, useProxyImages, tr, onTgCheck, isLoading, authFetch, token }) {
+export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onTagTg, onDeleteProfile, onSaveAsDonor, onImageError, onRefresh, useProxyImages, tr, onTgCheck, isLoading, authFetch, token }) {
     const [filterText, setFilterText] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
     const [filterTgStatus, setFilterTgStatus] = useState('all');
@@ -151,6 +186,7 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
     const [hideNoImage, setHideNoImage] = useState(false);
     const [hideViewed, setHideViewed] = useState(false);
     const [cityOnly, setCityOnly] = useState(false);
+    const [filterDonor, setFilterDonor] = useState('all');
     const [currentPage, setCurrentPage] = useState(1);
     const [checkingAllTg, setCheckingAllTg] = useState(false);
     const ITEMS_PER_PAGE = 24;
@@ -182,6 +218,8 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
             setCheckingAllTg(false);
         }
     };
+    const uniqueDonors = Array.from(new Set(girls.map(g => g.donor).filter(Boolean))).sort();
+
     const filtered = girls.filter(g => {
         const matchesName = g.name.toLowerCase().includes(filterText.toLowerCase());
         let matchesStatus = false;
@@ -207,7 +245,8 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
         const matchesViewed = !hideViewed || !g.viewed;
         const matchesCity = !cityOnly || g.isInCity;
         const imgOk = !hideNoImage || (g.photo && !failedImages.has(g.url));
-        return matchesName && matchesStatus && matchesTg && matchesViewed && matchesCity && imgOk;
+        const matchesDonor = filterDonor === 'all' || g.donor === filterDonor;
+        return matchesName && matchesStatus && matchesTg && matchesViewed && matchesCity && imgOk && matchesDonor;
     }).sort((a, b) => {
         if (sortOption === 'oldest')
             return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
@@ -244,6 +283,12 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
                 <option value="oldest">{tr('sort_oldest')}</option>
                 <option value="match">{tr('sort_match')}</option>
             </select>
+            <select className="select-input" value={filterDonor} onChange={e => { setFilterDonor(e.target.value); setCurrentPage(1); }}>
+                <option value="all">{tr('filter_donor')}: {tr('filter_all')}</option>
+                {uniqueDonors.map(d => (
+                    <option key={d} value={d}>@{d}</option>
+                ))}
+            </select>
             <label className="checkbox-label">
                 <input type="checkbox" checked={hideNoImage} onChange={e => { setHideNoImage(e.target.checked); setCurrentPage(1); }} />
                 {tr('hide_no_photo')}
@@ -262,7 +307,7 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
         </div>
 
         <main className="grid">
-            {isLoading ? (Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)) : (pageData.map(g => (<ProfileCard key={g.url} g={g} votes={votes} failedImages={failedImages} onVote={onVote} onOpen={onOpen} onSendDM={onSendDM} onDeleteProfile={onDeleteProfile} onSaveAsDonor={onSaveAsDonor} onImageError={onImageError} useProxyImages={useProxyImages} tr={tr} onTgCheck={onTgCheck} authFetch={authFetch} token={token} />)))}
+            {isLoading ? (Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)) : (pageData.map(g => (<ProfileCard key={g.url} g={g} votes={votes} failedImages={failedImages} onVote={onVote} onOpen={onOpen} onSendDM={onSendDM} onTagTg={onTagTg} onDeleteProfile={onDeleteProfile} onSaveAsDonor={onSaveAsDonor} onImageError={onImageError} useProxyImages={useProxyImages} tr={tr} onTgCheck={onTgCheck} authFetch={authFetch} token={token} />)))}
             {!isLoading && pageData.length === 0 && (<div className="empty-state-msg">
                 Нет профилей по выбранным фильтрам
             </div>)}

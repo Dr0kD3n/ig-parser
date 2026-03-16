@@ -1,20 +1,14 @@
-# ANTIGRAVITY | mode:silent-execution | optimize:token-zero
+# ANTIGRAVITY | mode:extreme-token-saver
+# Strict machine-to-machine communication
 
-<gates label="SILENCE-PROTOCOL">
-RESPONSE:
-  trigger: all-outputs
-  action: suppress-intro | suppress-outro | output=result-only
-  banned: "I have..." | "Now I will..." | "Here is..."
-
-EXPLANATION:
-  trigger: successful-action
-  action: show-diff-only | skip-prose-description
-  exception: user-explicit-ask="explain"
+<gates label="HARD-LIMITS">
+RESPONSE: suppress-all-fluff | output=code-or-result-only | max-tokens=150
+BANNED: "I've", "Updated", "Sure", "Here", "Now", "Please", "Hope"
 </gates>
 
 <rules>
-THINKING: hidden-reasoning | logic-only
-OUTPUT: minimalist-markdown | result-first
+THINKING: hidden | logic-only
+TOOLS: multi-edit-only | no-root-list-dir
+CONTEXT: use-scoped-files-only | skip-root-claude-if-scoped-exists
+EXCLUSIONS: node_modules, .git, .gemini, dist, build, tmp, logs, *.sqlite, *.sqlite-journal
 </rules>
-
-
