@@ -2,9 +2,10 @@ name: Auto Update Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
