@@ -8,6 +8,15 @@ const browser_1 = require("./lib/browser");
 const utils_1 = require("./lib/utils");
 const logger = require("./lib/logger");
 const reporter_1 = require("./lib/reporter");
+
+const isAnonymousPhoto = (url) => {
+    if (!url) return true;
+    // Base64 of 'anonymous_profile_pic' in ig_cache_key
+    if (url.includes('YW5vbnltb3VzX3Byb2ZpbGVfcGlj')) return true;
+    // Common default/anonymous avatar patterns
+    if (/\/\d+_\d+_\d+_n\.(jpg|png)/.test(url) === false && url.includes('anonymous')) return true;
+    return false;
+};
 class RotateAccountError extends Error {
     reason;
     remainingNames;
@@ -320,14 +329,19 @@ const analyzeProfile = async (context, url, config, donor = '') => {
         }, username).catch(() => ({ pUrl: '', fCount: 0, postCount: 0 }));
 
         const bio = extracted.bioClean;
+        const photo = isAnonymousPhoto(extraData.pUrl) ? '' : extraData.pUrl;
+        if (isAnonymousPhoto(extraData.pUrl) && extraData.pUrl) {
+            logger.warn(`         ⚠️ Обнаружена анонимная аватарка, не сохраняем фото.`);
+        }
         const profileData = {
             name,
             username,
             bio,
-            photo: extraData.pUrl,
+            photo,
             url,
             donor,
             followers_count: extraData.fCount,
+            publications_count: extraData.postCount,
             posts_count: extraData.postCount,
             isInCity: isTarget ? 1 : 0
         };
@@ -509,11 +523,15 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         });
 
         // Save donor info
+        const donorPhoto = isAnonymousPhoto(donorInfo.photo) ? '' : donorInfo.photo;
+        if (isAnonymousPhoto(donorInfo.photo) && donorInfo.photo) {
+            logger.warn(`   ⚠️ Обнаружена анонимная аватарка донора, не сохраняем фото.`);
+        }
         await state_1.StateManager.saveDonorInfo({
             username: donorInfo.username,
             name: donorInfo.name,
             bio: donorInfo.bio,
-            photo: donorInfo.photo,
+            photo: donorPhoto,
             followers_count: donorInfo.followers_count,
             posts_count: donorInfo.publications_count
         });

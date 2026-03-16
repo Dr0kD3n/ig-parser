@@ -53,6 +53,12 @@ Rule: Do not read logs if KI exists. Verify KI data against original sources if 
 - Clarification: Ask ONLY if intent is ambiguous.
 </communication>
 
+<skill_orchestration>
+Rule: Antigravity MUST proactively utilize and orchestrate ALL available skills (Workspace and Global).
+- Dynamically combine skills for every task (e.g., Security + Design + TDD).
+- Proactive execution across all domains is mandatory.
+</skill_orchestration>
+
 <function_calls_format>
 Use JSON for complex parameters. Execute independent tools in parallel within one <function_calls> block.
 </function_calls_format>

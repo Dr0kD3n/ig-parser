@@ -7,12 +7,12 @@ export default defineConfig({
         port: 5173,
         proxy: {
             '/api/auth': {
-                target: 'https://botback-production-1011.up.railway.app',
+                target: process.env.VITE_AUTH_URL || 'https://botback-production-1011.up.railway.app',
                 changeOrigin: true,
                 secure: false
             },
             '/api': {
-                target: 'http://localhost:5000',
+                target: process.env.VITE_API_URL || 'http://localhost:5000',
                 changeOrigin: true,
                 secure: false
             }

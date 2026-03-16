@@ -93,11 +93,11 @@ export default function App() {
         setUser(null);
         safeStorage.removeItem('ig_token');
         safeStorage.removeItem('ig_user');
-        toast.success('Logged out successfully');
+        toast.success('Logged out successfully', { id: 'auth-toast' });
     }, []);
 
     const authFetch = useCallback(async (url, options = {}) => {
-        let currentToken = token;
+        let currentToken = safeStorage.getItem('ig_token', null);
         if (currentToken === 'null' || currentToken === 'undefined') currentToken = null;
 
         const authHeader = currentToken ? `Bearer ${currentToken}` : '';
@@ -113,7 +113,7 @@ export default function App() {
             const res = await fetch(`${baseUrl}${url}`, { ...options, headers });
             console.log(`[AUTH] Response for ${url}: ${res.status} ${res.statusText}`);
 
-            if (res.status === 401 && currentToken) {
+            if (res.status === 401) {
                 console.warn(`[AUTH] 401 Unauthorized for ${url}, logging out`);
                 handleLogout();
             }

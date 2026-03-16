@@ -65,11 +65,12 @@ exports.login = async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Update last login
-        await db.run('UPDATE users SET last_login = ? WHERE id = ?', [new Date().toISOString(), user.id]);
+        // Update last login and increment token version
+        const newTokenVersion = (user.token_version || 0) + 1;
+        await db.run('UPDATE users SET last_login = ?, token_version = ? WHERE id = ?', [new Date().toISOString(), newTokenVersion, user.id]);
         await db.run('INSERT INTO login_logs (email, status) VALUES (?, ?)', [email, 'SUCCESS']);
 
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role, tokenVersion: newTokenVersion }, JWT_SECRET, { expiresIn: '7d' });
         res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
     } catch (error) {
         console.error('Login error:', error);

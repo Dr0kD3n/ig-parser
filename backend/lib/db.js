@@ -110,6 +110,7 @@ async function getDB() {
             reset_token TEXT,
             reset_token_expiry DATETIME,
             last_login DATETIME,
+            token_version INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -209,6 +210,13 @@ async function getDB() {
         // Ignore if column already exists
     }
 
+    try {
+        await dbInstance.exec(`ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0`);
+    }
+    catch (e) {
+        // Ignore if column already exists
+    }
+
     // Seed initial admin if not exists (password: admin123)
     const adminExists = await dbInstance.get("SELECT * FROM users WHERE role = 'admin'");
     if (!adminExists) {
@@ -227,7 +235,6 @@ async function getDB() {
 
     return dbInstance;
 }
-
 
 async function importLegacyData(db) {
     const fs = require('fs/promises');

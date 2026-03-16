@@ -1,0 +1,16 @@
+--- Phase 1: First login ---
+Login 1 success. Token obtained.
+Verifying Token 1 works...
+Token 1 test status: 200
+
+--- Phase 2: Second login (different session) ---
+Login 2 success. Token obtained.
+Verifying Token 2 works...
+Token 2 test status: 200
+
+--- Phase 3: Verify Token 1 is now invalid ---
+Attempting request with Token 1...
+Token 1 test status: 401
+Token 1 test body: {"error":"Session expired. Please log in again."}
+
+SUCCESS: Token 1 was successfully invalidated after Login 2.
