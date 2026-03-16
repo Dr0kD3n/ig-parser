@@ -31,8 +31,12 @@ jobs:
           Remove-Item -Path "dist\config\database.sqlite" -ErrorAction SilentlyContinue
           Remove-Item -Path "dist\data" -Recurse -ErrorAction SilentlyContinue
           Remove-Item -Path "dist\install.bat" -ErrorAction SilentlyContinue
-          # Create zip targeting ONLY the updateable files
-          Compress-Archive -Path "dist\*" -DestinationPath "ig-bot-update.zip"
+          # Create a secondary directory to ensure zip has 'dist' root if needed, 
+          # or just zip the current dist content. 
+          # USER asked for "build dist", meaning the zip should probably contain the dist folder itself.
+          mkdir update_tmp
+          xcopy /E /I /Y "dist\*" "update_tmp\dist\"
+          Compress-Archive -Path "update_tmp\dist" -DestinationPath "ig-bot-update.zip"
           
       - name: Update Latest Release
         if: github.ref == 'refs/heads/main'
