@@ -1,5 +1,5 @@
 {
-  "name": "ig-bot-backend",
+  "name": "ig-bot-local-backend",
   "version": "1.0.0",
   "description": "",
   "main": "server.js",

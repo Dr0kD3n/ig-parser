@@ -83,7 +83,9 @@ if %ERRORLEVEL% neq 0 (
 cd ..
 
 :: Move the generated executable
-if exist "backend\ig-bot-backend.exe" (
+if exist "backend\ig-bot-local-backend.exe" (
+    move /Y "backend\ig-bot-local-backend.exe" "dist\ig-bot.exe" >nul
+) else if exist "backend\ig-bot-backend.exe" (
     move /Y "backend\ig-bot-backend.exe" "dist\ig-bot.exe" >nul
 ) else if exist "backend\server.exe" (
     move /Y "backend\server.exe" "dist\ig-bot.exe" >nul
@@ -106,64 +108,64 @@ echo [5/6] Creating Deployment Scripts
 echo ===================================
 
 :: Create install.bat
-echo @echo off> "dist\install.bat"
-echo setlocal enabledelayedexpansion>> "dist\install.bat"
-echo title IG-Bot Dependency Installation>> "dist\install.bat"
-echo cd /d "%%~dp0">> "dist\install.bat"
-echo echo.>> "dist\install.bat"
-echo echo =============================================>> "dist\install.bat"
-echo echo   IG-Bot Standalone Installation>> "dist\install.bat"
-echo echo =============================================>> "dist\install.bat"
-echo echo.>> "dist\install.bat"
-echo :: 1. Check for Node.js>> "dist\install.bat"
-echo echo [1/4] Checking for Node.js...>> "dist\install.bat"
-echo node -v ^>nul 2^>^&1>> "dist\install.bat"
-echo if %%errorlevel%% neq 0 (>> "dist\install.bat"
-echo     echo.>> "dist\install.bat"
-echo     echo ERROR: Node.js is NOT installed or not in PATH.>> "dist\install.bat"
-echo     echo Please install Node.js from https://nodejs.org/>> "dist\install.bat"
-echo     pause>> "dist\install.bat"
-echo     exit /b 1>> "dist\install.bat"
-echo )>> "dist\install.bat"
-echo node -v>> "dist\install.bat"
-echo echo.>> "dist\install.bat"
-echo :: 2. Install Project Dependencies>> "dist\install.bat"
-echo echo [2/4] Installing production dependencies...>> "dist\install.bat"
-echo set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1>> "dist\install.bat"
-echo call npm install --omit=dev>> "dist\install.bat"
-echo if %%errorlevel%% neq 0 (>> "dist\install.bat"
-echo     echo.>> "dist\install.bat"
-echo     echo ERROR: npm install failed.>> "dist\install.bat"
-echo     pause>> "dist\install.bat"
-echo     exit /b 1>> "dist\install.bat"
-echo )>> "dist\install.bat"
-echo echo.>> "dist\install.bat"
-echo :: 3. Patching Playwright>> "dist\install.bat"
-echo echo [3/4] Patching Playwright for portability...>> "dist\install.bat"
-echo node scripts/patch-playwright-mcp.js>> "dist\install.bat"
-echo echo.>> "dist\install.bat"
-echo :: 4. Install Playwright Browsers>> "dist\install.bat"
-echo echo [4/4] Installing Playwright browsers (Chrome Beta)...>> "dist\install.bat"
-echo call npx playwright install chrome-beta --with-deps>> "dist\install.bat"
-echo if %%errorlevel%% neq 0 (>> "dist\install.bat"
-echo     echo.>> "dist\install.bat"
-echo     echo ERROR: Playwright browser installation failed.>> "dist\install.bat"
-echo     pause>> "dist\install.bat"
-echo     exit /b 1>> "dist\install.bat"
-echo )>> "dist\install.bat"
-echo echo.>> "dist\install.bat"
-echo echo =============================================>> "dist\install.bat"
-echo echo   Installation Complete!>> "dist\install.bat"
-echo echo =============================================>> "dist\install.bat"
-echo echo Now you can run start.bat to launch the bot.>> "dist\install.bat"
-echo pause>> "dist\install.bat"
+> "dist\install.bat" echo @echo off
+>> "dist\install.bat" echo setlocal enabledelayedexpansion
+>> "dist\install.bat" echo title IG-Bot Dependency Installation
+>> "dist\install.bat" echo cd /d "%%~dp0"
+>> "dist\install.bat" echo echo.
+>> "dist\install.bat" echo echo =============================================
+>> "dist\install.bat" echo echo   IG-Bot Standalone Installation
+>> "dist\install.bat" echo echo =============================================
+>> "dist\install.bat" echo echo.
+>> "dist\install.bat" echo :: 1. Check for Node.js
+>> "dist\install.bat" echo echo [1/4] Checking for Node.js...
+>> "dist\install.bat" echo node -v ^>nul 2^>^&1
+>> "dist\install.bat" echo if %%errorlevel%% neq 0 (
+>> "dist\install.bat" echo     echo.
+>> "dist\install.bat" echo     echo ERROR: Node.js is NOT installed or not in PATH.
+>> "dist\install.bat" echo     echo Please install Node.js from https://nodejs.org/
+>> "dist\install.bat" echo     pause
+>> "dist\install.bat" echo     exit /b 1
+>> "dist\install.bat" echo )
+>> "dist\install.bat" echo node -v
+>> "dist\install.bat" echo echo.
+>> "dist\install.bat" echo :: 2. Install Project Dependencies
+>> "dist\install.bat" echo echo [2/4] Installing production dependencies...
+>> "dist\install.bat" echo set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+>> "dist\install.bat" echo call npm install --omit=dev
+>> "dist\install.bat" echo if %%errorlevel%% neq 0 (
+>> "dist\install.bat" echo     echo.
+>> "dist\install.bat" echo     echo ERROR: npm install failed.
+>> "dist\install.bat" echo     pause
+>> "dist\install.bat" echo     exit /b 1
+>> "dist\install.bat" echo )
+>> "dist\install.bat" echo echo.
+>> "dist\install.bat" echo :: 3. Patching Playwright
+>> "dist\install.bat" echo echo [3/4] Patching Playwright for portability...
+>> "dist\install.bat" echo node scripts/patch-playwright-mcp.js
+>> "dist\install.bat" echo echo.
+>> "dist\install.bat" echo :: 4. Install Playwright Browsers
+>> "dist\install.bat" echo echo [4/4] Installing Playwright browsers (Chrome Beta)...
+>> "dist\install.bat" echo call npx playwright install chrome-beta --with-deps
+>> "dist\install.bat" echo if %%errorlevel%% neq 0 (
+>> "dist\install.bat" echo     echo.
+>> "dist\install.bat" echo     echo ERROR: Playwright browser installation failed.
+>> "dist\install.bat" echo     pause
+>> "dist\install.bat" echo     exit /b 1
+>> "dist\install.bat" echo )
+>> "dist\install.bat" echo echo.
+>> "dist\install.bat" echo echo =============================================
+>> "dist\install.bat" echo echo   Installation Complete!
+>> "dist\install.bat" echo echo =============================================
+>> "dist\install.bat" echo echo Now you can run start.bat to launch the bot.
+>> "dist\install.bat" echo pause
 
 :: Create start.bat
-echo @echo off> "dist\start.bat"
-echo title IG-Bot Server>> "dist\start.bat"
-echo cd /d "%%~dp0">> "dist\start.bat"
-echo ig-bot.exe>> "dist\start.bat"
-echo pause>> "dist\start.bat"
+> "dist\start.bat" echo @echo off
+>> "dist\start.bat" echo title IG-Bot Server
+>> "dist\start.bat" echo cd /d "%%~dp0"
+>> "dist\start.bat" echo ig-bot.exe
+>> "dist\start.bat" echo pause
 
 echo.
 echo ===================================

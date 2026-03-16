@@ -238,14 +238,12 @@ async function getDB() {
         const bcrypt = require('bcryptjs');
         const hash = bcrypt.hashSync('admin123', 10);
         await dbInstance.run("INSERT INTO users (email, password, role) VALUES (?, ?, ?)", ['admin@igbot.com', hash, 'admin']);
-        console.log('Seeded initial admin: admin@igbot.com / admin123');
     }
 
     // Seed one registration code for testing
     const codeCount = (await dbInstance.get("SELECT count(*) as count FROM registration_codes")).count;
     if (codeCount === 0) {
         await dbInstance.run("INSERT INTO registration_codes (code) VALUES (?)", ['WELCOME']);
-        console.log('Seeded initial registration code: WELCOME');
     }
 
     return dbInstance;
