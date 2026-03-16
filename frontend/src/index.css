@@ -334,15 +334,16 @@ body::before {
 }
 
 .viewedTag {
-  background: rgba(255, 255, 255, 0.1);
+  background: hsla(var(--accent), 0.8);
+
 }
 
 .matchTag {
-  background: hsla(var(--primary), 0.8);
+  background: hsla(var(--accent), 0.8);
 }
 
 .tgTag {
-  background: hsla(190, 80%, 50%, 0.8);
+  background: hsla(var(--accent), 0.8);
 }
 
 .linksStack {

@@ -98,7 +98,7 @@ const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, 
                 {isLiked && <div className="badge likedTag">{tr('badge_like')}</div>}
                 {isDisliked && <div className="badge dislikedTag">{tr('badge_skip')}</div>}
                 {g.viewed && <div className="badge viewedTag">{tr('badge_viewed')}</div>}
-                {g.dmSent && <div className="badge dmTag">{tr('badge_send_dm')}</div>}
+                {g.dmSent && <div className="badge dmTag">{tr('badge_sent_dm')}</div>}
                 {g.tgTagged && <div className="badge tgTag">{tr('badge_tg_tagged')}</div>}
             </div>
             <div className="linksStack">
@@ -235,6 +235,8 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
             matchesStatus = votes[g.url] === 'dislike';
         else if (filterStatus === 'no_status')
             matchesStatus = !votes[g.url];
+        else if (filterStatus === 'active')
+            matchesStatus = votes[g.url] !== 'dislike';
         else if (filterStatus === 'dm_sent')
             matchesStatus = g.dmSent;
         let matchesTg = true;
@@ -267,6 +269,7 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
             <select className="select-input" value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setCurrentPage(1); }}>
                 <option value="all">{tr('filter_all')}</option>
                 <option value="no_status">{tr('filter_no_status')}</option>
+                <option value="active">{tr('filter_active')}</option>
                 <option value="like">{tr('filter_like')}</option>
                 <option value="like_no_dm">{tr('filter_like_no_dm')}</option>
                 <option value="dislike">{tr('filter_dislike')}</option>
@@ -278,11 +281,7 @@ export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages
                 <option value="yes">{tr('filter_tg_yes')}</option>
                 <option value="none">{tr('filter_tg_none')}</option>
             </select>
-            <select className="select-input" value={sortOption} onChange={e => { setSortOption(e.target.value); setCurrentPage(1); }}>
-                <option value="newest">{tr('sort_newest')}</option>
-                <option value="oldest">{tr('sort_oldest')}</option>
-                <option value="match">{tr('sort_match')}</option>
-            </select>
+
             <select className="select-input" value={filterDonor} onChange={e => { setFilterDonor(e.target.value); setCurrentPage(1); }}>
                 <option value="all">{tr('filter_donor')}: {tr('filter_all')}</option>
                 {uniqueDonors.map(d => (
