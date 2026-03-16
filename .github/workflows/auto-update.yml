@@ -39,7 +39,7 @@ jobs:
           Compress-Archive -Path "update_tmp\dist" -DestinationPath "ig-bot-update.zip"
           
       - name: Update Latest Release
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v1
         with:
           name: Latest Build
