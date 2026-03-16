@@ -62,6 +62,7 @@ async function getDB() {
             bio TEXT,
             photo TEXT,
             followers_count INTEGER DEFAULT 0,
+            following_count INTEGER DEFAULT 0,
             publications_count INTEGER DEFAULT 0,
             posts_count INTEGER DEFAULT 0,
             donor TEXT,
@@ -156,6 +157,12 @@ async function getDB() {
     }
     try {
         await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN donor TEXT`);
+    }
+    catch (e) {
+        // Ignore if column already exists
+    }
+    try {
+        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN following_count INTEGER DEFAULT 0`);
     }
     catch (e) {
         // Ignore if column already exists

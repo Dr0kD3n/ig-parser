@@ -13,7 +13,7 @@ const { createBrowserContext } = require('./browser');
 
 let activeAuthorizers = new Map();
 
-async function startAuthorization(accountId, name, proxyStr, savedFingerprint = null, isLogin = true) {
+async function startAuthorization(accountId, name, proxyStr, savedFingerprint = null, isLogin = true, cookies = null, localStorage = null) {
     if (activeAuthorizers.has(accountId)) {
         return { success: false, error: 'Authorization already in progress' };
     }
@@ -26,7 +26,9 @@ async function startAuthorization(accountId, name, proxyStr, savedFingerprint = 
         const config = {
             id: accountId,
             proxy: proxy,
-            fingerprint: savedFingerprint
+            fingerprint: savedFingerprint,
+            cookies: cookies,
+            local_storage: localStorage
         };
 
         const result = await createBrowserContext(config, false); // headless: false for authorizer
@@ -159,6 +161,11 @@ function getAuthorizationStatus(accountId) {
     return activeAuthorizers.has(accountId);
 }
 
+function getAuthorizationContext(accountId) {
+    return activeAuthorizers.get(accountId);
+}
+
 exports.startAuthorization = startAuthorization;
 exports.stopAuthorization = stopAuthorization;
 exports.getAuthorizationStatus = getAuthorizationStatus;
+exports.getAuthorizationContext = getAuthorizationContext;

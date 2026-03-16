@@ -561,7 +561,7 @@ app.post('/api/accounts/:id/authorize/start', async (req, res) => {
         const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [id]);
         if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
 
-        const result = await authorizer_1.startAuthorization(id, acc.name, acc.proxy, acc.fingerprint ? JSON.parse(acc.fingerprint) : null);
+        const result = await authorizer_1.startAuthorization(id, acc.name, acc.proxy, acc.fingerprint ? JSON.parse(acc.fingerprint) : null, true, acc.cookies ? JSON.parse(acc.cookies) : null, acc.local_storage);
         res.json(result);
     } catch (e) {
         console.error('Error starting auth:', e);
@@ -582,12 +582,30 @@ app.post('/api/accounts/:id/authorize/stop', async (req, res) => {
 
 app.post('/api/accounts/:id/browser/start', async (req, res) => {
     const { id } = req.params;
+    const { restore } = req.query;
     try {
         const db = await (0, db_1.getDB)();
         const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [id]);
         if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
 
-        const result = await authorizer_1.startAuthorization(id, acc.name, acc.proxy, acc.fingerprint ? JSON.parse(acc.fingerprint) : null, false);
+        const result = await authorizer_1.startAuthorization(id, acc.name, acc.proxy, acc.fingerprint ? JSON.parse(acc.fingerprint) : null, false, acc.cookies ? JSON.parse(acc.cookies) : null, acc.local_storage);
+
+        if (result.success && restore === 'true') {
+            const context = authorizer_1.getAuthorizationContext(id);
+            if (context) {
+                if (!restorePhotosStatus.running) {
+                    restorePhotosStatus = { running: true, current: 0, total: 0, status: 'Starting (via browser)...' };
+                    restorePhotos((progress) => {
+                        restorePhotosStatus = { running: true, ...progress };
+                    }, { accountId: id, existingContext: context, failedUrls: req.body?.failedUrls }).then((res) => {
+                        restorePhotosStatus = { running: false, done: true, result: res, status: 'Done', current: restorePhotosStatus.current, total: restorePhotosStatus.total };
+                        invalidateGirlsCache();
+                    }).catch((e) => {
+                        restorePhotosStatus = { running: false, error: e.message, status: 'Error', current: restorePhotosStatus.current, total: restorePhotosStatus.total };
+                    });
+                }
+            }
+        }
         res.json(result);
     } catch (e) {
         console.error('Error starting browser:', e);
@@ -629,13 +647,13 @@ app.post('/api/profiles/restore-photos', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Task already in progress' });
     }
 
-    const { concurrency } = req.body;
+    const { concurrency, failedUrls } = req.body;
     restorePhotosStatus = { running: true, current: 0, total: 0, status: 'Starting...' };
 
     // Run in background
     restorePhotos((progress) => {
         restorePhotosStatus = { running: true, ...progress };
-    }, concurrency).then((result) => {
+    }, { overrideConcurrency: concurrency, failedUrls }).then((result) => {
         restorePhotosStatus = { running: false, done: true, result, current: restorePhotosStatus.current, total: restorePhotosStatus.total, status: 'Done' };
         invalidateGirlsCache();
     }).catch((e) => {

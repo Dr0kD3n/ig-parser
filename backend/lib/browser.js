@@ -152,6 +152,16 @@ async function createBrowserContext(config, headless = false) {
 
     await applyFingerprint(context, config.fingerprint);
     if (config.cookies) await context.addCookies(config.cookies).catch(() => { });
+    if (config.local_storage) {
+        await context.addInitScript((ls) => {
+            try {
+                const data = JSON.parse(ls);
+                for (const key in data) {
+                    window.localStorage.setItem(key, data[key]);
+                }
+            } catch (e) { }
+        }, config.local_storage);
+    }
 
     // Inject hardcore Canvas, Audio, and UI noise uniquely bound to account ID
     const seed = config.id ? config.id.split('').reduce((a, b) => a + b.charCodeAt(0), 0) : Math.floor(Math.random() * 1000);

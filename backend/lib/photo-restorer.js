@@ -3,7 +3,7 @@ const { getDB } = require("./db");
 const { createBrowserContext, optimizeContextForScraping, takeLiveScreenshot, checkLoginPage } = require("./browser");
 const { wait } = require("./utils");
 const { saveCrashReport } = require("./reporter");
-const { getSetting, getAllAccounts } = require("./config");
+const { getSetting, getAllAccounts, getList } = require("./config");
 
 let stopRequested = false;
 
@@ -24,15 +24,36 @@ async function activeWait(ms) {
     return false;
 }
 
-async function restorePhotos(onProgress, overrideConcurrency) {
+async function restorePhotos(onProgress, options = {}) {
+    const { overrideConcurrency, accountId, existingContext, failedUrls } = options;
     stopRequested = false;
-    console.log('🚀 ЗАПУСК МНОГОПОТОЧНОГО ВОССТАНОВЛЕНИЯ ФОТО...');
+    console.log('🚀 ЗАПУСК ВОССТАНОВЛЕНИЯ ФОТО...');
     const db = await getDB();
 
     // 1. Получаем активные профили (vote != 'dislike')
-    const profiles = await db.all(`SELECT url, username, name FROM profiles WHERE vote != 'dislike' ORDER BY timestamp DESC`);
+    const femaleNames = await getList('names.txt');
+    const allProfiles = await db.all(`SELECT url, username, name, photo, bio FROM profiles WHERE vote != 'dislike' ORDER BY timestamp DESC`);
+
+    const profiles = allProfiles.filter(p => {
+        const isFailed = failedUrls && Array.isArray(failedUrls) && failedUrls.includes(p.url);
+        const hasNoPhoto = !p.photo || p.photo === '' || (typeof p.photo === 'string' && p.photo.includes('placeholder'));
+        const hasNoBio = !p.bio || p.bio.trim() === '' || p.bio.trim() === '.';
+        const isLiked = p.vote === 'like';
+
+        const nameMatches = femaleNames.length === 0 || femaleNames.some(name =>
+            (p.name && p.name.toLowerCase().includes(name.toLowerCase())) ||
+            (p.username && p.username.toLowerCase().includes(name.toLowerCase()))
+        );
+
+        // Берем если:
+        // 1. Принудительно помечен как упавший на фронте
+        // 2. Нет фото ИЛИ нет био
+        // ПРИ УСЛОВИИ что это либо "девушка" по имени, либо мы уже это лайкнули (значит она нам нужна)
+        return (isFailed || hasNoPhoto || hasNoBio) && (nameMatches || isLiked);
+    });
+
     if (profiles.length === 0) {
-        console.log('⚠️ Нет активных профилей для восстановления фото.');
+        console.log('⚠️ Нет подходящих профилей (девушек без фото) для восстановления.');
         return { success: true, count: 0 };
     }
 
@@ -40,7 +61,9 @@ async function restorePhotos(onProgress, overrideConcurrency) {
 
     // Get concurrency setting
     let concurrency = 3;
-    if (overrideConcurrency) {
+    if (existingContext) {
+        concurrency = 1; // Only one worker if using existing context
+    } else if (overrideConcurrency) {
         concurrency = Math.max(1, parseInt(overrideConcurrency) || 3);
     } else {
         const concurrentStr = await getSetting('concurrentProfiles');
@@ -49,27 +72,44 @@ async function restorePhotos(onProgress, overrideConcurrency) {
     console.log(`🧵 Использование потоков: ${concurrency}`);
 
     // 2. Получаем аккаунты для работы
-    const accounts = await getAllAccounts('parser');
-    if (accounts.length === 0) {
-        throw new Error('Нет доступных аккаунтов для выполнения задачи. Пожалуйста, включите "Parser" для одного из аккаунтов.');
+    let account;
+    if (accountId) {
+        account = await db.get('SELECT * FROM accounts WHERE id = ?', [accountId]);
+    } else {
+        const accounts = await getAllAccounts('parser');
+        if (accounts.length === 0) {
+            throw new Error('Нет доступных аккаунтов для выполнения задачи. Пожалуйста, включите "Parser" для одного из аккаунтов.');
+        }
+        account = accounts[0];
     }
 
-    const account = accounts[0];
+    if (!account) throw new Error('Аккаунт не найден');
+
     const showBrowserStr = await getSetting('showBrowser');
     const isHeadless = showBrowserStr !== 'true' && showBrowserStr !== true;
 
     console.log(`👤 Используем аккаунт: ${account.name} (ID: ${account.id})`);
 
-    const { browser, context } = await createBrowserContext({
-        id: account.id,
-        proxy: account.proxy,
-        cookies: account.cookies,
-        fingerprint: account.fingerprint,
-        viewport: { width: 1280, height: 800 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-    }, isHeadless);
+    let browser, context;
 
-    await optimizeContextForScraping(context);
+    if (existingContext) {
+        context = existingContext;
+    } else {
+        const result = await createBrowserContext({
+            id: account.id,
+            proxy: account.proxy,
+            cookies: account.cookies,
+            fingerprint: account.fingerprint,
+            viewport: { width: 1280, height: 800 },
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        }, isHeadless);
+        browser = result.browser;
+        context = result.context;
+    }
+
+    if (!existingContext) {
+        await optimizeContextForScraping(context);
+    }
 
     let updatedCount = 0;
     let errorCount = 0;
@@ -121,49 +161,88 @@ async function restorePhotos(onProgress, overrideConcurrency) {
                         break;
                     }
 
-                    const photoData = await page.evaluate(async (uname) => {
-                        let pUrl = '';
+                    const profileData = await page.evaluate(async (uname) => {
+                        let result = {
+                            photo: '',
+                            bio: '',
+                            followers: 0,
+                            following: 0,
+                            publications: 0,
+                            name: ''
+                        };
                         try {
                             const res = await fetch(`/api/v1/users/web_profile_info/?username=${uname}`, {
                                 headers: { 'X-IG-App-ID': '936619743392459' }
                             });
                             if (res.ok) {
                                 const json = await res.json();
-                                if (json?.data?.user?.profile_pic_url_hd) {
-                                    pUrl = json.data.user.profile_pic_url_hd;
+                                const user = json?.data?.user;
+                                if (user) {
+                                    result.photo = user.profile_pic_url_hd || '';
+                                    result.bio = user.biography || '';
+                                    result.followers = user.edge_followed_by?.count || 0;
+                                    result.following = user.edge_follow?.count || 0;
+                                    result.publications = user.edge_owner_to_timeline_media?.count || 0;
+                                    result.name = user.full_name || '';
                                 }
                             }
                         } catch (e) { }
 
-                        if (!pUrl) {
+                        if (!result.photo) {
                             const html = document.documentElement.innerHTML;
                             const matches = [...html.matchAll(/"profile_pic_url_hd":"([^"]+)"/g)];
                             if (matches.length > 0) {
                                 const rawUrl = matches[matches.length - 1][1];
                                 try {
-                                    pUrl = JSON.parse('"' + rawUrl + '"');
+                                    result.photo = JSON.parse('"' + rawUrl + '"');
                                 } catch (e) {
-                                    pUrl = rawUrl.replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+                                    result.photo = rawUrl.replace(/\\u0026/g, '&').replace(/\\\//g, '/');
                                 }
                             }
                         }
 
-                        if (!pUrl) {
+                        if (!result.photo) {
                             const header = document.querySelector('header');
                             if (header) {
                                 const img = header.querySelector('img');
-                                if (img) pUrl = img.getAttribute('src') || img.src || '';
+                                if (img) result.photo = img.getAttribute('src') || img.src || '';
                             }
                         }
-                        return pUrl;
+
+                        if (!result.bio) {
+                            const bioEl = document.querySelector('header section h1 + div, header section div:nth-child(3) span');
+                            if (bioEl) result.bio = bioEl['textContent'] || bioEl['innerText'] || '';
+                        }
+
+                        return result;
                     }, username);
 
-                    if (photoData) {
-                        await db.run(`UPDATE profiles SET photo = ? WHERE url = ?`, [photoData, url]);
+                    if (profileData.photo || profileData.bio) {
+                        await db.run(
+                            `UPDATE profiles SET 
+                                photo = COALESCE(NULLIF(?, ''), photo), 
+                                bio = COALESCE(NULLIF(?, ''), bio), 
+                                followers_count = CASE WHEN ? > 0 THEN ? ELSE followers_count END,
+                                following_count = CASE WHEN ? > 0 THEN ? ELSE following_count END,
+                                publications_count = CASE WHEN ? > 0 THEN ? ELSE publications_count END,
+                                name = COALESCE(NULLIF(?, ''), name),
+                                timestamp = ?
+                             WHERE url = ?`,
+                            [
+                                profileData.photo,
+                                profileData.bio,
+                                profileData.followers, profileData.followers,
+                                profileData.following, profileData.following,
+                                profileData.publications, profileData.publications,
+                                profileData.name,
+                                new Date().toISOString(),
+                                url
+                            ]
+                        );
                         updatedCount++;
-                        console.log(`   ✅ [Поток ${workerId}] Фото обновлено для ${username}`);
+                        console.log(`   ✅ [Поток ${workerId}] Профиль обновлен для ${username}`);
                     } else {
-                        console.log(`   ⚠️ [Поток ${workerId}] Фото не найдено для ${username}`);
+                        console.log(`   ⚠️ [Поток ${workerId}] Данные не найдены для ${username}`);
                     }
 
                     // Интервал между профилями
@@ -194,8 +273,10 @@ async function restorePhotos(onProgress, overrideConcurrency) {
         }
         await Promise.all(workers);
     } finally {
-        await context.close().catch(() => { });
-        await browser.close().catch(() => { });
+        if (!existingContext) {
+            await context.close().catch(() => { });
+            await browser.close().catch(() => { });
+        }
         const finalStatus = stopRequested ? 'ПРЕРВАНО' : 'ЗАВЕРШЕНО';
         console.log(`🏁 ВОССТАНОВЛЕНИЕ ${finalStatus}. Обновлено: ${updatedCount}, Ошибок: ${errorCount}`);
     }

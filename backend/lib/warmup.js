@@ -92,7 +92,9 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
     const config = {
         id: accountId,
         proxy: parseProxyString(acc.proxy),
-        fingerprint: acc.fingerprint ? JSON.parse(acc.fingerprint) : null
+        fingerprint: acc.fingerprint ? JSON.parse(acc.fingerprint) : null,
+        cookies: acc.cookies ? JSON.parse(acc.cookies) : null,
+        local_storage: acc.local_storage
     };
 
     const countryCode = await getRegionFromProxy(config.proxy);

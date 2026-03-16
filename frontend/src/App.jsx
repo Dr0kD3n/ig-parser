@@ -3,246 +3,447 @@ import { t } from './i18n';
 import ProfilesTab from './components/ProfilesTab';
 import ControlsTab from './components/ControlsTab';
 import SettingsTab from './components/SettingsTab';
-import { Toaster } from 'react-hot-toast';
+import AuthPage from './components/AuthPage';
+import { TelegramIcon } from './components/Icons';
+import { API_BASE, LOCAL_API_BASE } from './config';
+import { toast, Toaster } from 'react-hot-toast';
+
 const LOG_BUFFER = 200;
+
+const safeStorage = {
+    getItem: (key, def) => {
+        try {
+            const val = localStorage.getItem(key);
+            if (val === null || val === 'null' || val === 'undefined') return def;
+            return val;
+        } catch (e) { return def; }
+    },
+    setItem: (key, val) => {
+        try {
+            if (val === null || val === undefined) {
+                localStorage.removeItem(key);
+            } else {
+                localStorage.setItem(key, val);
+            }
+        } catch (e) { }
+    },
+    removeItem: (key) => {
+        try {
+            localStorage.removeItem(key);
+        } catch (e) { }
+    },
+    parse: (key, def) => {
+        try {
+            const val = localStorage.getItem(key);
+            if (val === null || val === 'null' || val === 'undefined') return def;
+            return JSON.parse(val);
+        } catch (e) { return def; }
+    }
+};
+
 export default function App() {
-    const [lang, setLang] = useState(() => localStorage.getItem('ig_lang') || 'ru');
+    const [lang, setLang] = useState(() => safeStorage.getItem('ig_lang', 'ru'));
     const tr = (key) => t(lang, key);
     const toggleLang = () => {
         const next = lang === 'ru' ? 'en' : 'ru';
         setLang(next);
-        localStorage.setItem('ig_lang', next);
+        safeStorage.setItem('ig_lang', next);
     };
+
+    const [user, setUser] = useState(() => safeStorage.parse('ig_user', null));
+    const [token, setToken] = useState(() => safeStorage.getItem('ig_token', null));
+
     const [girls, setGirls] = useState([]);
     const [votes, setVotes] = useState({});
-    const [viewed, setViewed] = useState(() => JSON.parse(localStorage.getItem('ig_viewed_profiles') || '[]'));
-    const [sentDM, setSentDM] = useState(() => JSON.parse(localStorage.getItem('ig_sent_dm') || '[]'));
+    const [viewed, setViewed] = useState(() => safeStorage.parse('ig_viewed_profiles', []));
+    const [sentDM, setSentDM] = useState(() => safeStorage.parse('ig_sent_dm', []));
     const [failedImages, setFailedImages] = useState(new Set());
     const [modalOpen, setModalOpen] = useState(false);
     const [messagesText, setMessagesText] = useState('');
-    const [settingsData, setSettingsData] = useState({
-        accounts: [], activeParserAccountIds: [], activeServerAccountIds: [], activeIndexAccountIds: [], activeProfilesAccountIds: [],
-        names: [], cities: [], niches: [], donors: [], showBrowser: false
+
+    const [settingsData, setSettingsData] = useState(() => {
+        const defaultState = {
+            accounts: [], activeParserAccountIds: [], activeServerAccountIds: [], activeIndexAccountIds: [], activeProfilesAccountIds: [],
+            names: [], cities: [], niches: [], donors: [], showBrowser: false, humanEmulation: false, concurrentProfiles: 3
+        };
+        return { ...defaultState, ...safeStorage.parse('ig_settings', {}) };
     });
+
     const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false });
     const [logs, setLogs] = useState([]);
-    const [activeTab, setActiveTab] = useState(() => localStorage.getItem('ig_active_tab') || 'main');
+    const [activeTab, setActiveTab] = useState(() => safeStorage.getItem('ig_active_tab', 'main'));
     const [isLoading, setIsLoading] = useState(true);
     const [saveStatus, setSaveStatus] = useState('idle');
-    // Persist active tab
-    useEffect(() => { localStorage.setItem('ig_active_tab', activeTab); }, [activeTab]);
+
+    const [checkingAllTg, setCheckingAllTg] = useState(false);
+    const [restoreStatus, setRestoreStatus] = useState({ running: false, current: 0, total: 0 });
+
+    useEffect(() => { safeStorage.setItem('ig_active_tab', activeTab); }, [activeTab]);
+
+    const handleLoginSuccess = (newToken, newUser) => {
+        setToken(newToken);
+        setUser(newUser);
+        safeStorage.setItem('ig_token', newToken);
+        safeStorage.setItem('ig_user', JSON.stringify(newUser));
+    };
+
+    const handleLogout = useCallback(() => {
+        setToken(null);
+        setUser(null);
+        safeStorage.removeItem('ig_token');
+        safeStorage.removeItem('ig_user');
+        toast.success('Logged out successfully');
+    }, []);
+
+    const authFetch = useCallback(async (url, options = {}) => {
+        let currentToken = safeStorage.getItem('ig_token', null);
+        if (currentToken === 'null' || currentToken === 'undefined') currentToken = null;
+
+        const authHeader = currentToken ? `Bearer ${currentToken}` : '';
+        const headers = { ...options.headers, 'Authorization': authHeader };
+
+        try {
+            const baseUrl = url.startsWith('/api/auth/') ? API_BASE : LOCAL_API_BASE;
+            const res = await fetch(`${baseUrl}${url}`, { ...options, headers });
+            if (res.status === 401) {
+                handleLogout();
+            }
+            return res;
+        } catch (error) {
+            console.error(`[AUTH] Fetch error for ${url}:`, error);
+            throw error;
+        }
+    }, [handleLogout]);
+
     const settingsLoaded = useRef(false);
-    // Fetch profiles + votes
+    const pendingSave = useRef(false);
+    const saveAbortRef = useRef(null);
+
     const fetchData = useCallback(async () => {
+        if (!user) return;
         try {
             const [girlsRes, votesRes] = await Promise.all([
-                fetch('/api/girls', { cache: 'no-store' }),
-                fetch('/api/votes', { cache: 'no-store' })
+                authFetch('/api/girls', { cache: 'no-store' }),
+                authFetch('/api/votes', { cache: 'no-store' })
             ]);
             const girlsData = await girlsRes.json();
             const votesData = await votesRes.json();
-            const viewedArr = JSON.parse(localStorage.getItem('ig_viewed_profiles') || '[]');
-            const sentArr = JSON.parse(localStorage.getItem('ig_sent_dm') || '[]');
+            const viewedArr = safeStorage.parse('ig_viewed_profiles', []);
+            const sentArr = safeStorage.parse('ig_sent_dm', []);
+
             girlsData.forEach(g => {
                 g.viewed = viewedArr.includes(g.url);
                 g.dmSent = sentArr.includes(g.url);
             });
-            setGirls(girlsData);
-            setVotes(votesData);
-        }
-        catch (e) {
+            setGirls(girlsData || []);
+            setVotes(votesData || {});
+        } catch (e) {
             console.error('Error loading data', e);
         }
-    }, []);
+    }, [user, authFetch]);
+
     const fetchSettings = useCallback(async () => {
+        if (!user) return;
         try {
-            const res = await fetch('/api/settings');
+            const res = await authFetch('/api/settings');
             const data = await res.json();
-            setSettingsData({
-                accounts: data.accounts || [],
-                activeParserAccountIds: data.activeParserAccountIds || [],
-                activeServerAccountIds: data.activeServerAccountIds || [],
-                activeIndexAccountIds: data.activeIndexAccountIds || [],
-                activeProfilesAccountIds: data.activeProfilesAccountIds || [],
+            setSettingsData(prev => ({
+                ...prev,
+                ...data,
                 names: data.names || [],
                 cities: data.cities || [],
                 niches: data.niches || [],
                 donors: data.donors || [],
                 showBrowser: data.showBrowser || false,
-                concurrentProfiles: data.concurrentProfiles
-            });
+                humanEmulation: data.humanEmulation || false,
+                concurrentProfiles: data.concurrentProfiles || 3
+            }));
             settingsLoaded.current = true;
-        }
-        catch (e) {
+            setIsLoading(false);
+        } catch (e) {
             console.error('Error fetching settings', e);
         }
-    }, []);
+    }, [user, authFetch]);
+
     const fetchBotStatus = useCallback(async () => {
+        if (!user) return;
         try {
-            const res = await fetch('/api/bot/status');
+            const res = await authFetch('/api/bot/status');
             const data = await res.json();
             setBotStatus(data);
-        }
-        catch (e) { }
-    }, []);
-    // Initial data load + SSE
+        } catch (e) { }
+    }, [user, authFetch]);
+
     useEffect(() => {
-        fetchData();
-        fetchSettings();
-        fetchBotStatus();
-        const saved = JSON.parse(localStorage.getItem('ig_first_messages') || '[]');
-        setMessagesText(saved.join('\n'));
-        // SSE log stream
-        const es = new EventSource('/api/logs');
-        let initialBurst = true;
-        const burstTimer = setTimeout(() => { initialBurst = false; }, 1500);
-        es.onmessage = (ev) => {
-            const log = JSON.parse(ev.data);
-            const entry = { ...log, id: Math.random().toString(36).slice(2, 9) };
-            setLogs(prev => [...prev, entry].slice(-LOG_BUFFER));
-        };
-        // Poll bot status every 10s (instead of 3s)
-        const statusInterval = setInterval(fetchBotStatus, 10000);
-        // Remove loader after a tick (no artificial delay)
-        const loaderTimer = setTimeout(() => setIsLoading(false), 50);
-        return () => {
-            es.close();
-            clearInterval(statusInterval);
-            clearTimeout(burstTimer);
-            clearTimeout(loaderTimer);
-        };
-    }, [fetchData, fetchSettings, fetchBotStatus]);
-    // Actions
+        let interval;
+        if (restoreStatus.running) {
+            interval = setInterval(async () => {
+                try {
+                    const res = await authFetch('/api/profiles/restore-photos/status');
+                    const data = await res.json();
+                    setRestoreStatus(data);
+                    if (data.running) fetchData();
+                    if (!data.running && data.done) {
+                        toast.success(`Обновлено профилей: ${data.result?.updatedCount || 0}`);
+                        fetchData();
+                    }
+                } catch (e) {
+                    console.error('Error polling restore status:', e);
+                }
+            }, 3000);
+        }
+        return () => clearInterval(interval);
+    }, [restoreStatus.running, authFetch, fetchData]);
+
+    useEffect(() => {
+        if (user) {
+            authFetch('/api/profiles/restore-photos/status')
+                .then(res => res.json())
+                .then(data => { if (data.running) setRestoreStatus(data); })
+                .catch(() => { });
+        }
+    }, [user, authFetch]);
+
+    useEffect(() => {
+        if (user) {
+            fetchData();
+            fetchSettings();
+            fetchBotStatus();
+            const interval = setInterval(fetchBotStatus, 5000);
+            const saved = safeStorage.parse('ig_first_messages', []);
+            setMessagesText(saved.join('\n'));
+            return () => clearInterval(interval);
+        } else {
+            setIsLoading(false);
+        }
+    }, [user, fetchData, fetchSettings, fetchBotStatus]);
+
+    useEffect(() => {
+        if (!settingsLoaded.current || !user) return;
+        setSaveStatus('saving');
+        const timer = setTimeout(() => {
+            if (saveAbortRef.current) saveAbortRef.current.abort();
+            const controller = new AbortController();
+            saveAbortRef.current = controller;
+            authFetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settingsData),
+                signal: controller.signal
+            }).then(() => {
+                setSaveStatus('saved');
+                setTimeout(() => setSaveStatus('idle'), 2000);
+                safeStorage.setItem('ig_settings', JSON.stringify(settingsData));
+            }).catch(err => {
+                if (err.name !== 'AbortError') setSaveStatus('error');
+            }).finally(() => {
+                saveAbortRef.current = null;
+            });
+        }, 1000);
+        return () => clearTimeout(timer);
+    }, [settingsData, user, authFetch]);
+
+    const onSettingsChange = (newSettings) => {
+        setSettingsData(prev => ({ ...prev, ...newSettings }));
+    };
+
     const handleVote = useCallback(async (g, status) => {
         setVotes(prev => ({ ...prev, [g.url]: status || '' }));
         setGirls(prev => prev.map(p => p.url === g.url ? { ...p, status } : p));
-        fetch('/api/vote', {
+        authFetch('/api/vote', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: g.url, status })
         });
-    }, []);
+    }, [authFetch]);
+
     const handleOpen = useCallback(async (g) => {
         if (!viewed.includes(g.url)) {
             const newV = [...viewed, g.url];
             setViewed(newV);
-            localStorage.setItem('ig_viewed_profiles', JSON.stringify(newV));
+            safeStorage.setItem('ig_viewed_profiles', JSON.stringify(newV));
             setGirls(prev => prev.map(p => p.url === g.url ? { ...p, viewed: true } : p));
         }
-        fetch('/api/view', {
+        authFetch('/api/view', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: g.url })
         });
         window.open(g.url, '_blank');
-    }, [viewed]);
+    }, [viewed, authFetch]);
+
     const handleSendDM = useCallback(async (g) => {
-        const msgs = JSON.parse(localStorage.getItem('ig_first_messages') || '[]');
+        const msgs = safeStorage.parse('ig_first_messages', []);
         const m = msgs[Math.floor(Math.random() * msgs.length)] || 'Hello!';
         const newSent = [...sentDM, g.url];
         setSentDM(newSent);
-        localStorage.setItem('ig_sent_dm', JSON.stringify(newSent));
+        safeStorage.setItem('ig_sent_dm', JSON.stringify(newSent));
         setGirls(prev => prev.map(p => p.url === g.url ? { ...p, dmSent: true } : p));
-        fetch('/api/dm', {
+        authFetch('/api/dm', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: g.url, message: m })
         });
-    }, [sentDM]);
+    }, [sentDM, authFetch]);
+
+    const handleDeleteProfile = async (url) => {
+        if (!confirm(tr('confirm_delete'))) return;
+        try {
+            const res = await authFetch('/api/profiles/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            if (res.ok) {
+                setGirls(prev => prev.filter(g => g.url !== url));
+                toast.success(tr('profile_deleted_success'));
+            }
+        } catch (e) {
+            toast.error('Network error');
+        }
+    };
+
+    const handleSaveAsDonor = async (url) => {
+        try {
+            const res = await authFetch('/api/donors', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const data = await res.json();
+            if (data.success) {
+                toast.success(tr('preset_saved') || 'Saved as donor');
+                fetchSettings();
+            } else {
+                toast.error(data.error || 'Error saving donor');
+            }
+        } catch (e) {
+            toast.error('Network error');
+        }
+    };
+
     const handleTgCheck = useCallback((url, status) => {
         setGirls(prev => prev.map(p => p.url === url ? { ...p, tg_status: status } : p));
     }, []);
+
     const handleImageError = useCallback((url) => {
         setFailedImages(prev => new Set([...prev, url]));
     }, []);
+
     const handleBotControl = useCallback(async (type, action) => {
-        await fetch(`/api/bot/${action}`, {
+        await authFetch(`/api/bot/${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ type })
         });
         fetchBotStatus();
-    }, [fetchBotStatus]);
+    }, [fetchBotStatus, authFetch]);
+
     const handleClearLogs = useCallback(async () => {
         setLogs([]);
+        try { await authFetch('/api/logs/clear', { method: 'POST' }); }
+        catch (e) { }
+    }, [authFetch]);
+
+    const handleRestorePhotos = async () => {
+        if (restoreStatus.running) {
+            try {
+                await authFetch('/api/profiles/restore-photos/stop', { method: 'POST' });
+                setRestoreStatus(prev => ({ ...prev, status: 'Stopping...' }));
+            } catch (err) { }
+            return;
+        }
         try {
-            await fetch('/api/logs/clear', { method: 'POST' });
-        }
-        catch (e) {
-            console.error('Failed to clear logs on server', e);
-        }
-    }, []);
-    const handleSaveSettings = useCallback(async () => {
-        if (!settingsLoaded.current)
-            return;
-        await fetch('/api/settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(settingsData)
-        });
-    }, [settingsData]);
-    // Auto-save settings on change (debounced, skip initial load)
-    const saveAbortRef = useRef(null);
-    useEffect(() => {
-        if (!settingsLoaded.current)
-            return;
-        setSaveStatus('saving');
-        const timer = setTimeout(() => {
-            if (saveAbortRef.current)
-                saveAbortRef.current.abort();
-            const controller = new AbortController();
-            saveAbortRef.current = controller;
-            fetch('/api/settings', {
+            const resp = await authFetch('/api/profiles/restore-photos', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(settingsData),
-                signal: controller.signal
-            })
-                .then(() => {
-                setSaveStatus('saved');
-                setTimeout(() => setSaveStatus('idle'), 2000);
-            })
-                .catch((err) => {
-                if (err.name !== 'AbortError')
-                    setSaveStatus('error');
+                body: JSON.stringify({
+                    concurrency: settingsData.concurrentProfiles,
+                    failedUrls: Array.from(failedImages)
+                })
             });
-        }, 800);
-        return () => clearTimeout(timer);
-    }, [settingsData]);
-    // Header stats (memoized-ish via inline)
+            const data = await resp.json();
+            if (data.success) {
+                setRestoreStatus({ running: true, current: 0, total: 0, status: 'Starting...' });
+                toast.success('Запущено восстановление фото');
+            }
+        } catch (err) { }
+    };
+
+    const handleCheckAllTg = async () => {
+        const toCheck = girls.filter(g => !g.tg_status).map(g => g.name);
+        if (toCheck.length === 0) {
+            toast.error('Нет профилей без статуса для проверки');
+            return;
+        }
+        if (!confirm(`Проверить ${toCheck.length} профилей? Это может занять время.`))
+            return;
+        setCheckingAllTg(true);
+        try {
+            const resp = await authFetch('/api/check-telegram-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: toCheck })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                await fetchData();
+            }
+        } catch (err) {
+            console.error('Batch TG check failed', err);
+        } finally {
+            setCheckingAllTg(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!user || !token) return;
+        const normalizedToken = token === 'null' ? null : token;
+        if (!normalizedToken) return;
+        const baseUrl = LOCAL_API_BASE;
+        const es = new EventSource(`${baseUrl}/api/logs?token=${normalizedToken}`);
+        es.onmessage = (ev) => {
+            const log = JSON.parse(ev.data);
+            setLogs(prev => [...prev, log].slice(-LOG_BUFFER));
+        };
+        return () => es.close();
+    }, [user, token]);
+
+    if (isLoading) return <div className="loading-screen-full"><div className="loader-ring" /></div>;
+
+    if (!user) return <AuthPage onLoginSuccess={handleLoginSuccess} tr={tr} />;
+
     const unopenedCount = girls.filter(g => !g.viewed).length;
     const likesCount = Object.values(votes).filter(v => v === 'like').length;
-    return (<div className="app">
 
+    return (
+        <div className="app">
             <header className="header">
                 <div className="header-left">
                     <div className="logo">{tr('logo')}</div>
                     <div className="stats">
                         <span>{tr('unopened')} <b>{unopenedCount}</b></span>
                         <span>{tr('viewed')} <b>{viewed.length}</b></span>
-                        <span>{tr('dm_sent')} <b style={{ color: 'hsl(var(--accent))' }}>{sentDM.length}</b></span>
-                        <div className="stats-divider"/>
-                        <span>{tr('likes')} <b style={{ color: 'hsl(var(--success))' }}>{likesCount}</b></span>
+                        <span>{tr('dm_sent')} <b className="color-accent">{sentDM.length}</b></span>
+                        <div className="stats-divider" />
+                        <span>{tr('likes')} <b className="color-success">{likesCount}</b></span>
                     </div>
                 </div>
-                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    {saveStatus !== 'idle' && (<div style={{
-                fontSize: '12px',
-                color: saveStatus === 'error' ? 'hsl(var(--danger))' : 'hsl(var(--text-muted))',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-            }}>
-                            {saveStatus === 'saving' && <div className="loader-ring" style={{ width: '12px', height: '12px', borderWidth: '2px' }}/>}
-                            {saveStatus === 'saving' ? 'Сохранение...' : saveStatus === 'saved' ? '✓ Сохранено' : 'Ошибка сохранения'}
-                        </div>)}
-                    <button className="btn-primary" style={{
-            background: 'transparent',
-            fontSize: '12px',
-            padding: '4px 8px',
-            minWidth: '40px'
-        }} onClick={toggleLang}>
+                <div className="header-right">
+                    {saveStatus !== 'idle' && (
+                        <div className={`save-indicator ${saveStatus === 'error' ? 'error' : ''}`}>
+                            {saveStatus === 'saving' && <div className="loader-ring btn-xs" />}
+                            {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : 'Error'}
+                        </div>
+                    )}
+                    <div className="user-badge-text">
+                        {user.email}
+                    </div>
+                    <button className="btn-primary btn-icon-only btn-ghost" onClick={toggleLang}>
                         {lang.toUpperCase()}
+                    </button>
+                    <button className="btn-primary btn-sm btn-danger" onClick={handleLogout}>
+                        OUT
                     </button>
                     <button className="btn-primary" onClick={() => setModalOpen(true)}>
                         {tr('templates')}
@@ -251,48 +452,105 @@ export default function App() {
             </header>
 
             <nav className="tabs-nav">
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="tab-btn-wrapper">
                     {[
-            { id: 'main', label: tr('tab_profiles') },
-            { id: 'controls', label: tr('tab_execution') },
-            { id: 'settings', label: tr('tab_configuration') },
-        ].map(({ id, label }) => (<button key={id} className={`tab-btn${activeTab === id ? ' active' : ''}`} onClick={() => setActiveTab(id)}>
+                        { id: 'main', label: tr('tab_profiles') },
+                        { id: 'controls', label: tr('tab_execution') },
+                        { id: 'settings', label: tr('tab_configuration') },
+                    ].map(({ id, label }) => (
+                        <button key={id} className={`tab-btn${activeTab === id ? ' active' : ''}`} onClick={() => setActiveTab(id)}>
                             {label}
-                        </button>))}
+                        </button>
+                    ))}
                 </div>
-                <button className="btn-primary" style={{ marginLeft: 'auto', background: 'hsl(210 100% 50%)', borderColor: 'transparent' }} onClick={fetchData} title={tr('btn_update')}>
-                    {tr('btn_update')}
-                </button>
+
+                {activeTab === 'main' && (
+                    <div className="nav-extra-actions">
+                        <button className="btn-primary btn-tg btn-sm"
+                            onClick={handleCheckAllTg}
+                            disabled={checkingAllTg}>
+                            {checkingAllTg ? <div className="loader-ring btn-xs" /> : <TelegramIcon className="mini-icon" />}
+                            {checkingAllTg ? 'Проверка...' : tr('btn_check_all_tg')}
+                        </button>
+                        <button className={`btn-primary btn-sm btn-restore ${restoreStatus.running ? 'running' : ''}`}
+                            onClick={handleRestorePhotos}>
+                            {restoreStatus.running ? `Остановить ${restoreStatus.current}/${restoreStatus.total}` : tr('btn_restore_photos')}
+                        </button>
+                        <button className="btn-primary btn-primary-alt btn-sm" onClick={fetchData} title={tr('btn_update')}>
+                            {tr('btn_update')}
+                        </button>
+                    </div>
+                )}
             </nav>
 
-            {activeTab === 'main' && (<ProfilesTab girls={girls} votes={votes} viewed={viewed} sentDM={sentDM} failedImages={failedImages} onVote={handleVote} onOpen={handleOpen} onSendDM={handleSendDM} onImageError={handleImageError} onRefresh={fetchData} useProxyImages={(settingsData.activeProfilesAccountIds || []).length > 0} tr={tr} onTgCheck={handleTgCheck} isLoading={isLoading}/>)}
+            <div className="main-content">
+                {activeTab === 'main' && (
+                    <ProfilesTab
+                        girls={girls}
+                        votes={votes}
+                        viewed={viewed}
+                        sentDM={sentDM}
+                        failedImages={failedImages}
+                        onVote={handleVote}
+                        onOpen={handleOpen}
+                        onSendDM={handleSendDM}
+                        onDeleteProfile={handleDeleteProfile}
+                        onSaveAsDonor={handleSaveAsDonor}
+                        onImageError={handleImageError}
+                        onRefresh={fetchData}
+                        useProxyImages={settingsData.showBrowser}
+                        tr={tr}
+                        onTgCheck={handleTgCheck}
+                        isLoading={isLoading}
+                        authFetch={authFetch}
+                        token={token}
+                    />
+                )}
 
-            {activeTab === 'controls' && (<ControlsTab botStatus={botStatus} onBotControl={handleBotControl} onClearLogs={handleClearLogs} logs={logs} tr={tr} isLoading={isLoading}/>)}
+                {activeTab === 'controls' && (
+                    <ControlsTab
+                        botStatus={botStatus}
+                        onBotControl={handleBotControl}
+                        onClearLogs={handleClearLogs}
+                        logs={logs}
+                        tr={tr}
+                        isLoading={isLoading}
+                        token={token}
+                    />
+                )}
 
-            {activeTab === 'settings' && (<SettingsTab settingsData={settingsData} onSettingsChange={setSettingsData} onSave={handleSaveSettings} tr={tr} isLoading={isLoading}/>)}
+                {activeTab === 'settings' && (
+                    <SettingsTab
+                        settingsData={settingsData}
+                        onSettingsChange={onSettingsChange}
+                        tr={tr}
+                        isLoading={isLoading}
+                        authFetch={authFetch}
+                        failedUrls={Array.from(failedImages)}
+                    />
+                )}
+            </div>
 
-            {modalOpen && (<div className="modal" onClick={() => setModalOpen(false)}>
+            {modalOpen && (
+                <div className="modal" onClick={() => setModalOpen(false)}>
                     <div className="modalContent" onClick={e => e.stopPropagation()}>
-                        <h3 style={{ margin: 0, marginBottom: 18, color: '#fff' }}>{tr('modal_templates_title')}</h3>
-                        <textarea className="msg-textarea" value={messagesText} onChange={e => setMessagesText(e.target.value)} placeholder={tr('one_msg_per_line')}/>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-                            <button className="btn-primary" style={{ background: 'transparent', border: 'none', boxShadow: 'none' }} onClick={() => setModalOpen(false)}>
+                        <h3 className="modal-title">{tr('modal_templates_title')}</h3>
+                        <textarea className="msg-textarea" value={messagesText} onChange={e => setMessagesText(e.target.value)} placeholder={tr('one_msg_per_line')} />
+                        <div className="modal-footer">
+                            <button className="btn-primary btn-ghost" onClick={() => setModalOpen(false)}>
                                 {tr('cancel')}
                             </button>
                             <button className="btn-primary" onClick={() => {
-                localStorage.setItem('ig_first_messages', JSON.stringify(messagesText.split('\n').filter(l => l.trim())));
-                setModalOpen(false);
-            }}>
+                                safeStorage.setItem('ig_first_messages', JSON.stringify(messagesText.split('\n').filter(l => l.trim())));
+                                setModalOpen(false);
+                            }}>
                                 {tr('save_changes')}
                             </button>
                         </div>
                     </div>
-                </div>)}
-            <Toaster position="bottom-right" toastOptions={{
-            style: {
-                background: '#333',
-                color: '#fff',
-            }
-        }}/>
-        </div>);
+                </div>
+            )}
+            <Toaster position="bottom-right" toastOptions={{ style: { background: '#333', color: '#fff' } }} />
+        </div>
+    );
 }
