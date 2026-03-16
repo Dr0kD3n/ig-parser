@@ -1,216 +1,283 @@
-import React, { useState } from 'react';
-import { LOCAL_API_BASE } from '../config';
-
-function SkeletonCard() {
-    return (
-        <div className="profile-card" style={{ height: '400px', animation: 'pulse 1.5s infinite ease-in-out' }}>
-            <div style={{ height: '70%', background: 'hsla(0, 0%, 100%, 0.05)' }} />
-            <div style={{ padding: '20px' }}>
-                <div style={{ height: '20px', width: '60%', background: 'hsla(0, 0%, 100%, 0.05)', borderRadius: '4px', marginBottom: '10px' }} />
-                <div style={{ height: '14px', width: '40%', background: 'hsla(0, 0%, 100%, 0.05)', borderRadius: '4px' }} />
-            </div>
-        </div>
-    );
+import React, { useState, memo } from 'react';
+import { HeartIcon, XIcon, InstagramIcon, TelegramIcon, HelpIcon, SendIcon } from './Icons';
+import { toast } from 'react-hot-toast';
+function parseSmartBio(text, username) {
+    if (!text)
+        return { bio: ' ', stats: [] };
+    // 1. Remove mentions of the username and pipes
+    let clean = text.replace(new RegExp(`^${username}\\s*`, 'i'), '').replace(/\|/g, ' ');
+    // 2. Extract stats (followers/posts)
+    const stats = [];
+    const followersMatch = clean.match(/(\d[\d\s]*\s*подписчиков)/i);
+    const postsMatch = clean.match(/(\d[\d\s]*\s*публикаций)/i);
+    if (followersMatch)
+        stats.push(followersMatch[0]);
+    if (postsMatch)
+        stats.push(postsMatch[0]);
+    // 3. Remove "more", stats, and redundant pipes/junk
+    let bio = clean
+        .replace(/(\d[\d\s]*\s*(подписчиков|публикаций|подписок|посты))/gi, '')
+        .replace(/more\s*\|\s*\w+/gi, '')
+        .replace(/\.\.\.\s*more\s*\w*/gi, '')
+        .replace(new RegExp(`${username}$`, 'i'), '')
+        .replace(/\s+/g, ' ') // Collapse spaces
+        .trim();
+    // 4. Forceful Deduplication: split by common separators and check for repetitions
+    const segments = bio.split(/[\.!\?]\s+/);
+    if (segments.length > 2) {
+        const unique = [];
+        segments.forEach(s => {
+            if (!unique.some(u => u.includes(s.substring(0, 20)) || s.includes(u.substring(0, 20)))) {
+                unique.push(s);
+            }
+        });
+        bio = unique.join('. ');
+    }
+    return { bio: bio || ' ', stats };
 }
-
-function ProfileCard({ g, votes, failedImages, onVote, onOpen, onSendDM, onImageError, useProxyImages, tr, onTgCheck, onDeleteProfile, onSaveAsDonor, authFetch, token }) {
-    const vote = votes[g.url];
-    const imgUrl = useProxyImages ? `${LOCAL_API_BASE}/api/proxy-image?url=${encodeURIComponent(g.photo)}&token=${token}` : g.photo;
-    const isFailed = failedImages.has(g.url);
-
-    return (
-        <div className={`profile-card ${g.viewed ? 'viewed' : ''} ${vote === 'dislike' ? 'disliked' : ''}`}>
-            <div className="profile-image-wrapper">
-                {(!g.photo || isFailed) ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--bg-panel)', color: 'var(--text-dim)' }}>
-                        NO PHOTO
-                    </div>
-                ) : (
-                    <img className="profile-image" src={imgUrl} alt={g.name} onError={() => onImageError(g.url)} loading="lazy" />
-                )}
-
-                <div className="profile-overlay">
-                    <div className="profile-name">@{g.name}</div>
-                    <div className="profile-meta">
-                        {g.tg_status === 'valid' && (
-                            <span style={{ color: 'hsl(var(--success))', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" /></svg>
-                                Telegram
-                            </span>
-                        )}
-                        <span>{new Date(g.timestamp).toLocaleDateString()}</span>
+const SkeletonCard = memo(function SkeletonCard() {
+    return (<div className="card skeleton-card">
+            <div className="skeleton skeleton-img"/>
+            <div className="skeleton-body">
+                <div className="skeleton skeleton-line"/>
+                <div className="skeleton skeleton-line short"/>
+                <div className="skeleton-actions">
+                    <div className="skeleton skeleton-btn"/>
+                    <div className="skeleton skeleton-btn"/>
+                    <div className="skeleton skeleton-btn"/>
+                </div>
+            </div>
+        </div>);
+});
+const ProfileCard = memo(function ProfileCard({ g, votes, failedImages, onVote, onOpen, onSendDM, onImageError, useProxyImages, tr, onTgCheck }) {
+    const { bio, stats } = parseSmartBio(g.bio, g.name);
+    const isLiked = votes[g.url] === 'like';
+    const isDisliked = votes[g.url] === 'dislike';
+    const [checkingTg, setCheckingTg] = useState(false);
+    const photoSrc = g.photo
+        ? (useProxyImages
+            ? `/api/proxy-image?url=${encodeURIComponent(g.photo)}`
+            : `https://images.weserv.nl/?url=${encodeURIComponent(g.photo)}`)
+        : null;
+    const handleTgClick = async (e) => {
+        e.stopPropagation();
+        const tgUrl = `https://t.me/${g.name}`;
+        // If already verified, just open
+        if (g.tg_status === 'valid') {
+            window.open(tgUrl, '_blank');
+            return;
+        }
+        // Open popup first
+        const popup = window.open(tgUrl, '_blank', 'width=600,height=800');
+        setCheckingTg(true);
+        try {
+            const resp = await fetch(`/api/check-telegram?url=${encodeURIComponent(g.name)}`);
+            const data = await resp.json();
+            if (data.success) {
+                if (data.status === 'invalid') {
+                    if (popup)
+                        popup.close();
+                }
+                if (onTgCheck)
+                    onTgCheck(g.url, data.status);
+            }
+        }
+        catch (err) {
+            console.error('TG check failed', err);
+        }
+        finally {
+            setCheckingTg(false);
+        }
+    };
+    return (<div className={`card ${isLiked ? 'status-like' : isDisliked ? 'status-dislike' : ''}`}>
+            <div className="photoWrap">
+                {photoSrc && !failedImages.has(g.url) ? (<img src={photoSrc} referrerPolicy="no-referrer" loading="lazy" decoding="async" onError={() => onImageError(g.url)} alt={g.name}/>) : (<div style={{ width: '100%', height: '100%', background: '#1a1a1e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: 12 }}>
+                        No Photo
+                    </div>)}
+                <div className="overlay"/>
+                <div className="statusStack">
+                    {g.matchScore !== undefined && (<div className="badge matchTag" style={{ background: g.matchScore > 80 ? 'hsla(var(--primary), 0.8)' : 'hsla(var(--text-dim), 0.2)' }}>
+                            🎯 {g.matchScore}%
+                        </div>)}
+                    {isLiked && <div className="badge likedTag">{tr('badge_like')}</div>}
+                    {isDisliked && <div className="badge dislikedTag">{tr('badge_skip')}</div>}
+                    {g.viewed && <div className="badge viewedTag">{tr('badge_viewed')}</div>}
+                    {g.dmSent && <div className="badge dmTag">{tr('badge_dm_sent')}</div>}
+                </div>
+                <div className="linksStack">
+                    {g.tg_status !== 'invalid' && (<div className={`socialBtn ${g.tg_status === 'valid' ? 'tg-valid' : ''} ${checkingTg ? 'loading' : ''}`} title="Telegram" onClick={handleTgClick} style={{ position: 'relative' }}>
+                            <TelegramIcon />
+                            {!g.tg_status && !checkingTg && (<div className="status-badge-mini" style={{ position: 'absolute', top: -4, right: -4, background: 'orange', borderRadius: '50%', width: 12, height: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid white' }}>
+                                    <HelpIcon />
+                                </div>)}
+                        </div>)}
+                    <div className="socialBtn" title="Instagram" onClick={() => onOpen(g)}>
+                        <InstagramIcon />
                     </div>
                 </div>
             </div>
-
-            <div className="card-controls" style={{ padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '8px', background: 'var(--bg-panel)' }}>
-                <button className="btn btn-secondary" style={{ flex: 1, padding: '8px' }} onClick={() => onOpen(g.url)}>
-                    OPEN
-                </button>
-                <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
-                    <button className={`btn`} style={{ flex: 1, background: vote === 'like' ? 'hsl(var(--success))' : 'hsla(var(--success), 0.1)', color: vote === 'like' ? '#fff' : 'hsl(var(--success))', padding: '8px' }} onClick={() => onVote(g.url, 'like')}>
-                        LIKE
-                    </button>
-                    <button className={`btn`} style={{ flex: 1, background: vote === 'dislike' ? 'hsl(var(--danger))' : 'hsla(var(--danger), 0.1)', color: vote === 'dislike' ? '#fff' : 'hsl(var(--danger))', padding: '8px' }} onClick={() => onVote(g.url, 'dislike')}>
-                        NO
-                    </button>
+            <div className="cardBody">
+                <div className="name">
+                    <span>{g.name}</span>
+                    <span className="timestamp">{new Date(g.timestamp).toLocaleDateString()}</span>
                 </div>
-                <button className={`btn ${g.dmSent ? 'btn-secondary' : 'btn-primary'}`} style={{ width: '100%', padding: '8px' }} onClick={() => onSendDM(g.url)}>
-                    {g.dmSent ? 'DM SENT' : 'SEND DM'}
-                </button>
-
-                <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '4px' }}>
-                    <button className="btn btn-secondary" style={{ flex: 1, padding: '4px', fontSize: '10px' }} title="Check TG" onClick={() => onTgCheck(g.name)}>TG</button>
-                    <button className="btn btn-secondary" style={{ flex: 1, padding: '4px', fontSize: '10px' }} title="Save as Donor" onClick={() => onSaveAsDonor(g.url)}>DONOR</button>
-                    <button className="btn btn-secondary" style={{ flex: 1, padding: '4px', fontSize: '10px', color: 'hsl(var(--danger))' }} title="Delete" onClick={() => onDeleteProfile(g.url)}>DEL</button>
+                <div className="bio-container">
+                    <div className="bio-text" title={g.bio}>{bio}</div>
+                    <div style={{ marginTop: 'auto' }}>
+                        {stats.map((s, i) => <span key={i} className="followers-text">{s}</span>)}
+                    </div>
+                </div>
+                <div className="actions">
+                    <button className={`actionBtn likeBtn${isLiked ? ' active' : ''}`} onClick={() => onVote(g, 'like')} title={tr('badge_like')}>
+                        <HeartIcon filled={isLiked}/>
+                    </button>
+                    <button className={`actionBtn dislikeBtn${isDisliked ? ' active' : ''}`} onClick={() => onVote(g, 'dislike')} title={tr('badge_skip')}>
+                        <XIcon />
+                    </button>
+                    <button className="actionBtn sendBtn" onClick={() => onSendDM(g)} title="Send DM">
+                        <SendIcon />
+                    </button>
                 </div>
             </div>
-        </div>
-    );
-}
-
-export default function ProfilesTab({ girls, votes, tr, onVote, onDeleteProfile, onSaveAsDonor, useProxyImages, isLoading, failedImages, onImageError, onOpen, onSendDM, onTgCheck, onRefresh, authFetch, token, checkingAllTg, onCheckAllTg, restoreStatus, onRestorePhotos }) {
+        </div>);
+});
+export default function ProfilesTab({ girls, votes, viewed, sentDM, failedImages, onVote, onOpen, onSendDM, onImageError, onRefresh, useProxyImages, tr, onTgCheck, isLoading }) {
     const [filterText, setFilterText] = useState('');
-    const [filterDonor, setFilterDonor] = useState('all');
-    const [donors, setDonors] = useState([]);
-    const [filterStatus, setFilterStatus] = useState('active');
+    const [filterStatus, setFilterStatus] = useState('all');
     const [filterTgStatus, setFilterTgStatus] = useState('all');
-
-    const [hideNoImage, setHideNoImage] = useState(() => JSON.parse(localStorage.getItem('ig_hide_no_image') || 'true'));
-    const [hideViewed, setHideViewed] = useState(() => JSON.parse(localStorage.getItem('ig_hide_viewed') || 'true'));
-    const [showOnlyCity, setShowOnlyCity] = useState(() => JSON.parse(localStorage.getItem('ig_show_only_city') || 'false'));
-
+    const [sortOption, setSortOption] = useState('newest');
+    const [hideNoImage, setHideNoImage] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
+    const [checkingAllTg, setCheckingAllTg] = useState(false);
     const ITEMS_PER_PAGE = 24;
-
-    React.useEffect(() => {
-        localStorage.setItem('ig_hide_no_image', JSON.stringify(hideNoImage));
-        localStorage.setItem('ig_hide_viewed', JSON.stringify(hideViewed));
-        localStorage.setItem('ig_show_only_city', JSON.stringify(showOnlyCity));
-    }, [hideNoImage, hideViewed, showOnlyCity]);
-
-    React.useEffect(() => {
-        authFetch(`/api/donors-collected`)
-            .then(res => res.json())
-            .then(setDonors)
-            .catch(err => console.error('Failed to fetch donors', err));
-    }, [girls.length, authFetch]);
-
-    const filtered = (girls || []).filter(g => {
-        if (!g || !g.name) return false;
-        const nameVal = (g.name || '').toLowerCase();
-        const searchVal = (filterText || '').toLowerCase();
-        if (searchVal && !nameVal.includes(searchVal)) return false;
-
-        if (filterStatus === 'active' && votes[g.url] === 'dislike') return false;
-        if (filterStatus === 'unopened' && g.viewed) return false;
-        if (filterStatus === 'like' && votes[g.url] !== 'like') return false;
-        if (filterStatus === 'like_no_dm' && (votes[g.url] !== 'like' || g.dmSent)) return false;
-        if (filterStatus === 'dislike' && votes[g.url] !== 'dislike') return false;
-        if (filterStatus === 'tg' && votes[g.url] !== 'tg') return false;
-        if (filterStatus === 'no_status' && votes[g.url]) return false;
-        if (filterStatus === 'dm_sent' && !g.dmSent) return false;
-
-        if (filterTgStatus === 'yes' && g.tg_status !== 'valid') return false;
-        if (filterTgStatus === 'none' && g.tg_status) return false;
-        if (filterTgStatus === 'no' && g.tg_status !== 'invalid') return false;
-
-        if (filterDonor !== 'all' && g.donor !== filterDonor) return false;
-
-        if (hideNoImage && (!g.photo || failedImages.has(g.url))) return false;
-        if (hideViewed && (g.viewed || votes[g.url] === 'tg')) return false;
-        if (showOnlyCity && g.isInCity !== 1) return false;
-
-        return true;
+    const handleCheckAllTg = async () => {
+        const toCheck = girls.filter(g => !g.tg_status).map(g => g.name);
+        if (toCheck.length === 0) {
+            toast.error('Нет профилей без статуса для проверки');
+            return;
+        }
+        if (!confirm(`Проверить ${toCheck.length} профилей? Это может занять время.`))
+            return;
+        setCheckingAllTg(true);
+        try {
+            const resp = await fetch('/api/check-telegram-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: toCheck })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                if (onRefresh)
+                    await onRefresh();
+            }
+        }
+        catch (err) {
+            console.error('Batch TG check failed', err);
+        }
+        finally {
+            setCheckingAllTg(false);
+        }
+    };
+    const filtered = girls.filter(g => {
+        const matchesName = g.name.toLowerCase().includes(filterText.toLowerCase());
+        let matchesStatus = false;
+        if (filterStatus === 'all')
+            matchesStatus = true;
+        else if (filterStatus === 'unopened')
+            matchesStatus = !g.viewed;
+        else if (filterStatus === 'like')
+            matchesStatus = votes[g.url] === 'like';
+        else if (filterStatus === 'like_no_dm')
+            matchesStatus = votes[g.url] === 'like' && !g.dmSent;
+        else if (filterStatus === 'dislike')
+            matchesStatus = votes[g.url] === 'dislike';
+        else if (filterStatus === 'no_status')
+            matchesStatus = !votes[g.url];
+        else if (filterStatus === 'dm_sent')
+            matchesStatus = g.dmSent;
+        let matchesTg = true;
+        if (filterTgStatus === 'yes')
+            matchesTg = g.tg_status === 'valid';
+        else if (filterTgStatus === 'none')
+            matchesTg = !g.tg_status;
+        const imgOk = !hideNoImage || (g.photo && !failedImages.has(g.url));
+        return matchesName && matchesStatus && matchesTg && imgOk;
+    }).sort((a, b) => {
+        if (sortOption === 'oldest')
+            return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+        if (sortOption === 'match') {
+            const scoreA = a.matchScore !== undefined ? a.matchScore : 50;
+            const scoreB = b.matchScore !== undefined ? b.matchScore : 50;
+            if (scoreB !== scoreA)
+                return scoreB - scoreA;
+        }
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     });
-
     const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-    const current = Math.min(currentPage, totalPages);
-    const pageData = filtered.slice((current - 1) * ITEMS_PER_PAGE, current * ITEMS_PER_PAGE);
-
-    return (
-        <div className="tab-container">
-            <div className="toolbar" style={{ background: 'var(--glass)', backdropFilter: 'var(--glass-blur)', border: '1px solid var(--glass-border)', padding: '20px', borderRadius: 'var(--radius-lg)', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', boxShadow: 'var(--shadow-md)' }}>
-                <div style={{ flex: 2, minWidth: '200px' }}>
-                    <input className="text-input" style={{ width: '100%' }} placeholder={tr('search_placeholder')} value={filterText} onChange={e => { setFilterText(e.target.value); setCurrentPage(1); }} />
-                </div>
-
-                <div style={{ flex: 1, minWidth: '150px' }}>
-                    <select className="text-input" style={{ width: '100%' }} value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setCurrentPage(1); }}>
-                        <option value="all">{tr('filter_all')}</option>
-                        <option value="active">{tr('filter_active')}</option>
-                        <option value="no_status">{tr('filter_no_status')}</option>
-                        <option value="like">{tr('filter_like')}</option>
-                        <option value="like_no_dm">{tr('filter_like_no_dm')}</option>
-                        <option value="dislike">{tr('filter_dislike')}</option>
-                        <option value="tg">{tr('filter_tg')}</option>
-                        <option value="dm_sent">{tr('filter_dm_sent')}</option>
-                        <option value="unopened">{tr('filter_unopened')}</option>
-                    </select>
-                </div>
-
-                <div style={{ flex: 1, minWidth: '150px' }}>
-                    <select className="text-input" style={{ width: '100%' }} value={filterTgStatus} onChange={e => { setFilterTgStatus(e.target.value); setCurrentPage(1); }}>
-                        <option value="all">{tr('filter_tg_all')}</option>
-                        <option value="yes">{tr('filter_tg_yes')}</option>
-                        <option value="none">{tr('filter_tg_none')}</option>
-                        <option value="no">{tr('filter_tg_no')}</option>
-                    </select>
-                </div>
-
-                <div style={{ flex: 1, minWidth: '150px' }}>
-                    <select className="text-input" style={{ width: '100%' }} value={filterDonor} onChange={e => { setFilterDonor(e.target.value); setCurrentPage(1); }}>
-                        <option value="all">{tr('filter_donor_all')}</option>
-                        {donors.map(d => (<option key={d} value={d}>{d}</option>))}
-                    </select>
-                </div>
-
-                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                    <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--text-muted)' }}>
-                        <input type="checkbox" checked={hideNoImage} onChange={e => { setHideNoImage(e.target.checked); setCurrentPage(1); }} />
-                        <span>{tr('hide_no_photo')}</span>
-                    </label>
-
-                    <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--text-muted)' }}>
-                        <input type="checkbox" checked={hideViewed} onChange={e => { setHideViewed(e.target.checked); setCurrentPage(1); }} />
-                        <span>{tr('hide_viewed')}</span>
-                    </label>
-
-                    <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--text-muted)' }}>
-                        <input type="checkbox" checked={showOnlyCity} onChange={e => { setShowOnlyCity(e.target.checked); setCurrentPage(1); }} />
-                        <span>{tr('filter_only_city')}</span>
-                    </label>
-                </div>
+    const page = Math.min(currentPage, totalPages);
+    const pageData = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+    return (<div className="tab-content-fade">
+            <div className="toolbar">
+                <input className="search-input" placeholder={tr('search_placeholder')} value={filterText} onChange={e => { setFilterText(e.target.value); setCurrentPage(1); }}/>
+                <select className="select-input" value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setCurrentPage(1); }}>
+                    <option value="all">{tr('filter_all')}</option>
+                    <option value="no_status">{tr('filter_no_status')}</option>
+                    <option value="like">{tr('filter_like')}</option>
+                    <option value="like_no_dm">{tr('filter_like_no_dm')}</option>
+                    <option value="dislike">{tr('filter_dislike')}</option>
+                    <option value="dm_sent">{tr('filter_dm_sent')}</option>
+                    <option value="unopened">{tr('filter_unopened')}</option>
+                </select>
+                <select className="select-input" value={filterTgStatus} onChange={e => { setFilterTgStatus(e.target.value); setCurrentPage(1); }}>
+                    <option value="all">{tr('filter_tg_all')}</option>
+                    <option value="yes">{tr('filter_tg_yes')}</option>
+                    <option value="none">{tr('filter_tg_none')}</option>
+                </select>
+                <select className="select-input" value={sortOption} onChange={e => { setSortOption(e.target.value); setCurrentPage(1); }}>
+                    <option value="newest">{tr('sort_newest')}</option>
+                    <option value="oldest">{tr('sort_oldest')}</option>
+                    <option value="match">{tr('sort_match')}</option>
+                </select>
+                <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: 'hsl(var(--text-muted))' }}>
+                    <input type="checkbox" checked={hideNoImage} onChange={e => { setHideNoImage(e.target.checked); setCurrentPage(1); }} style={{ width: '16px', height: '16px', accentColor: 'hsl(var(--primary))' }}/>
+                    {tr('hide_no_photo')}
+                </label>
+                <button className="select-input" style={{
+            padding: '0 16px',
+            cursor: 'pointer',
+            fontSize: '13px',
+            fontWeight: 600,
+            background: 'hsl(var(--primary))',
+            color: 'white',
+            border: 'none',
+            height: '38px',
+            borderRadius: '8px',
+            opacity: checkingAllTg ? 0.7 : 1,
+            transition: 'all 0.2s ease',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+        }} onClick={handleCheckAllTg} disabled={checkingAllTg}>
+                    {checkingAllTg ? (<span className="loading-spinner-mini"/>) : (<TelegramIcon style={{ width: 16, height: 16 }}/>)}
+                    {checkingAllTg ? 'Checking...' : tr('btn_check_all_tg')}
+                </button>
+                <span style={{ fontSize: 13, color: 'hsl(var(--text-dim))', marginLeft: 'auto', fontWeight: 600 }}>
+                    {filtered.length} профилей
+                </span>
             </div>
 
-            <div className="profile-grid">
-                {isLoading ? (
-                    Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
-                ) : (
-                    pageData.map(g => (
-                        <ProfileCard key={g.url} g={g} votes={votes} failedImages={failedImages} onVote={onVote} onOpen={onOpen} onSendDM={onSendDM} onImageError={onImageError} useProxyImages={useProxyImages} tr={tr} onTgCheck={onTgCheck} onDeleteProfile={onDeleteProfile} onSaveAsDonor={onSaveAsDonor} authFetch={authFetch} token={token} />
-                    ))
-                )}
-                {!isLoading && pageData.length === 0 && (
-                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '120px 0', color: 'var(--text-dim)', fontSize: '18px', fontFamily: 'Space Grotesk' }}>
-                        No profiles match your filters.
-                    </div>
-                )}
-            </div>
+            <main className="grid">
+                {isLoading ? (Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i}/>)) : (pageData.map(g => (<ProfileCard key={g.url} g={g} votes={votes} failedImages={failedImages} onVote={onVote} onOpen={onOpen} onSendDM={onSendDM} onImageError={onImageError} useProxyImages={useProxyImages} tr={tr} onTgCheck={onTgCheck}/>)))}
+                {!isLoading && pageData.length === 0 && (<div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '100px 0', color: 'hsl(var(--text-dim))', fontSize: '16px' }}>
+                        Нет профилей по выбранным фильтрам
+                    </div>)}
+            </main>
 
-            {totalPages > 1 && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', marginTop: '48px', padding: '24px', borderTop: '1px solid var(--border)' }}>
-                    <button className="btn btn-secondary" style={{ minWidth: '120px' }} disabled={current === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-                        {tr('prev')}
-                    </button>
-                    <span className="page-info" style={{ fontFamily: 'Space Grotesk', fontWeight: '600', fontSize: '16px' }}>
-                        {current} <span style={{ color: 'var(--text-dim)', fontWeight: '400' }}>/</span> {totalPages}
-                    </span>
-                    <button className="btn btn-secondary" style={{ minWidth: '120px' }} disabled={current === totalPages} onClick={() => { setCurrentPage(p => p + 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-                        {tr('next')}
-                    </button>
-                </div>
-            )}
-        </div>
-    );
+            {totalPages > 1 && (<div className="pagination">
+                    <button className="pageBtn" disabled={page === 1} onClick={() => setCurrentPage(p => p - 1)}>{tr('prev')}</button>
+                    <span className="page-info">{tr('page_info').replace('{current}', String(page)).replace('{total}', String(totalPages))}</span>
+                    <button className="pageBtn" disabled={page === totalPages} onClick={() => setCurrentPage(p => p + 1)}>{tr('next')}</button>
+                </div>)}
+        </div>);
 }
