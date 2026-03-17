@@ -58,7 +58,11 @@
 body,
 html {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    sans-serif;
   background-color: hsl(var(--bg-deep));
   color: hsl(var(--text-main));
   -webkit-font-smoothing: antialiased;
@@ -68,7 +72,7 @@ html {
 
 /* Background Atmosphere */
 body::before {
-  content: "";
+  content: '';
   position: fixed;
   inset: 0;
   background:
@@ -335,7 +339,6 @@ body::before {
 
 .viewedTag {
   background: hsla(var(--accent), 0.8);
-
 }
 
 .matchTag {
@@ -496,7 +499,7 @@ body::before {
 }
 
 .donor-popover::after {
-  content: "";
+  content: '';
   position: absolute;
   top: 100%;
   left: 20px;
@@ -903,11 +906,13 @@ body::before {
 .account-card:hover {
   background: hsla(var(--bg-elevated), 0.8);
   border-color: hsla(var(--primary), 0.4);
-  box-shadow: 0 8px 24px hsla(0, 0%, 0%, 0.2), 0 0 0 1px hsla(var(--primary), 0.01);
+  box-shadow:
+    0 8px 24px hsla(0, 0%, 0%, 0.2),
+    0 0 0 1px hsla(var(--primary), 0.01);
 }
 
 .account-card::before {
-  content: "";
+  content: '';
   position: absolute;
   top: 0;
   left: 0;
@@ -1040,13 +1045,14 @@ body::before {
   color: hsl(var(--text-dim));
 }
 
-
 /* Skeleton Loading */
 .skeleton {
-  background: linear-gradient(90deg,
-      hsl(var(--bg-elevated)) 25%,
-      hsl(var(--bg-card)) 50%,
-      hsl(var(--bg-elevated)) 75%);
+  background: linear-gradient(
+    90deg,
+    hsl(var(--bg-elevated)) 25%,
+    hsl(var(--bg-card)) 50%,
+    hsl(var(--bg-elevated)) 75%
+  );
   background-size: 200% 100%;
   animation: skeleton-loading 1.5s infinite linear;
   border-radius: var(--radius-sm);
@@ -1865,7 +1871,7 @@ body::before {
 }
 
 /* react-hot-toast production fix */
-[id^="react-hot-toast"] {
+[id^='react-hot-toast'] {
   z-index: 99999 !important;
 }
 

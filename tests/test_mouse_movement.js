@@ -4,10 +4,10 @@ const path = require('path');
 const fs = require('fs');
 
 async function testMouseMovement() {
-    console.log('🧪 Starting mouse movement test...');
+  console.log('🧪 Starting mouse movement test...');
 
-    // Simple HTML to visualize movement
-    const htmlContent = `
+  // Simple HTML to visualize movement
+  const htmlContent = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -60,36 +60,35 @@ async function testMouseMovement() {
     </html>
     `;
 
-    const tempHtml = path.join(__dirname, 'mouse_test.html');
-    fs.writeFileSync(tempHtml, htmlContent);
+  const tempHtml = path.join(__dirname, 'mouse_test.html');
+  fs.writeFileSync(tempHtml, htmlContent);
 
-    const { browser, context } = await createBrowserContext({ id: 'test_mouse' }, false); // Headful to see
-    const page = await context.newPage();
+  const { browser, context } = await createBrowserContext({ id: 'test_mouse' }, false); // Headful to see
+  const page = await context.newPage();
 
-    try {
-        await page.goto('file://' + tempHtml);
-        await wait(1000);
+  try {
+    await page.goto('file://' + tempHtml);
+    await wait(1000);
 
-        console.log('🖱️ Moving to (600, 400)...');
-        await humanMove(page, 650, 425, { startX: 100, startY: 100 });
+    console.log('🖱️ Moving to (600, 400)...');
+    await humanMove(page, 650, 425, { startX: 100, startY: 100 });
 
-        await wait(1000);
+    await wait(1000);
 
-        console.log('🖱️ Clicking the target...');
-        await humanClick(page, '#target');
+    console.log('🖱️ Clicking the target...');
+    await humanClick(page, '#target');
 
-        await wait(2000);
+    await wait(2000);
 
-        const screenshotPath = path.join(__dirname, 'mouse_movement_result.png');
-        await page.screenshot({ path: screenshotPath });
-        console.log('✅ Test screenshot saved to:', screenshotPath);
-
-    } catch (e) {
-        console.error('❌ Test failed:', e);
-    } finally {
-        await browser.close();
-        if (fs.existsSync(tempHtml)) fs.unlinkSync(tempHtml);
-    }
+    const screenshotPath = path.join(__dirname, 'mouse_movement_result.png');
+    await page.screenshot({ path: screenshotPath });
+    console.log('✅ Test screenshot saved to:', screenshotPath);
+  } catch (e) {
+    console.error('❌ Test failed:', e);
+  } finally {
+    await browser.close();
+    if (fs.existsSync(tempHtml)) fs.unlinkSync(tempHtml);
+  }
 }
 
 testMouseMovement();

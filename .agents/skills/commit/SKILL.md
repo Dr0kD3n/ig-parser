@@ -39,20 +39,20 @@ The header is required. Scope is optional. All lines must stay under 100 charact
 
 ## Commit Types
 
-| Type | Purpose |
-|------|---------|
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `ref` | Refactoring (no behavior change) |
-| `perf` | Performance improvement |
-| `docs` | Documentation only |
-| `test` | Test additions or corrections |
-| `build` | Build system or dependencies |
-| `ci` | CI configuration |
-| `chore` | Maintenance tasks |
-| `style` | Code formatting (no logic change) |
-| `meta` | Repository metadata |
-| `license` | License changes |
+| Type      | Purpose                           |
+| --------- | --------------------------------- |
+| `feat`    | New feature                       |
+| `fix`     | Bug fix                           |
+| `ref`     | Refactoring (no behavior change)  |
+| `perf`    | Performance improvement           |
+| `docs`    | Documentation only                |
+| `test`    | Test additions or corrections     |
+| `build`   | Build system or dependencies      |
+| `ci`      | CI configuration                  |
+| `chore`   | Maintenance tasks                 |
+| `style`   | Code formatting (no logic change) |
+| `meta`    | Repository metadata               |
+| `license` | License changes                   |
 
 ## Subject Line Rules
 

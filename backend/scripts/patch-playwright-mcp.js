@@ -15,8 +15,8 @@ const path = require('path');
 // Robust node_modules search: check current, parent, or grandparent (for backend/scripts/ or dist/scripts/)
 let nodeModulesBase = '';
 const pathsToCheck = [
-  path.join(__dirname, '..', 'node_modules'),      // dist/scripts/ -> dist/node_modules/
-  path.join(__dirname, '..', '..', 'node_modules') // backend/scripts/ -> root/node_modules/
+  path.join(__dirname, '..', 'node_modules'), // dist/scripts/ -> dist/node_modules/
+  path.join(__dirname, '..', '..', 'node_modules'), // backend/scripts/ -> root/node_modules/
 ];
 
 for (const p of pathsToCheck) {
@@ -32,7 +32,6 @@ if (!nodeModulesBase) {
 }
 
 const mcpBundlePath = path.join(nodeModulesBase, 'playwright-core', 'lib', 'mcpBundle.js');
-
 
 const stub = `"use strict";
 // Stubbed by patch-playwright-mcp.js to avoid pkg snapshot crash.

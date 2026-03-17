@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 const { AppError, BrowserError, SelectorError, NetworkError } = require('../backend/lib/errors');
 const { handleError } = require('../backend/lib/error-handler');
@@ -6,21 +6,21 @@ const { handleError } = require('../backend/lib/error-handler');
 console.log('--- Testing Custom Errors ---');
 
 try {
-    throw new SelectorError('.test-selector', 'Element not found in test');
+  throw new SelectorError('.test-selector', 'Element not found in test');
 } catch (e) {
-    handleError(e);
+  handleError(e);
 }
 
 try {
-    throw new NetworkError('Proxy connection failed', { proxy: 'http://localhost:8080' });
+  throw new NetworkError('Proxy connection failed', { proxy: 'http://localhost:8080' });
 } catch (e) {
-    handleError(e);
+  handleError(e);
 }
 
 try {
-    throw new AppError('General application failure');
+  throw new AppError('General application failure');
 } catch (e) {
-    handleError(e);
+  handleError(e);
 }
 
 console.log('\n--- Testing Unexpected Error ---');

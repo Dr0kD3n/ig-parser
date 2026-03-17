@@ -1,36 +1,46 @@
-"use strict";
-const sqlite3_1 = require("sqlite3");
-Object.defineProperty(exports, "__esModule", { value: true });
+'use strict';
+const sqlite3_1 = require('sqlite3');
+Object.defineProperty(exports, '__esModule', { value: true });
 exports.getDB = getDB;
 
-const sqlite_1 = require("sqlite");
-const path_1 = require("path");
-const promises_1 = require("fs/promises");
-const utils_1 = require("./utils");
-const DB_PATH = process.env.DATABASE_URL || (process.env.APP_ROOT
-    ? path_1.join(process.env.APP_ROOT, 'config', process.env.NODE_ENV === 'test' ? 'database_test.sqlite' : 'database.sqlite')
-    : path_1.join((0, utils_1.getRootPath)(), 'config', process.env.NODE_ENV === 'test' ? 'database_test.sqlite' : 'database.sqlite'));
+const sqlite_1 = require('sqlite');
+const path_1 = require('path');
+const promises_1 = require('fs/promises');
+const utils_1 = require('./utils');
+const DB_PATH =
+  process.env.DATABASE_URL ||
+  (process.env.APP_ROOT
+    ? path_1.join(
+      process.env.APP_ROOT,
+      'config',
+      process.env.NODE_ENV === 'test' ? 'database_test.sqlite' : 'database.sqlite'
+    )
+    : path_1.join(
+      (0, utils_1.getRootPath)(),
+      'config',
+      process.env.NODE_ENV === 'test' ? 'database_test.sqlite' : 'database.sqlite'
+    ));
 const CONFIG_DIR = path_1.dirname(DB_PATH);
 let dbInstance = null;
-const resetDB = () => { dbInstance = null; };
+const resetDB = () => {
+  dbInstance = null;
+};
 exports.resetDB = resetDB;
 async function getDB() {
-    if (dbInstance)
-        return dbInstance;
-    // Обеспечиваем существование папки config если это не :memory:
-    if (DB_PATH !== ':memory:') {
-        try {
-            await promises_1.mkdir(CONFIG_DIR, { recursive: true });
-        }
-        catch (e) { }
-    }
-    dbInstance = await (0, sqlite_1.open)({
-        filename: DB_PATH,
-        driver: sqlite3_1.Database
-    });
-    await dbInstance.run('PRAGMA journal_mode = WAL');
-    await dbInstance.run('PRAGMA busy_timeout = 5000');
-    await dbInstance.exec(`
+  if (dbInstance) return dbInstance;
+  // Обеспечиваем существование папки config если это не :memory:
+  if (DB_PATH !== ':memory:') {
+    try {
+      await promises_1.mkdir(CONFIG_DIR, { recursive: true });
+    } catch (e) { }
+  }
+  dbInstance = await (0, sqlite_1.open)({
+    filename: DB_PATH,
+    driver: sqlite3_1.Database,
+  });
+  await dbInstance.run('PRAGMA journal_mode = WAL');
+  await dbInstance.run('PRAGMA busy_timeout = 5000');
+  await dbInstance.exec(`
         CREATE TABLE IF NOT EXISTS accounts (
             id TEXT PRIMARY KEY,
             name TEXT,
@@ -132,168 +142,164 @@ async function getDB() {
         );
 
     `);
-    try {
-        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN tg_status TEXT`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN username TEXT`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN followers_count INTEGER DEFAULT 0`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN publications_count INTEGER DEFAULT 0`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN donor TEXT`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN following_count INTEGER DEFAULT 0`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN posts_count INTEGER DEFAULT 0`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN isInCity INTEGER DEFAULT 0`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE donors ADD COLUMN posts_count INTEGER DEFAULT 0`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN fingerprint TEXT`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN local_storage TEXT`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN warmup_score INTEGER DEFAULT 0`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
-    try {
-        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN last_warmup TEXT`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN tg_status TEXT`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN username TEXT`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN followers_count INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN publications_count INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN donor TEXT`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN following_count INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN posts_count INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN isInCity INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE donors ADD COLUMN posts_count INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN fingerprint TEXT`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN local_storage TEXT`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN warmup_score INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+  try {
+    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN last_warmup TEXT`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
 
-    try {
-        await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN active_checker INTEGER DEFAULT 0`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
+  try {
+    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN active_checker INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
 
-    try {
-        await dbInstance.exec(`ALTER TABLE donors ADD COLUMN publications_count INTEGER DEFAULT 0`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
+  try {
+    await dbInstance.exec(`ALTER TABLE donors ADD COLUMN publications_count INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
 
-    try {
-        await dbInstance.exec(`ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0`);
-    }
-    catch (e) {
-        // Ignore if column already exists
-    }
+  try {
+    await dbInstance.exec(`ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
 
-    // Seed initial admin if not exists (password: admin123)
-    const adminExists = await dbInstance.get("SELECT * FROM users WHERE role = 'admin'");
-    if (!adminExists) {
-        const bcrypt = require('bcryptjs');
-        const hash = bcrypt.hashSync('admin123', 10);
-        await dbInstance.run("INSERT INTO users (email, password, role) VALUES (?, ?, ?)", ['admin@igbot.com', hash, 'admin']);
-    }
+  // Seeding removed for security.
+  /*
+  const adminExists = await dbInstance.get("SELECT * FROM users WHERE role = 'admin'");
+  if (!adminExists) {
+    const bcrypt = require('bcryptjs');
+    const hash = bcrypt.hashSync('admin123', 10);
+    await dbInstance.run('INSERT INTO users (email, password, role) VALUES (?, ?, ?)', [
+      'admin@igbot.com',
+      hash,
+      'admin',
+    ]);
+  }
 
-    // Seed one registration code for testing
-    const codeCount = (await dbInstance.get("SELECT count(*) as count FROM registration_codes")).count;
-    if (codeCount === 0) {
-        await dbInstance.run("INSERT INTO registration_codes (code) VALUES (?)", ['WELCOME']);
-    }
+  const codeCount = (await dbInstance.get('SELECT count(*) as count FROM registration_codes'))
+    .count;
+  if (codeCount === 0) {
+    await dbInstance.run('INSERT INTO registration_codes (code) VALUES (?)', ['WELCOME']);
+  }
+  */
 
-    return dbInstance;
+  return dbInstance;
 }
 
 async function importLegacyData(db) {
-    const fs = require('fs/promises');
-    const rootPath = (0, utils_1.getRootPath)();
+  const fs = require('fs/promises');
+  const rootPath = (0, utils_1.getRootPath)();
 
-    const imports = [
-        { file: 'cityKeywords.txt', type: 'city', table: 'keywords' },
-        { file: 'names.txt', type: 'name', table: 'keywords' },
-        { file: 'nicheKeywords.txt', type: 'niche', table: 'keywords' },
-        { file: 'profiles.txt', type: 'donor', table: 'urls' },
-        { file: 'donors.txt', type: 'donor', table: 'urls' }
-    ];
+  const imports = [
+    { file: 'cityKeywords.txt', type: 'city', table: 'keywords' },
+    { file: 'names.txt', type: 'name', table: 'keywords' },
+    { file: 'nicheKeywords.txt', type: 'niche', table: 'keywords' },
+    { file: 'profiles.txt', type: 'donor', table: 'urls' },
+    { file: 'donors.txt', type: 'donor', table: 'urls' },
+  ];
 
-    for (const item of imports) {
-        try {
-            const filePath = (0, path_1.join)(rootPath, 'config', item.file);
-            const stats = await fs.stat(filePath).catch(() => null);
-            if (!stats) continue;
+  for (const item of imports) {
+    try {
+      const filePath = (0, path_1.join)(rootPath, 'config', item.file);
+      const stats = await fs.stat(filePath).catch(() => null);
+      if (!stats) continue;
 
-            // Check if we already have data of this type
-            let exists;
-            if (item.table === 'keywords') {
-                exists = await db.get(`SELECT id FROM keywords WHERE type = ? LIMIT 1`, [item.type]);
-            } else {
-                exists = await db.get(`SELECT id FROM urls WHERE type = ? LIMIT 1`, [item.type]);
-            }
+      // Check if we already have data of this type
+      let exists;
+      if (item.table === 'keywords') {
+        exists = await db.get(`SELECT id FROM keywords WHERE type = ? LIMIT 1`, [item.type]);
+      } else {
+        exists = await db.get(`SELECT id FROM urls WHERE type = ? LIMIT 1`, [item.type]);
+      }
 
-            if (!exists) {
-                console.log(`[IMPORT] Found legacy file ${item.file}, importing to ${item.table}...`);
-                const content = await fs.readFile(filePath, 'utf8');
-                const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
+      if (!exists) {
+        console.log(`[IMPORT] Found legacy file ${item.file}, importing to ${item.table}...`);
+        const content = await fs.readFile(filePath, 'utf8');
+        const lines = content
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean);
 
-                for (const line of lines) {
-                    if (item.table === 'keywords') {
-                        await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, [item.type, line]);
-                    } else {
-                        // For URLs, we use normalizeUrl from config or just trim
-                        // To avoid circular dependency, we'll do basic normalization here
-                        const normUrl = line.replace(/\/$/, '');
-                        await db.run(`INSERT OR IGNORE INTO urls (type, url) VALUES (?, ?)`, [item.type, normUrl]);
-                    }
-                }
-                console.log(`[IMPORT] Successfully imported ${lines.length} items from ${item.file}`);
-            }
-        } catch (err) {
-            console.error(`[IMPORT ERROR] Failed to import ${item.file}:`, err.message);
+        for (const line of lines) {
+          if (item.table === 'keywords') {
+            await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, [item.type, line]);
+          } else {
+            // For URLs, we use normalizeUrl from config or just trim
+            // To avoid circular dependency, we'll do basic normalization here
+            const normUrl = line.replace(/\/$/, '');
+            await db.run(`INSERT OR IGNORE INTO urls (type, url) VALUES (?, ?)`, [
+              item.type,
+              normUrl,
+            ]);
+          }
         }
+        console.log(`[IMPORT] Successfully imported ${lines.length} items from ${item.file}`);
+      }
+    } catch (err) {
+      console.error(`[IMPORT ERROR] Failed to import ${item.file}:`, err.message);
     }
+  }
 }

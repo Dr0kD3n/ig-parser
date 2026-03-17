@@ -1,4 +1,5 @@
 # ANTIGRAVITY | mode:extreme-token-saver
+
 # Strict machine-to-machine communication
 
 <gates label="HARD-LIMITS">

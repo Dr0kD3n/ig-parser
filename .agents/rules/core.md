@@ -19,13 +19,13 @@ WEB:
   seo: Auto-Meta | 1x-H1 | Semantic-HTML | Unique-IDs
 
 RESEARCH:
-  trigger: pre-coding
-  action: check-KI-summaries(C:\Users\root\.gemini\antigravity\knowledge)
-  exception: trivial-task
+trigger: pre-coding
+action: check-KI-summaries(C:\Users\root\.gemini\antigravity\knowledge)
+exception: trivial-task
 
 CONTEXT:
-  priority: KI > Logs
-  logs: C:\Users\root\.gemini\antigravity\brain\<id>\.system_generated\logs
+priority: KI > Logs
+logs: C:\Users\root\.gemini\antigravity\brain\<id>\.system_generated\logs
 </gates>
 
 <rules>
@@ -34,7 +34,7 @@ ORCHESTRATION:
   tools: parallel-execution | JSON-params
 
 COMMUNICATION:
-  style: GH-Markdown | Bold-Key-Terms
-  trigger: session-start → announce-skills
-  policy: proactive-edits | auto-verify-builds | clarify-if-ambiguous
+style: GH-Markdown | Bold-Key-Terms
+trigger: session-start → announce-skills
+policy: proactive-edits | auto-verify-builds | clarify-if-ambiguous
 </rules>

@@ -1,19 +1,19 @@
-const express_1 = require("express");
-const fs_1 = require("fs");
-const path_1 = require("path");
-const http_1 = require("http");
-const https_1 = require("https");
-const browser_1 = require("./lib/browser");
-const utils_1 = require("./lib/utils");
-const state_1 = require("./lib/state");
-const db_1 = require("./lib/db");
-const child_process_1 = require("child_process");
-const events_1 = require("events");
-const fingerprint_1 = require("./lib/fingerprint");
-const reporter_1 = require("./lib/reporter");
-const config_1 = require("./lib/config");
-const warmup_1 = require("./lib/warmup");
-const { restorePhotos, stopRestorePhotos } = require("./lib/photo-restorer");
+const express_1 = require('express');
+const fs_1 = require('fs');
+const path_1 = require('path');
+const http_1 = require('http');
+const https_1 = require('https');
+const browser_1 = require('./lib/browser');
+const utils_1 = require('./lib/utils');
+const state_1 = require('./lib/state');
+const db_1 = require('./lib/db');
+const child_process_1 = require('child_process');
+const events_1 = require('events');
+const fingerprint_1 = require('./lib/fingerprint');
+const reporter_1 = require('./lib/reporter');
+const config_1 = require('./lib/config');
+const warmup_1 = require('./lib/warmup');
+const { restorePhotos, stopRestorePhotos } = require('./lib/photo-restorer');
 
 const logEmitter = new events_1.EventEmitter();
 const LOGS_FILE = path_1.join(utils_1.getRootPath(), 'data', 'logs.json');
@@ -22,95 +22,83 @@ const { verifyToken, isAdmin } = require('./lib/auth-middleware');
 const { rateLimit } = require('express-rate-limit');
 const updater = require('./lib/updater');
 const pkg = JSON.parse(fs_1.readFileSync(path_1.join(__dirname, 'package.json'), 'utf8'));
+const { encrypt, decrypt } = require('./lib/encryption');
 
 // Rate limiters
 const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 20, // limit each IP to 20 requests per windowMs
-    message: { error: 'Too many requests, please try again later.' },
-    skip: (req) => {
-        const ip = req.ip || req.connection.remoteAddress;
-        return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost';
-    }
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // limit each IP to 20 requests per windowMs
+  message: { error: 'Too many requests, please try again later.' },
 });
 
 const apiLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 minute
-    max: 100, // limit each IP to 100 requests per minute
-    message: { error: 'Rate limit exceeded' },
-    skip: (req) => {
-        const ip = req.ip || req.connection.remoteAddress;
-        return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost';
-    }
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 100, // limit each IP to 100 requests per minute
+  message: { error: 'Rate limit exceeded' },
 });
-
 
 setupProcessHandlers();
 
 let botProcesses = {
-    index: null,
-    parser: null
+  index: null,
+  parser: null,
 };
 // Tracking sessions for log grouping
 let currentSessionId = Date.now().toString();
 function refreshSession() {
-    currentSessionId = Date.now().toString();
+  currentSessionId = Date.now().toString();
 }
 let historicalLogs = [];
 const originalLog = console.log;
 const originalError = console.error;
 const originalWarn = console.warn;
 try {
-    if (fs_1.existsSync(LOGS_FILE)) {
-        historicalLogs = JSON.parse(fs_1.readFileSync(LOGS_FILE, 'utf8'));
-    }
-}
-catch (e) {
-    originalLog('Error loading logs:', e);
+  if (fs_1.existsSync(LOGS_FILE)) {
+    historicalLogs = JSON.parse(fs_1.readFileSync(LOGS_FILE, 'utf8'));
+  }
+} catch (e) {
+  originalLog('Error loading logs:', e);
 }
 function saveLogs() {
-    try {
-        fs_1.writeFileSync(LOGS_FILE, JSON.stringify(historicalLogs.slice(-1000)));
-    }
-    catch (e) {
-        originalLog('Error saving logs:', e);
-    }
+  try {
+    fs_1.writeFileSync(LOGS_FILE, JSON.stringify(historicalLogs.slice(-1000)));
+  } catch (e) {
+    originalLog('Error saving logs:', e);
+  }
 }
 let saveLogsTimer = null;
 function debouncedSaveLogs() {
-    if (saveLogsTimer)
-        return;
-    saveLogsTimer = setTimeout(() => {
-        saveLogsTimer = null;
-        saveLogs();
-    }, 10000); // Save every 10 seconds instead of 2 to reduce I/O
+  if (saveLogsTimer) return;
+  saveLogsTimer = setTimeout(() => {
+    saveLogsTimer = null;
+    saveLogs();
+  }, 10000); // Save every 10 seconds instead of 2 to reduce I/O
 }
 function broadcastLog(source, message) {
-    const logEntry = {
-        timestamp: new Date().toISOString(),
-        source,
-        message: message.toString().trim(),
-        sessionId: currentSessionId
-    };
-    // Use originalLog to avoid infinite recursion when console.log is overridden
-    originalLog(`[${source}] ${logEntry.message}`);
-    historicalLogs.push(logEntry);
-    if (historicalLogs.length > 1000)
-        historicalLogs.shift();
-    debouncedSaveLogs();
-    logEmitter.emit('log', logEntry);
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    source,
+    message: message.toString().trim(),
+    sessionId: currentSessionId,
+  };
+  // Use originalLog to avoid infinite recursion when console.log is overridden
+  originalLog(`[${source}] ${logEntry.message}`);
+  historicalLogs.push(logEntry);
+  if (historicalLogs.length > 1000) historicalLogs.shift();
+  debouncedSaveLogs();
+  logEmitter.emit('log', logEntry);
 }
 // Override console methods to broadcast logs (only if not in test env)
 if (process.env.NODE_ENV !== 'test') {
-    console.log = (...args) => {
-        broadcastLog('server', args.join(' '));
-    };
-    console.error = (...args) => {
-        broadcastLog('server-error', args.join(' '));
-    };
-    console.warn = (...args) => {
-        broadcastLog('server-warn', args.join(' '));
-    };
+  console.log = (...args) => {
+    broadcastLog('server', args.join(' '));
+  };
+  console.error = (...args) => {
+    broadcastLog('server-error', args.join(' '));
+  };
+  console.warn = (...args) => {
+    broadcastLog('server-warn', args.join(' '));
+  };
 }
 const app = express_1();
 const PORT = process.env.PORT || 5000;
@@ -118,122 +106,135 @@ const PORT = process.env.PORT || 5000;
 // 1. CONFIGURATION & SELECTORS
 // ==========================================
 const CONFIG = {
-    timeouts: {
-        pageLoad: 60000,
-        element: 5000,
-        typingDelayMin: 50,
-        typingDelayMax: 180,
-    },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    selectors: {
-        directMessageBtn: [
-            // RU
-            'button:has-text("Написать")',
-            'div[role="button"]:has-text("Написать")',
-            'a:has-text("Написать")',
-            'button:has-text("Отправить сообщение")',
-            'div[role="button"]:has-text("Отправить сообщение")',
-            'div[role="button"]:has-text("Сообщение")',
-            // EN
-            'div[role="button"]:has-text("Message")',
-            'button:has-text("Message")',
-            'div[role="button"]:has-text("Send Message")'
-        ],
-        optionsBtn: [
-            'svg[aria-label="Параметры"]',
-            'svg[aria-label="Options"]',
-            'svg[aria-label="More options"]',
-            'div[role="button"] > svg'
-        ],
-        menuMessageBtn: [
-            'div[role="dialog"] button:has-text("Отправить сообщение")',
-            'div[role="dialog"] button:has-text("Написать")',
-            'div[role="dialog"] button:has-text("Send message")'
-        ],
-        chatInput: 'div[role="textbox"][contenteditable="true"]',
-        notNowBtn: [
-            'button:has-text("Не сейчас")',
-            'button:has-text("Not Now")'
-        ],
-        messageRow: 'div[role="row"], div[role="listitem"]'
-    }
+  timeouts: {
+    pageLoad: 60000,
+    element: 5000,
+    typingDelayMin: 50,
+    typingDelayMax: 180,
+  },
+  userAgent:
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  selectors: {
+    directMessageBtn: [
+      // RU
+      'button:has-text("Написать")',
+      'div[role="button"]:has-text("Написать")',
+      'a:has-text("Написать")',
+      'button:has-text("Отправить сообщение")',
+      'div[role="button"]:has-text("Отправить сообщение")',
+      'div[role="button"]:has-text("Сообщение")',
+      // EN
+      'div[role="button"]:has-text("Message")',
+      'button:has-text("Message")',
+      'div[role="button"]:has-text("Send Message")',
+    ],
+    optionsBtn: [
+      'svg[aria-label="Параметры"]',
+      'svg[aria-label="Options"]',
+      'svg[aria-label="More options"]',
+      'div[role="button"] > svg',
+    ],
+    menuMessageBtn: [
+      'div[role="dialog"] button:has-text("Отправить сообщение")',
+      'div[role="dialog"] button:has-text("Написать")',
+      'div[role="dialog"] button:has-text("Send message")',
+    ],
+    chatInput: 'div[role="textbox"][contenteditable="true"]',
+    notNowBtn: ['button:has-text("Не сейчас")', 'button:has-text("Not Now")'],
+    messageRow: 'div[role="row"], div[role="listitem"]',
+  },
 };
 async function getSettings() {
-    const db = await (0, db_1.getDB)();
-    const rows = await db.all(`SELECT * FROM accounts`);
-    const accounts = rows.map(r => ({
-        id: r.id,
-        name: r.name,
-        proxy: r.proxy,
-        cookies: r.cookies,
-        fingerprint: r.fingerprint,
-        warmup_score: r.warmup_score,
-        last_warmup: r.last_warmup
-    }));
-    const activeParserIds = rows.filter(r => r.active_parser).sort((a, b) => a.active_parser - b.active_parser).map(r => r.id);
-    const activeServerIds = rows.filter(r => r.active_server).sort((a, b) => a.active_server - b.active_server).map(r => r.id);
-    const activeIndexIds = rows.filter(r => r.active_index).sort((a, b) => a.active_index - b.active_index).map(r => r.id);
-    const activeProfilesIds = rows.filter(r => r.active_profiles).sort((a, b) => a.active_profiles - b.active_profiles).map(r => r.id);
-    const activeCheckerIds = rows.filter(r => r.active_checker).sort((a, b) => a.active_checker - b.active_checker).map(r => r.id);
-    const showBrowserStr = await db.get(`SELECT value FROM settings WHERE key = 'showBrowser'`);
-    const showBrowser = showBrowserStr ? showBrowserStr.value === 'true' : false;
-    const concurrentProfilesStr = await db.get(`SELECT value FROM settings WHERE key = 'concurrentProfiles'`);
-    const concurrentProfiles = concurrentProfilesStr ? parseInt(concurrentProfilesStr.value) : 3;
-    const humanEmulationStr = await db.get(`SELECT value FROM settings WHERE key = 'humanEmulation'`);
-    const humanEmulation = humanEmulationStr ? humanEmulationStr.value === 'true' : false;
-    const dolphinTokenStr = await db.get(`SELECT value FROM settings WHERE key = 'dolphinToken'`);
-    const dolphinToken = dolphinTokenStr ? dolphinTokenStr.value : '';
-    return {
-        accounts,
-        activeParserAccountIds: activeParserIds,
-        activeServerAccountIds: activeServerIds,
-        activeIndexAccountIds: activeIndexIds,
-        activeProfilesAccountIds: activeProfilesIds,
-        activeCheckerAccountIds: activeCheckerIds,
-        showBrowser,
-        concurrentProfiles,
-        humanEmulation,
-        dolphinToken
-    };
+  const db = await (0, db_1.getDB)();
+  const rows = await db.all(`SELECT * FROM accounts`);
+  const accounts = rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    proxy: r.proxy,
+    cookies: r.cookies,
+    fingerprint: r.fingerprint,
+    warmup_score: r.warmup_score,
+    last_warmup: r.last_warmup,
+  }));
+  const activeParserIds = rows
+    .filter((r) => r.active_parser)
+    .sort((a, b) => a.active_parser - b.active_parser)
+    .map((r) => r.id);
+  const activeServerIds = rows
+    .filter((r) => r.active_server)
+    .sort((a, b) => a.active_server - b.active_server)
+    .map((r) => r.id);
+  const activeIndexIds = rows
+    .filter((r) => r.active_index)
+    .sort((a, b) => a.active_index - b.active_index)
+    .map((r) => r.id);
+  const activeProfilesIds = rows
+    .filter((r) => r.active_profiles)
+    .sort((a, b) => a.active_profiles - b.active_profiles)
+    .map((r) => r.id);
+  const activeCheckerIds = rows
+    .filter((r) => r.active_checker)
+    .sort((a, b) => a.active_checker - b.active_checker)
+    .map((r) => r.id);
+  const showBrowserStr = await db.get(`SELECT value FROM settings WHERE key = 'showBrowser'`);
+  const showBrowser = showBrowserStr ? showBrowserStr.value === 'true' : false;
+  const concurrentProfilesStr = await db.get(
+    `SELECT value FROM settings WHERE key = 'concurrentProfiles'`
+  );
+  const concurrentProfiles = concurrentProfilesStr ? parseInt(concurrentProfilesStr.value) : 3;
+  const humanEmulationStr = await db.get(`SELECT value FROM settings WHERE key = 'humanEmulation'`);
+  const humanEmulation = humanEmulationStr ? humanEmulationStr.value === 'true' : false;
+  const dolphinTokenStr = await db.get(`SELECT value FROM settings WHERE key = 'dolphinToken'`);
+  const dolphinToken = dolphinTokenStr ? dolphinTokenStr.value : '';
+  return {
+    accounts,
+    activeParserAccountIds: activeParserIds,
+    activeServerAccountIds: activeServerIds,
+    activeIndexAccountIds: activeIndexIds,
+    activeProfilesAccountIds: activeProfilesIds,
+    activeCheckerAccountIds: activeCheckerIds,
+    showBrowser,
+    concurrentProfiles,
+    humanEmulation,
+    dolphinToken,
+  };
 }
 app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
-    }
-    next();
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
 });
-app.use(express_1.json({ limit: '50mb' }));
+app.use(express_1.json({ limit: '1mb' }));
 // --- Static frontend (production build from frontend/) ---
 const baseDir = (0, utils_1.getRootPath)();
 const publicDir = path_1.join(baseDir, 'public');
 const legacyHtml = path_1.join(baseDir, 'index.html');
 if (fs_1.existsSync(publicDir)) {
-    app.use(express_1.static(publicDir));
-}
-else {
-    // --- Fallback to old single-file index.html during migration
-    app.get('/', (req, res) => {
-        if (fs_1.existsSync(legacyHtml)) {
-            res.sendFile(legacyHtml);
-        } else {
-            res.send('API Server is running. Frontend build not found.');
-        }
-    });
+  app.use(express_1.static(publicDir));
+} else {
+  // --- Fallback to old single-file index.html during migration
+  app.get('/', (req, res) => {
+    if (fs_1.existsSync(legacyHtml)) {
+      res.sendFile(legacyHtml);
+    } else {
+      res.send('API Server is running. Frontend build not found.');
+    }
+  });
 }
 // --- In-memory cache for profiles ---
 let girlsCache = null;
 let girlsCacheTime = 0;
 const CACHE_TTL = 5000; // 5 seconds
 async function getGirlsCached() {
-    const now = Date.now();
-    if (girlsCache && (now - girlsCacheTime) < CACHE_TTL)
-        return girlsCache;
-    try {
-        const db = await (0, db_1.getDB)();
-        let profiles = await db.all(`
+  const now = Date.now();
+  if (girlsCache && now - girlsCacheTime < CACHE_TTL) return girlsCache;
+  try {
+    const db = await (0, db_1.getDB)();
+    let profiles = await db.all(`
             SELECT p.*, 
                    d.name as donor_name, 
                    d.bio as donor_bio, 
@@ -244,17 +245,16 @@ async function getGirlsCached() {
             LEFT JOIN donors d ON p.donor = d.username
             ORDER BY p.timestamp DESC
         `);
-        girlsCache = profiles;
-        girlsCacheTime = now;
-    }
-    catch (e) {
-        girlsCache = [];
-    }
-    return girlsCache;
+    girlsCache = profiles;
+    girlsCacheTime = now;
+  } catch (e) {
+    girlsCache = [];
+  }
+  return girlsCache;
 }
 function invalidateGirlsCache() {
-    girlsCache = null;
-    girlsCacheTime = 0;
+  girlsCache = null;
+  girlsCacheTime = 0;
 }
 // --- Public Routes ---
 const authController = require('./lib/auth-controller');
@@ -270,884 +270,979 @@ app.use('/api/bot/start', authLimiter);
 
 // Admin Routes (these still use req.user from verifyToken)
 app.get('/api/admin/users', isAdmin, async (req, res) => {
-    // Redirection or logic for admin users would go here, 
-    // but since auth is external, we just confirm role in middleware
-    res.status(501).json({ error: 'Managed by main server' });
+  // Redirection or logic for admin users would go here,
+  // but since auth is external, we just confirm role in middleware
+  res.status(501).json({ error: 'Managed by main server' });
 });
 
 app.get('/api/girls', async (req, res) => {
-    if (restorePhotosStatus.running) invalidateGirlsCache();
-    res.json(await getGirlsCached());
+  if (restorePhotosStatus.running) invalidateGirlsCache();
+  res.json(await getGirlsCached());
 });
 app.get('/api/donors-collected', async (req, res) => {
-    try {
-        const db = await (0, db_1.getDB)();
-        const rows = await db.all(`SELECT DISTINCT donor FROM profiles WHERE donor IS NOT NULL AND donor != '' ORDER BY donor ASC`);
-        res.json(rows.map(r => r.donor));
-    }
-    catch (e) {
-        res.status(500).json([]);
-    }
+  try {
+    const db = await (0, db_1.getDB)();
+    const rows = await db.all(
+      `SELECT DISTINCT donor FROM profiles WHERE donor IS NOT NULL AND donor != '' ORDER BY donor ASC`
+    );
+    res.json(rows.map((r) => r.donor));
+  } catch (e) {
+    res.status(500).json([]);
+  }
 });
 app.get('/api/votes', async (req, res) => {
-    const profiles = await getGirlsCached();
-    const votes = {};
-    profiles?.forEach(p => {
-        if (p.vote)
-            votes[p.url] = p.vote;
-    });
-    res.json(votes);
+  const profiles = await getGirlsCached();
+  const votes = {};
+  profiles?.forEach((p) => {
+    if (p.vote) votes[p.url] = p.vote;
+  });
+  res.json(votes);
 });
 app.post('/api/vote', async (req, res) => {
-    const { url, status } = req.body;
-    if (!url || !status) {
-        return res.status(400).json({ success: false, error: 'Нет url или status' });
-    }
-    try {
-        const db = await (0, db_1.getDB)();
-        await db.run(`UPDATE profiles SET vote = ? WHERE url = ?`, [status, url]);
-        invalidateGirlsCache();
-        console.log(`[GOLOS] ${status} -> добавлен в профиль: ${url}`);
-        res.json({ success: true });
-    }
-    catch (e) {
-        console.log(`[GOLOS ERROR] Ошибка при голосовании: ${e.message}`);
-        res.status(500).json({ success: false, error: 'Ошибка сервера при сохранении' });
-    }
+  const { url, status } = req.body;
+  if (!url || !status) {
+    return res.status(400).json({ success: false, error: 'Нет url или status' });
+  }
+  try {
+    const db = await (0, db_1.getDB)();
+    await db.run(`UPDATE profiles SET vote = ? WHERE url = ?`, [status, url]);
+    invalidateGirlsCache();
+    console.log(`[GOLOS] ${status} -> добавлен в профиль: ${url}`);
+    res.json({ success: true });
+  } catch (e) {
+    console.log(`[GOLOS ERROR] Ошибка при голосовании: ${e.message}`);
+    res.status(500).json({ success: false, error: 'Ошибка сервера при сохранении' });
+  }
 });
 app.post('/api/profiles/delete', async (req, res) => {
-    const { url } = req.body;
-    if (!url) {
-        return res.status(400).json({ success: false, error: 'Нет url' });
-    }
-    try {
-        const db = await (0, db_1.getDB)();
-        await db.run(`DELETE FROM profiles WHERE url = ?`, [url]);
-        invalidateGirlsCache();
-        console.log(`[DELETE] Профиль удален: ${url}`);
-        res.json({ success: true });
-    }
-    catch (e) {
-        console.log(`[DELETE ERROR] Ошибка при удалении профиля: ${e.message}`);
-        res.status(500).json({ success: false, error: 'Ошибка сервера при удалении' });
-    }
+  const { url } = req.body;
+  if (!url) {
+    return res.status(400).json({ success: false, error: 'Нет url' });
+  }
+  try {
+    const db = await (0, db_1.getDB)();
+    await db.run(`DELETE FROM profiles WHERE url = ?`, [url]);
+    invalidateGirlsCache();
+    console.log(`[DELETE] Профиль удален: ${url}`);
+    res.json({ success: true });
+  } catch (e) {
+    console.log(`[DELETE ERROR] Ошибка при удалении профиля: ${e.message}`);
+    res.status(500).json({ success: false, error: 'Ошибка сервера при удалении' });
+  }
 });
 async function checkTelegramProfile(url) {
-    const fetchUrl = url.startsWith('http') ? url : `https://t.me/${url}`;
-    return new Promise((resolve, reject) => {
-        const req = https_1.get(fetchUrl, {
-            headers: { 'User-Agent': CONFIG.userAgent }
-        }, (res) => {
-            // Follow redirects manually if needed for t.me
-            if ([301, 302].includes(res.statusCode || 0) && res.headers.location) {
-                if (res.headers.location.includes('telegram.org') && !res.headers.location.includes('t.me')) {
-                    return resolve('invalid');
-                }
-                // Recurse for internal redirects if any
-                return checkTelegramProfile(res.headers.location).then(resolve).catch(reject);
-            }
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                // Check for profile markers
-                // Valid profiles on t.me MUST have a "tgme_page_title"
-                const hasTitle = data.includes('tgme_page_title');
-                const isMainSite = data.includes('telegram.org') && !data.includes('tgme_page');
-                if (isMainSite || !hasTitle) {
-                    resolve('invalid');
-                }
-                else {
-                    resolve('valid');
-                }
-            });
+  const fetchUrl = url.startsWith('http') ? url : `https://t.me/${url}`;
+  return new Promise((resolve, reject) => {
+    const req = https_1.get(
+      fetchUrl,
+      {
+        headers: { 'User-Agent': CONFIG.userAgent },
+      },
+      (res) => {
+        // Follow redirects manually if needed for t.me
+        if ([301, 302].includes(res.statusCode || 0) && res.headers.location) {
+          if (
+            res.headers.location.includes('telegram.org') &&
+            !res.headers.location.includes('t.me')
+          ) {
+            return resolve('invalid');
+          }
+          // Recurse for internal redirects if any
+          return checkTelegramProfile(res.headers.location).then(resolve).catch(reject);
+        }
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          // Check for profile markers
+          // Valid profiles on t.me MUST have a "tgme_page_title"
+          const hasTitle = data.includes('tgme_page_title');
+          const isMainSite = data.includes('telegram.org') && !data.includes('tgme_page');
+          if (isMainSite || !hasTitle) {
+            resolve('invalid');
+          } else {
+            resolve('valid');
+          }
         });
-        req.on('error', reject);
-        req.setTimeout(10000, () => {
-            req.destroy();
-            reject(new Error('Timeout'));
-        });
+      }
+    );
+    req.on('error', reject);
+    req.setTimeout(10000, () => {
+      req.destroy();
+      reject(new Error('Timeout'));
     });
+  });
 }
 app.get('/api/check-telegram', async (req, res) => {
-    const url = req.query.url;
-    if (!url || typeof url !== 'string')
-        return res.status(400).json({ success: false, error: 'Missing or invalid url' });
-    console.log(`[TG CHECK] Checking: ${url}`);
-    try {
-        const status = await checkTelegramProfile(url);
-        console.log(`[TG CHECK] Result for ${url}: ${status}`);
-        // Update DB
-        const db = await db_1.getDB();
-        await db.run(`UPDATE profiles SET tg_status = ? WHERE url = ? OR name = ?`, [status, url, url.replace('https://t.me/', '')]);
-        invalidateGirlsCache();
-        res.json({ success: true, status });
-    }
-    catch (e) {
-        console.error(`[TG CHECK ERROR] ${e.message}`);
-        res.status(500).json({ success: false, error: e.message });
-    }
+  const url = req.query.url;
+  if (!url || typeof url !== 'string')
+    return res.status(400).json({ success: false, error: 'Missing or invalid url' });
+  console.log(`[TG CHECK] Checking: ${url}`);
+  try {
+    const status = await checkTelegramProfile(url);
+    console.log(`[TG CHECK] Result for ${url}: ${status}`);
+    // Update DB
+    const db = await db_1.getDB();
+    await db.run(`UPDATE profiles SET tg_status = ? WHERE url = ? OR name = ?`, [
+      status,
+      url,
+      url.replace('https://t.me/', ''),
+    ]);
+    invalidateGirlsCache();
+    res.json({ success: true, status });
+  } catch (e) {
+    console.error(`[TG CHECK ERROR] ${e.message}`);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 app.post('/api/check-telegram-batch', async (req, res) => {
-    const { urls } = req.body;
-    if (!urls || !Array.isArray(urls))
-        return res.status(400).json({ success: false, error: 'Invalid urls' });
-    console.log(`[TG BATCH CHECK] Starting for ${urls.length} profiles`);
-    const results = [];
-    const BATCH_SIZE = 10;
-    const db = await (0, db_1.getDB)();
-    for (let i = 0; i < urls.length; i += BATCH_SIZE) {
-        const batch = urls.slice(i, i + BATCH_SIZE);
-        console.log(`[TG BATCH CHECK] Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(urls.length / BATCH_SIZE)}`);
-        const batchPromises = batch.map(async (url) => {
-            try {
-                const status = await checkTelegramProfile(url);
-                await db.run(`UPDATE profiles SET tg_status = ? WHERE url = ? OR name = ?`, [status, url, url.replace('https://t.me/', '')]);
-                return { url, status, success: true };
-            }
-            catch (e) {
-                console.error(`[TG BATCH CHECK ERROR] Failed ${url}: ${e.message}`);
-                return { url, success: false, error: e.message };
-            }
-        });
-        const batchResults = await Promise.all(batchPromises);
-        results.push(...batchResults);
-        // Small delay between batches to avoid being too aggressive
-        if (i + BATCH_SIZE < urls.length) {
-            await (0, utils_1.wait)(1000);
-        }
+  const { urls } = req.body;
+  if (!urls || !Array.isArray(urls))
+    return res.status(400).json({ success: false, error: 'Invalid urls' });
+  console.log(`[TG BATCH CHECK] Starting for ${urls.length} profiles`);
+  const results = [];
+  const BATCH_SIZE = 10;
+  const db = await (0, db_1.getDB)();
+  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+    const batch = urls.slice(i, i + BATCH_SIZE);
+    console.log(
+      `[TG BATCH CHECK] Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(urls.length / BATCH_SIZE)}`
+    );
+    const batchPromises = batch.map(async (url) => {
+      try {
+        const status = await checkTelegramProfile(url);
+        await db.run(`UPDATE profiles SET tg_status = ? WHERE url = ? OR name = ?`, [
+          status,
+          url,
+          url.replace('https://t.me/', ''),
+        ]);
+        return { url, status, success: true };
+      } catch (e) {
+        console.error(`[TG BATCH CHECK ERROR] Failed ${url}: ${e.message}`);
+        return { url, success: false, error: e.message };
+      }
+    });
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
+    // Small delay between batches to avoid being too aggressive
+    if (i + BATCH_SIZE < urls.length) {
+      await (0, utils_1.wait)(1000);
     }
-    invalidateGirlsCache();
-    res.json({ success: true, results });
+  }
+  invalidateGirlsCache();
+  res.json({ success: true, results });
 });
 app.get('/api/settings', async (req, res) => {
-    const settings = await getSettings();
-    const names = await (0, config_1.getList)('names.txt');
-    const cities = await (0, config_1.getList)('cityKeywords.txt');
-    const niches = await (0, config_1.getList)('nicheKeywords.txt');
-    const donors = await state_1.StateManager.loadDonors();
-    const db = await (0, db_1.getDB)();
-    const historyRows = await db.all(`SELECT url FROM urls WHERE type = 'history'`);
-    const checkedDonors = historyRows.map(r => r.url);
+  const settings = await getSettings();
+  const names = await (0, config_1.getList)('names.txt');
+  const cities = await (0, config_1.getList)('cityKeywords.txt');
+  const niches = await (0, config_1.getList)('nicheKeywords.txt');
+  const donors = await state_1.StateManager.loadDonors();
+  const db = await (0, db_1.getDB)();
+  const historyRows = await db.all(`SELECT url FROM urls WHERE type = 'history'`);
+  const checkedDonors = historyRows.map((r) => r.url);
 
-    res.json({
-        accounts: (settings.accounts || []).map(a => ({
-            id: a.id,
-            name: a.name,
-            proxy: a.proxy,
-            warmup_score: a.warmup_score,
-            last_warmup: a.last_warmup,
-            fingerprint: a.fingerprint,
-            cookies: a.cookies
-        })),
-        activeParserAccountIds: settings.activeParserAccountIds,
-        activeServerAccountIds: settings.activeServerAccountIds,
-        activeIndexAccountIds: settings.activeIndexAccountIds,
-        activeProfilesAccountIds: settings.activeProfilesAccountIds,
-        names,
-        cities,
-        niches,
-        donors,
-        checkedDonors,
-        showBrowser: settings.showBrowser,
-        concurrentProfiles: settings.concurrentProfiles,
-        humanEmulation: settings.humanEmulation,
-        dolphinToken: settings.dolphinToken
-    });
+  res.json({
+    accounts: (settings.accounts || []).map((a) => ({
+      id: a.id,
+      name: a.name,
+      proxy: a.proxy,
+      warmup_score: a.warmup_score,
+      last_warmup: a.last_warmup,
+      fingerprint: a.fingerprint,
+      cookies: a.cookies,
+    })),
+    activeParserAccountIds: settings.activeParserAccountIds,
+    activeServerAccountIds: settings.activeServerAccountIds,
+    activeIndexAccountIds: settings.activeIndexAccountIds,
+    activeProfilesAccountIds: settings.activeProfilesAccountIds,
+    names,
+    cities,
+    niches,
+    donors,
+    checkedDonors,
+    showBrowser: settings.showBrowser,
+    concurrentProfiles: settings.concurrentProfiles,
+    humanEmulation: settings.humanEmulation,
+    dolphinToken: settings.dolphinToken,
+  });
 });
 app.post('/api/settings', async (req, res) => {
-    console.log(`[DEBUG] POST /api/settings received. Keys: ${Object.keys(req.body)}`);
-    const { accounts, names, cities, niches, donors, showBrowser } = req.body;
+  console.log(`[DEBUG] POST /api/settings received. Keys: ${Object.keys(req.body)}`);
+  const { accounts, names, cities, niches, donors, showBrowser } = req.body;
+  try {
+    const db = await (0, db_1.getDB)();
+    await db.run('BEGIN TRANSACTION');
+    console.log(`[DEBUG] Transaction started`);
     try {
-        const db = await (0, db_1.getDB)();
-        await db.run('BEGIN TRANSACTION');
-        console.log(`[DEBUG] Transaction started`);
-        try {
-            if (req.body.hasOwnProperty('accounts')) {
-                const incomingIds = (accounts || []).map((a) => a.id);
-                if (incomingIds.length > 0) {
-                    const placeholders = incomingIds.map(() => '?').join(',');
-                    await db.run(`DELETE FROM accounts WHERE id NOT IN (${placeholders})`, incomingIds);
-                } else {
-                    await db.run(`DELETE FROM accounts`);
-                }
-                for (const a of (accounts || [])) {
-                    const getPriority = (arr, id) => {
-                        const idx = (arr || []).indexOf(id);
-                        return idx === -1 ? 0 : idx + 1;
-                    };
-
-                    let fingerprint = a.fingerprint;
-                    if (!fingerprint) {
-                        fingerprint = JSON.stringify((0, fingerprint_1.generateFingerprint)());
-                    } else if (typeof fingerprint !== 'string') {
-                        fingerprint = JSON.stringify(fingerprint);
-                    }
-
-                    // [FIX] Protect existing cookies/localStorage from being overwritten by empty data
-                    let finalCookies = a.cookies || '';
-                    let finalLocalStorage = a.local_storage || null;
-
-                    if (!finalCookies || !finalLocalStorage) {
-                        const existing = await db.get('SELECT cookies, local_storage FROM accounts WHERE id = ?', [a.id]);
-                        if (existing) {
-                            if (!finalCookies && existing.cookies) finalCookies = existing.cookies;
-                            if (!finalLocalStorage && existing.local_storage) finalLocalStorage = existing.local_storage;
-                        }
-                    }
-
-                    await db.run(`INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, active_checker, fingerprint, local_storage, warmup_score, last_warmup)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
-                        a.id, a.name, a.proxy || '', finalCookies,
-                        getPriority(req.body.activeParserAccountIds, a.id),
-                        getPriority(req.body.activeServerAccountIds, a.id),
-                        getPriority(req.body.activeIndexAccountIds, a.id),
-                        getPriority(req.body.activeProfilesAccountIds, a.id),
-                        getPriority(req.body.activeCheckerAccountIds, a.id),
-                        fingerprint,
-                        finalLocalStorage,
-                        a.warmup_score || 0,
-                        a.last_warmup || null
-                    ]);
-                }
-            }
-            // Only update keywords if they are explicitly provided in the request
-            const updateList = async (type, requestKey, items) => {
-                if (!req.body.hasOwnProperty(requestKey)) return;
-                const cleanItems = (items || []).map(i => String(i).trim()).filter(Boolean);
-                const existing = await db.get(`SELECT count(*) as c FROM keywords WHERE type = ?`, [type]);
-                if (existing.c > 5 && cleanItems.length === 0 && !req.body.forceEmpty) return;
-
-                await db.run(`DELETE FROM keywords WHERE type = ?`, [type]);
-                for (const val of cleanItems) {
-                    await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, [type, val]);
-                }
-            };
-            await updateList('name', 'names', names);
-            await updateList('city', 'cities', cities);
-            await updateList('niche', 'niches', niches);
-            if (req.body.hasOwnProperty('donors')) {
-                const cleanDonors = (donors || []).map((d) => d.trim()).filter(Boolean);
-                const existingDonorsCount = (await state_1.StateManager.loadDonors()).length;
-                if (!(existingDonorsCount > 5 && cleanDonors.length === 0 && !req.body.forceEmpty)) {
-                    await state_1.StateManager.saveDonors(cleanDonors);
-                }
-            }
-            if (req.body.hasOwnProperty('showBrowser')) {
-                await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['showBrowser', showBrowser ? 'true' : 'false']);
-            }
-            if (req.body.hasOwnProperty('concurrentProfiles')) {
-                await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['concurrentProfiles', req.body.concurrentProfiles.toString()]);
-            }
-            if (req.body.hasOwnProperty('humanEmulation')) {
-                await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['humanEmulation', req.body.humanEmulation ? 'true' : 'false']);
-            }
-            if (req.body.hasOwnProperty('dolphinToken')) {
-                await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['dolphinToken', req.body.dolphinToken || '']);
-            }
-            await db.run('COMMIT');
+      if (req.body.hasOwnProperty('accounts')) {
+        const incomingIds = (accounts || []).map((a) => a.id);
+        if (incomingIds.length > 0) {
+          const placeholders = incomingIds.map(() => '?').join(',');
+          await db.run(`DELETE FROM accounts WHERE id NOT IN (${placeholders})`, incomingIds);
+        } else {
+          await db.run(`DELETE FROM accounts`);
         }
-        catch (txErr) {
-            await db.run('ROLLBACK');
-            throw txErr;
+        for (const a of accounts || []) {
+          const getPriority = (arr, id) => {
+            const idx = (arr || []).indexOf(id);
+            return idx === -1 ? 0 : idx + 1;
+          };
+
+          let fingerprint = a.fingerprint;
+          if (!fingerprint) {
+            fingerprint = JSON.stringify((0, fingerprint_1.generateFingerprint)());
+          } else if (typeof fingerprint !== 'string') {
+            fingerprint = JSON.stringify(fingerprint);
+          }
+
+          // [FIX] Protect existing cookies/localStorage from being overwritten by empty data
+          let finalCookies = a.cookies || '';
+          let finalLocalStorage = a.local_storage || null;
+
+          if (!finalCookies || !finalLocalStorage) {
+            const existing = await db.get(
+              'SELECT cookies, local_storage FROM accounts WHERE id = ?',
+              [a.id]
+            );
+            if (existing) {
+              if (!finalCookies && existing.cookies) finalCookies = existing.cookies;
+              if (!finalLocalStorage && existing.local_storage)
+                finalLocalStorage = existing.local_storage;
+            }
+          }
+
+          await db.run(
+            `INSERT OR REPLACE INTO accounts (id, name, proxy, cookies, active_parser, active_server, active_index, active_profiles, active_checker, fingerprint, local_storage, warmup_score, last_warmup)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              a.id,
+              a.name,
+              encrypt(a.proxy || ''),
+              encrypt(finalCookies),
+              getPriority(req.body.activeParserAccountIds, a.id),
+              getPriority(req.body.activeServerAccountIds, a.id),
+              getPriority(req.body.activeIndexAccountIds, a.id),
+              getPriority(req.body.activeProfilesAccountIds, a.id),
+              getPriority(req.body.activeCheckerAccountIds, a.id),
+              fingerprint,
+              finalLocalStorage,
+              a.warmup_score || 0,
+              a.last_warmup || null,
+            ]
+          );
         }
-        res.json({ success: true });
+      }
+      // Only update keywords if they are explicitly provided in the request
+      const updateList = async (type, requestKey, items) => {
+        if (!req.body.hasOwnProperty(requestKey)) return;
+        const cleanItems = (items || []).map((i) => String(i).trim()).filter(Boolean);
+        const existing = await db.get(`SELECT count(*) as c FROM keywords WHERE type = ?`, [type]);
+        if (existing.c > 5 && cleanItems.length === 0 && !req.body.forceEmpty) return;
+
+        await db.run(`DELETE FROM keywords WHERE type = ?`, [type]);
+        for (const val of cleanItems) {
+          await db.run(`INSERT INTO keywords (type, value) VALUES (?, ?)`, [type, val]);
+        }
+      };
+      await updateList('name', 'names', names);
+      await updateList('city', 'cities', cities);
+      await updateList('niche', 'niches', niches);
+      if (req.body.hasOwnProperty('donors')) {
+        const cleanDonors = (donors || []).map((d) => d.trim()).filter(Boolean);
+        const existingDonorsCount = (await state_1.StateManager.loadDonors()).length;
+        if (!(existingDonorsCount > 5 && cleanDonors.length === 0 && !req.body.forceEmpty)) {
+          await state_1.StateManager.saveDonors(cleanDonors);
+        }
+      }
+      if (req.body.hasOwnProperty('showBrowser')) {
+        await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          'showBrowser',
+          showBrowser ? 'true' : 'false',
+        ]);
+      }
+      if (req.body.hasOwnProperty('concurrentProfiles')) {
+        await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          'concurrentProfiles',
+          req.body.concurrentProfiles.toString(),
+        ]);
+      }
+      if (req.body.hasOwnProperty('humanEmulation')) {
+        await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          'humanEmulation',
+          req.body.humanEmulation ? 'true' : 'false',
+        ]);
+      }
+      if (req.body.hasOwnProperty('dolphinToken')) {
+        await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          'dolphinToken',
+          req.body.dolphinToken || '',
+        ]);
+      }
+      await db.run('COMMIT');
+    } catch (txErr) {
+      await db.run('ROLLBACK');
+      throw txErr;
     }
-    catch (e) {
-        console.error('Ошибка сохранения настроек:', e);
-        res.status(500).json({ success: false });
-    }
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Ошибка сохранения настроек:', e);
+    res.status(500).json({ success: false });
+  }
 });
-const authorizer_1 = require("./lib/authorizer");
+const authorizer_1 = require('./lib/authorizer');
 // ... existing code ...
 app.post('/api/accounts/:id/authorize/start', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const db = await (0, db_1.getDB)();
-        const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [id]);
-        if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
+  const { id } = req.params;
+  try {
+    const db = await (0, db_1.getDB)();
+    const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [id]);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
 
-        const result = await authorizer_1.startAuthorization(id, acc.name, acc.proxy, acc.fingerprint ? JSON.parse(acc.fingerprint) : null, true, acc.cookies ? JSON.parse(acc.cookies) : null, acc.local_storage);
-        res.json(result);
-    } catch (e) {
-        console.error('Error starting auth:', e);
-        res.status(500).json({ success: false, error: e.message });
-    }
+    const result = await authorizer_1.startAuthorization(
+      id,
+      acc.name,
+      decrypt(acc.proxy),
+      acc.fingerprint ? JSON.parse(acc.fingerprint) : null,
+      true,
+      acc.cookies ? JSON.parse(decrypt(acc.cookies)) : null,
+      acc.local_storage
+    );
+    res.json(result);
+  } catch (e) {
+    console.error('Error starting auth:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.get('/api/accounts/:id/authorize/status', (req, res) => {
-    const { id } = req.params;
-    res.json({ active: authorizer_1.getAuthorizationStatus(id) });
+  const { id } = req.params;
+  res.json({ active: authorizer_1.getAuthorizationStatus(id) });
 });
 
 app.post('/api/accounts/:id/authorize/stop', async (req, res) => {
-    const { id } = req.params;
-    const result = await authorizer_1.stopAuthorization(id);
-    res.json(result);
+  const { id } = req.params;
+  const result = await authorizer_1.stopAuthorization(id);
+  res.json(result);
 });
 
 app.post('/api/accounts/:id/browser/start', async (req, res) => {
-    const { id } = req.params;
-    const { restore } = req.query;
-    try {
-        const db = await (0, db_1.getDB)();
-        const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [id]);
-        if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
+  const { id } = req.params;
+  const { restore } = req.query;
+  try {
+    const db = await (0, db_1.getDB)();
+    const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [id]);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
 
-        const result = await authorizer_1.startAuthorization(id, acc.name, acc.proxy, acc.fingerprint ? JSON.parse(acc.fingerprint) : null, false, acc.cookies ? JSON.parse(acc.cookies) : null, acc.local_storage);
+    const result = await authorizer_1.startAuthorization(
+      id,
+      acc.name,
+      decrypt(acc.proxy),
+      acc.fingerprint ? JSON.parse(acc.fingerprint) : null,
+      false,
+      acc.cookies ? JSON.parse(decrypt(acc.cookies)) : null,
+      acc.local_storage
+    );
 
-        if (result.success && restore === 'true') {
-            const context = authorizer_1.getAuthorizationContext(id);
-            if (context) {
-                if (!restorePhotosStatus.running) {
-                    restorePhotosStatus = { running: true, current: 0, total: 0, status: 'Starting (via browser)...' };
-                    restorePhotos((progress) => {
-                        restorePhotosStatus = { running: true, ...progress };
-                    }, { accountId: id, existingContext: context, failedUrls: req.body?.failedUrls }).then((res) => {
-                        restorePhotosStatus = { running: false, done: true, result: res, status: 'Done', current: restorePhotosStatus.current, total: restorePhotosStatus.total };
-                        invalidateGirlsCache();
-                    }).catch((e) => {
-                        restorePhotosStatus = { running: false, error: e.message, status: 'Error', current: restorePhotosStatus.current, total: restorePhotosStatus.total };
-                    });
-                }
-            }
+    if (result.success && restore === 'true') {
+      const context = authorizer_1.getAuthorizationContext(id);
+      if (context) {
+        if (!restorePhotosStatus.running) {
+          restorePhotosStatus = {
+            running: true,
+            current: 0,
+            total: 0,
+            status: 'Starting (via browser)...',
+          };
+          restorePhotos(
+            (progress) => {
+              restorePhotosStatus = { running: true, ...progress };
+            },
+            { accountId: id, existingContext: context, failedUrls: req.body?.failedUrls }
+          )
+            .then((res) => {
+              restorePhotosStatus = {
+                running: false,
+                done: true,
+                result: res,
+                status: 'Done',
+                current: restorePhotosStatus.current,
+                total: restorePhotosStatus.total,
+              };
+              invalidateGirlsCache();
+            })
+            .catch((e) => {
+              restorePhotosStatus = {
+                running: false,
+                error: e.message,
+                status: 'Error',
+                current: restorePhotosStatus.current,
+                total: restorePhotosStatus.total,
+              };
+            });
         }
-        res.json(result);
-    } catch (e) {
-        console.error('Error starting browser:', e);
-        res.status(500).json({ success: false, error: e.message });
+      }
     }
+    res.json(result);
+  } catch (e) {
+    console.error('Error starting browser:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 let warmupStatus = new Map();
 
 app.post('/api/accounts/:id/warmup', async (req, res) => {
-    const { id } = req.params;
-    if (warmupStatus.get(id)?.running) {
-        return res.status(400).json({ success: false, error: 'Warmup already in progress' });
-    }
+  const { id } = req.params;
+  if (warmupStatus.get(id)?.running) {
+    return res.status(400).json({ success: false, error: 'Warmup already in progress' });
+  }
 
-    warmupStatus.set(id, { running: true, current: 0, total: 50, site: '' });
+  warmupStatus.set(id, { running: true, current: 0, total: 50, site: '' });
 
-    // Run in background
-    warmup_1.startWarmup(id, (progress) => {
-        warmupStatus.set(id, { running: true, ...progress });
-    }).then(() => {
-        warmupStatus.set(id, { running: false, done: true });
-    }).catch((e) => {
-        warmupStatus.set(id, { running: false, error: e.message });
+  // Run in background
+  warmup_1
+    .startWarmup(id, (progress) => {
+      warmupStatus.set(id, { running: true, ...progress });
+    })
+    .then(() => {
+      warmupStatus.set(id, { running: false, done: true });
+    })
+    .catch((e) => {
+      warmupStatus.set(id, { running: false, error: e.message });
     });
 
-    res.json({ success: true });
+  res.json({ success: true });
 });
 
 app.get('/api/accounts/:id/warmup/status', (req, res) => {
-    const { id } = req.params;
-    res.json(warmupStatus.get(id) || { running: false });
+  const { id } = req.params;
+  res.json(warmupStatus.get(id) || { running: false });
 });
 
 let restorePhotosStatus = { running: false, current: 0, total: 0, status: '' };
 
 app.post('/api/profiles/restore-photos', async (req, res) => {
-    if (restorePhotosStatus.running) {
-        return res.status(400).json({ success: false, error: 'Task already in progress' });
-    }
+  if (restorePhotosStatus.running) {
+    return res.status(400).json({ success: false, error: 'Task already in progress' });
+  }
 
-    const { concurrency, failedUrls } = req.body;
-    restorePhotosStatus = { running: true, current: 0, total: 0, status: 'Starting...' };
+  const { concurrency, failedUrls } = req.body;
+  restorePhotosStatus = { running: true, current: 0, total: 0, status: 'Starting...' };
 
-    // Run in background
-    restorePhotos((progress) => {
-        restorePhotosStatus = { running: true, ...progress };
-    }, { overrideConcurrency: concurrency, failedUrls }).then((result) => {
-        restorePhotosStatus = { running: false, done: true, result, current: restorePhotosStatus.current, total: restorePhotosStatus.total, status: 'Done' };
-        invalidateGirlsCache();
-    }).catch((e) => {
-        restorePhotosStatus = { running: false, error: e.message, current: restorePhotosStatus.current, total: restorePhotosStatus.total, status: 'Error' };
+  // Run in background
+  restorePhotos(
+    (progress) => {
+      restorePhotosStatus = { running: true, ...progress };
+    },
+    { overrideConcurrency: concurrency, failedUrls }
+  )
+    .then((result) => {
+      restorePhotosStatus = {
+        running: false,
+        done: true,
+        result,
+        current: restorePhotosStatus.current,
+        total: restorePhotosStatus.total,
+        status: 'Done',
+      };
+      invalidateGirlsCache();
+    })
+    .catch((e) => {
+      restorePhotosStatus = {
+        running: false,
+        error: e.message,
+        current: restorePhotosStatus.current,
+        total: restorePhotosStatus.total,
+        status: 'Error',
+      };
     });
 
-
-    res.json({ success: true });
+  res.json({ success: true });
 });
 
 app.post('/api/profiles/restore-photos/stop', async (req, res) => {
-    stopRestorePhotos();
-    res.json({ success: true });
+  stopRestorePhotos();
+  res.json({ success: true });
 });
 
 app.get('/api/profiles/restore-photos/status', (req, res) => {
-    res.json(restorePhotosStatus);
+  res.json(restorePhotosStatus);
 });
 
-
 app.put('/api/accounts/:id', async (req, res) => {
-    const { id } = req.params;
-    const { name, proxy, cookies, fingerprint, regenerateFingerprint } = req.body;
-    try {
-        const db = await (0, db_1.getDB)();
-        const existing = await db.get('SELECT id FROM accounts WHERE id = ?', [id]);
-        if (!existing) {
-            return res.status(404).json({ success: false, error: 'Account not found' });
-        }
-        const updates = [];
-        const values = [];
-        if (name !== undefined) {
-            updates.push('name = ?');
-            values.push(name);
-        }
-        if (proxy !== undefined) {
-            updates.push('proxy = ?');
-            values.push(proxy);
-        }
-        if (cookies !== undefined) {
-            updates.push('cookies = ?');
-            values.push(cookies);
-        }
-        let updatedFingerprint = null;
-        if (fingerprint !== undefined) {
-            updates.push('fingerprint = ?');
-            const fpVal = typeof fingerprint === 'object' ? JSON.stringify(fingerprint) : fingerprint;
-            values.push(fpVal);
-            updatedFingerprint = fpVal;
-        }
-        if (regenerateFingerprint) {
-            updates.push('fingerprint = ?');
-            const fpVal = JSON.stringify((0, fingerprint_1.generateFingerprint)());
-            values.push(fpVal);
-            updatedFingerprint = fpVal;
-        }
-        if (updates.length === 0) {
-            return res.status(400).json({ success: false, error: 'No fields to update' });
-        }
-        values.push(id);
-        await db.run(`UPDATE accounts SET ${updates.join(', ')} WHERE id = ?`, values);
-        res.json({ success: true, fingerprint: updatedFingerprint });
+  const { id } = req.params;
+  const { name, proxy, cookies, fingerprint, regenerateFingerprint } = req.body;
+  try {
+    const db = await (0, db_1.getDB)();
+    const existing = await db.get('SELECT id FROM accounts WHERE id = ?', [id]);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Account not found' });
     }
-    catch (e) {
-        console.error('Ошибка обновления аккаунта:', e);
-        res.status(500).json({ success: false });
+    const updates = [];
+    const values = [];
+    if (name !== undefined) {
+      updates.push('name = ?');
+      values.push(name);
     }
+    if (proxy !== undefined) {
+      updates.push('proxy = ?');
+      values.push(encrypt(proxy));
+    }
+    if (cookies !== undefined) {
+      updates.push('cookies = ?');
+      values.push(encrypt(cookies));
+    }
+    let updatedFingerprint = null;
+    if (fingerprint !== undefined) {
+      updates.push('fingerprint = ?');
+      const fpVal = typeof fingerprint === 'object' ? JSON.stringify(fingerprint) : fingerprint;
+      values.push(fpVal);
+      updatedFingerprint = fpVal;
+    }
+    if (regenerateFingerprint) {
+      updates.push('fingerprint = ?');
+      const fpVal = JSON.stringify((0, fingerprint_1.generateFingerprint)());
+      values.push(fpVal);
+      updatedFingerprint = fpVal;
+    }
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: 'No fields to update' });
+    }
+    values.push(id);
+    await db.run(`UPDATE accounts SET ${updates.join(', ')} WHERE id = ?`, values);
+    res.json({ success: true, fingerprint: updatedFingerprint });
+  } catch (e) {
+    console.error('Ошибка обновления аккаунта:', e);
+    res.status(500).json({ success: false });
+  }
 });
 // --- Proxy image endpoint: fetches images through configured account proxy ---
 app.get('/api/proxy-image', async (req, res) => {
-    const imageUrl = req.query.url;
-    if (!imageUrl || typeof imageUrl !== 'string')
-        return res.status(400).send('Missing or invalid url parameter');
-    try {
-        const proxy = await config_1.getProxy('donors');
-        const parsedUrl = new URL(imageUrl);
-        const transport = parsedUrl.protocol === 'https:' ? https_1 : http_1;
-        const fetchOptions = {
-            hostname: parsedUrl.hostname,
-            path: parsedUrl.pathname + parsedUrl.search,
-            headers: {
-                'User-Agent': CONFIG.userAgent,
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Referer': 'https://www.instagram.com/'
-            }
+  const imageUrl = req.query.url;
+  if (!imageUrl || typeof imageUrl !== 'string')
+    return res.status(400).send('Missing or invalid url parameter');
+  try {
+    const proxy = await config_1.getProxy('donors');
+    const parsedUrl = new URL(imageUrl);
+    const transport = parsedUrl.protocol === 'https:' ? https_1 : http_1;
+    const fetchOptions = {
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.pathname + parsedUrl.search,
+      headers: {
+        'User-Agent': CONFIG.userAgent,
+        Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
+        Referer: 'https://www.instagram.com/',
+      },
+    };
+    async function fetchWithRetry(url, options, transport, retries = 3) {
+      for (let i = 0; i < retries; i++) {
+        try {
+          return await new Promise((resolve, reject) => {
+            const proxyReq = transport.request(options, (res) => {
+              resolve(res);
+            });
+            proxyReq.on('error', (e) => {
+              if (i === retries - 1) reject(e);
+              else reject(e); // Will be caught by catch block
+            });
+            proxyReq.setTimeout(15000, () => {
+              proxyReq.destroy();
+              reject(new Error('Timeout'));
+            });
+            proxyReq.end();
+          });
+        } catch (e) {
+          console.warn(`[IMAGE PROXY] Fetch attempt ${i + 1} failed: ${e.message}`);
+          if (i === retries - 1) throw e;
+          await (0, utils_1.wait)(1000 * (i + 1));
+        }
+      }
+    }
+    // If proxy is configured, route through it via HTTP CONNECT
+    if (proxy) {
+      const proxyUrl = new URL(proxy.server);
+      const authHeader =
+        'Basic ' + Buffer.from(`${proxy.username}:${proxy.password}`).toString('base64');
+      // For HTTPS targets, use HTTP CONNECT tunnel
+      if (parsedUrl.protocol === 'https:') {
+        const connectReq = http_1.request({
+          host: proxyUrl.hostname,
+          port: proxyUrl.port || 80,
+          method: 'CONNECT',
+          path: `${parsedUrl.hostname}:443`,
+          headers: { 'Proxy-Authorization': authHeader },
+        });
+        connectReq.on('connect', async (_res, socket) => {
+          if (_res.statusCode !== 200) {
+            return res.status(502).send('Proxy CONNECT failed');
+          }
+          const connector = parsedUrl.protocol === 'https:' ? https_1 : http_1;
+          const proxyReqOptions = {
+            ...fetchOptions,
+            socket: socket,
+            agent: false,
+          };
+          try {
+            const imgRes = await fetchWithRetry(imageUrl, proxyReqOptions, connector);
+            handleImageResponse(imgRes);
+          } catch (e) {
+            console.error('Proxy HTTPS request error after retries:', e);
+            res.status(502).send('Proxy HTTPS image fetch error');
+          }
+        });
+        connectReq.on('error', () => res.status(502).send('Proxy connect error'));
+        connectReq.end();
+      } else {
+        // For HTTP targets, use standard HTTP request
+        const proxyReqOptions = {
+          hostname: proxyUrl.hostname,
+          port: proxyUrl.port || 80,
+          path: imageUrl,
+          headers: {
+            ...fetchOptions.headers,
+            'Proxy-Authorization': authHeader,
+            Host: parsedUrl.hostname,
+          },
         };
-        async function fetchWithRetry(url, options, transport, retries = 3) {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    return await new Promise((resolve, reject) => {
-                        const proxyReq = transport.request(options, (res) => {
-                            resolve(res);
-                        });
-                        proxyReq.on('error', (e) => {
-                            if (i === retries - 1)
-                                reject(e);
-                            else
-                                reject(e); // Will be caught by catch block
-                        });
-                        proxyReq.setTimeout(15000, () => {
-                            proxyReq.destroy();
-                            reject(new Error('Timeout'));
-                        });
-                        proxyReq.end();
-                    });
-                }
-                catch (e) {
-                    console.warn(`[IMAGE PROXY] Fetch attempt ${i + 1} failed: ${e.message}`);
-                    if (i === retries - 1)
-                        throw e;
-                    await (0, utils_1.wait)(1000 * (i + 1));
-                }
-            }
+        try {
+          const imgRes = await fetchWithRetry(imageUrl, proxyReqOptions, http_1);
+          handleImageResponse(imgRes);
+        } catch (e) {
+          console.error('Proxy HTTP error after retries:', e);
+          res.status(502).send('Proxy HTTP error');
         }
-        // If proxy is configured, route through it via HTTP CONNECT
-        if (proxy) {
-            const proxyUrl = new URL(proxy.server);
-            const authHeader = 'Basic ' + Buffer.from(`${proxy.username}:${proxy.password}`).toString('base64');
-            // For HTTPS targets, use HTTP CONNECT tunnel
-            if (parsedUrl.protocol === 'https:') {
-                const connectReq = http_1.request({
-                    host: proxyUrl.hostname,
-                    port: proxyUrl.port || 80,
-                    method: 'CONNECT',
-                    path: `${parsedUrl.hostname}:443`,
-                    headers: { 'Proxy-Authorization': authHeader }
-                });
-                connectReq.on('connect', async (_res, socket) => {
-                    if (_res.statusCode !== 200) {
-                        return res.status(502).send('Proxy CONNECT failed');
-                    }
-                    const connector = parsedUrl.protocol === 'https:' ? https_1 : http_1;
-                    const proxyReqOptions = {
-                        ...fetchOptions,
-                        socket: socket,
-                        agent: false
-                    };
-                    try {
-                        const imgRes = await fetchWithRetry(imageUrl, proxyReqOptions, connector);
-                        handleImageResponse(imgRes);
-                    }
-                    catch (e) {
-                        console.error('Proxy HTTPS request error after retries:', e);
-                        res.status(502).send('Proxy HTTPS image fetch error');
-                    }
-                });
-                connectReq.on('error', () => res.status(502).send('Proxy connect error'));
-                connectReq.end();
-            }
-            else {
-                // For HTTP targets, use standard HTTP request
-                const proxyReqOptions = {
-                    hostname: proxyUrl.hostname,
-                    port: proxyUrl.port || 80,
-                    path: imageUrl,
-                    headers: {
-                        ...fetchOptions.headers,
-                        'Proxy-Authorization': authHeader,
-                        'Host': parsedUrl.hostname
-                    }
-                };
-                try {
-                    const imgRes = await fetchWithRetry(imageUrl, proxyReqOptions, http_1);
-                    handleImageResponse(imgRes);
-                }
-                catch (e) {
-                    console.error('Proxy HTTP error after retries:', e);
-                    res.status(502).send('Proxy HTTP error');
-                }
-            }
-        }
-        else {
-            // No proxy — direct fetch
-            try {
-                const imgRes = await fetchWithRetry(imageUrl, fetchOptions, transport);
-                handleImageResponse(imgRes);
-            }
-            catch (e) {
-                console.error('Direct fetch error after retries:', e);
-                res.status(502).send('Direct image fetch error: ' + e.message);
-            }
-        }
-        function handleImageResponse(imgRes) {
-            // Follow redirects (Instagram CDN does 301/302)
-            if ([301, 302, 307, 308].includes(imgRes.statusCode) && imgRes.headers.location) {
-                // Redirect — fetch again without proxy (CDN URLs are public)
-                const redirectTransport = imgRes.headers.location.startsWith('https') ? https_1 : http_1;
-                redirectTransport.get(imgRes.headers.location, (redirRes) => {
-                    res.setHeader('Content-Type', redirRes.headers['content-type'] || 'image/jpeg');
-                    res.setHeader('Cache-Control', 'public, max-age=86400');
-                    redirRes.pipe(res);
-                }).on('error', () => res.status(502).send('Redirect fetch error'));
-                return;
-            }
-            if (imgRes.statusCode !== 200) {
-                return res.status(imgRes.statusCode || 502).send('Image not available');
-            }
-            res.setHeader('Content-Type', imgRes.headers['content-type'] || 'image/jpeg');
+      }
+    } else {
+      // No proxy — direct fetch
+      try {
+        const imgRes = await fetchWithRetry(imageUrl, fetchOptions, transport);
+        handleImageResponse(imgRes);
+      } catch (e) {
+        console.error('Direct fetch error after retries:', e);
+        res.status(502).send('Direct image fetch error: ' + e.message);
+      }
+    }
+    function handleImageResponse(imgRes) {
+      // Follow redirects (Instagram CDN does 301/302)
+      if ([301, 302, 307, 308].includes(imgRes.statusCode) && imgRes.headers.location) {
+        // Redirect — fetch again without proxy (CDN URLs are public)
+        const redirectTransport = imgRes.headers.location.startsWith('https') ? https_1 : http_1;
+        redirectTransport
+          .get(imgRes.headers.location, (redirRes) => {
+            res.setHeader('Content-Type', redirRes.headers['content-type'] || 'image/jpeg');
             res.setHeader('Cache-Control', 'public, max-age=86400');
-            imgRes.pipe(res);
-        }
+            redirRes.pipe(res);
+          })
+          .on('error', () => res.status(502).send('Redirect fetch error'));
+        return;
+      }
+      if (imgRes.statusCode !== 200) {
+        return res.status(imgRes.statusCode || 502).send('Image not available');
+      }
+      res.setHeader('Content-Type', imgRes.headers['content-type'] || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      imgRes.pipe(res);
     }
-    catch (e) {
-        console.error('Image proxy error:', e);
-        res.status(500).send('Internal server error');
-    }
+  } catch (e) {
+    console.error('Image proxy error:', e);
+    res.status(500).send('Internal server error');
+  }
 });
 
 // --- Presets API ---
 app.get('/api/presets', async (req, res) => {
-    try {
-        const db = await (0, db_1.getDB)();
-        const rows = await db.all(`SELECT name, data FROM presets ORDER BY name ASC`);
-        res.json(rows.map(r => ({ name: r.name, data: JSON.parse(r.data) })));
-    } catch (e) {
-        console.error('Error fetching presets:', e);
-        res.status(500).json([]);
-    }
+  try {
+    const db = await (0, db_1.getDB)();
+    const rows = await db.all(`SELECT name, data FROM presets ORDER BY name ASC`);
+    res.json(rows.map((r) => ({ name: r.name, data: JSON.parse(r.data) })));
+  } catch (e) {
+    console.error('Error fetching presets:', e);
+    res.status(500).json([]);
+  }
 });
 
 app.post('/api/presets', async (req, res) => {
-    const { name, data } = req.body;
-    if (!name || !data) {
-        return res.status(400).json({ success: false, error: 'Name and data are required' });
-    }
-    try {
-        const db = await (0, db_1.getDB)();
-        await db.run(`INSERT OR REPLACE INTO presets (name, data) VALUES (?, ?)`, [name, JSON.stringify(data)]);
-        res.json({ success: true });
-    } catch (e) {
-        console.error('Error saving preset:', e);
-        res.status(500).json({ success: false, error: e.message });
-    }
+  const { name, data } = req.body;
+  if (!name || !data) {
+    return res.status(400).json({ success: false, error: 'Name and data are required' });
+  }
+  try {
+    const db = await (0, db_1.getDB)();
+    await db.run(`INSERT OR REPLACE INTO presets (name, data) VALUES (?, ?)`, [
+      name,
+      JSON.stringify(data),
+    ]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Error saving preset:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.delete('/api/presets/:name', async (req, res) => {
-    const { name } = req.params;
-    try {
-        const db = await (0, db_1.getDB)();
-        await db.run(`DELETE FROM presets WHERE name = ?`, [name]);
-        res.json({ success: true });
-    } catch (e) {
-        console.error('Error deleting preset:', e);
-        res.status(500).json({ success: false, error: e.message });
-    }
+  const { name } = req.params;
+  try {
+    const db = await (0, db_1.getDB)();
+    await db.run(`DELETE FROM presets WHERE name = ?`, [name]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Error deleting preset:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.post('/api/donors', async (req, res) => {
-    const { url } = req.body;
-    if (!url) {
-        return res.status(400).json({ success: false, error: 'Missing url' });
-    }
-    try {
-        await state_1.StateManager.saveDonor(url);
-        res.json({ success: true });
-    } catch (e) {
-        console.error('Error saving donor:', e);
-        res.status(500).json({ success: false, error: e.message });
-    }
+  const { url } = req.body;
+  if (!url) {
+    return res.status(400).json({ success: false, error: 'Missing url' });
+  }
+  try {
+    await state_1.StateManager.saveDonor(url);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Error saving donor:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.post('/api/logs/clear', (req, res) => {
-    historicalLogs = [];
-    debouncedSaveLogs();
-    res.json({ success: true });
+  historicalLogs = [];
+  debouncedSaveLogs();
+  res.json({ success: true });
 });
 app.get('/api/dolphin/profiles', async (req, res) => {
-    try {
-        const queryToken = req.query.token;
-        const db = await (0, db_1.getDB)();
+  try {
+    const queryToken = req.query.token;
+    const db = await (0, db_1.getDB)();
 
-        if (queryToken) {
-            await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, ['dolphinToken', queryToken]);
-            console.log('🐬 [DOLPHIN] Token updated from request');
+    if (queryToken) {
+      await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+        'dolphinToken',
+        queryToken,
+      ]);
+      console.log('🐬 [DOLPHIN] Token updated from request');
+    }
+
+    // Локальное API Dolphin Anty работает на порту 3001
+    const options = {
+      hostname: '127.0.0.1',
+      port: 3001,
+      path: '/v1.0/browser_profiles',
+      method: 'GET',
+    };
+
+    console.log('🐬 [DOLPHIN] Fetching profiles from local API...');
+
+    const reqDolphin = http_1.get(options, (dolphinRes) => {
+      let data = '';
+      dolphinRes.on('data', (chunk) => (data += chunk));
+      dolphinRes.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          // Локальное API возвращает массив или объект
+          const profilesList = json.data || (Array.isArray(json) ? json : []);
+          res.json({ success: true, data: profilesList });
+        } catch (e) {
+          res
+            .status(500)
+            .json({ success: false, error: 'Failed to parse Dolphin Local API response' });
         }
+      });
+    });
 
-        // Локальное API Dolphin Anty работает на порту 3001
-        const options = {
-            hostname: '127.0.0.1',
-            port: 3001,
-            path: '/v1.0/browser_profiles',
-            method: 'GET'
-        };
-
-        console.log('🐬 [DOLPHIN] Fetching profiles from local API...');
-
-        const reqDolphin = http_1.get(options, (dolphinRes) => {
-            let data = '';
-            dolphinRes.on('data', (chunk) => data += chunk);
-            dolphinRes.on('end', () => {
-                try {
-                    const json = JSON.parse(data);
-                    // Локальное API возвращает массив или объект
-                    const profilesList = json.data || (Array.isArray(json) ? json : []);
-                    res.json({ success: true, data: profilesList });
-                }
-                catch (e) {
-                    res.status(500).json({ success: false, error: 'Failed to parse Dolphin Local API response' });
-                }
-            });
-        });
-
-        reqDolphin.on('error', (e) => {
-            console.error('Local Dolphin API Error:', e.message);
-            res.status(500).json({ success: false, error: `Local Dolphin API is not running or unreachable: ${e.message}` });
-        });
-    }
-    catch (e) {
-        console.error('Error fetching Dolphin profiles:', e);
-        res.status(500).json({ success: false, error: e.message });
-    }
+    reqDolphin.on('error', (e) => {
+      console.error('Local Dolphin API Error:', e.message);
+      res.status(500).json({
+        success: false,
+        error: `Local Dolphin API is not running or unreachable: ${e.message}`,
+      });
+    });
+  } catch (e) {
+    console.error('Error fetching Dolphin profiles:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 app.get('/api/logs', (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    // res.flushHeaders(); // Not available in some Express versions without compression middleware
-    // Send historical logs first
-    historicalLogs.forEach(log => {
-        res.write(`data: ${JSON.stringify(log)}\n\n`);
-    });
-    const onLog = (log) => {
-        res.write(`data: ${JSON.stringify(log)}\n\n`);
-    };
-    logEmitter.on('log', onLog);
-    req.on('close', () => {
-        logEmitter.off('log', onLog);
-    });
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  // res.flushHeaders(); // Not available in some Express versions without compression middleware
+  // Send historical logs first
+  historicalLogs.forEach((log) => {
+    res.write(`data: ${JSON.stringify(log)}\n\n`);
+  });
+  const onLog = (log) => {
+    res.write(`data: ${JSON.stringify(log)}\n\n`);
+  };
+  logEmitter.on('log', onLog);
+  req.on('close', () => {
+    logEmitter.off('log', onLog);
+  });
 });
 app.get('/api/live-view', (req, res) => {
-    const liveViewPath = path_1.join(utils_1.getRootPath(), 'data', 'screenshots', 'live_view.jpg');
-    res.sendFile(liveViewPath, { headers: { 'Cache-Control': 'no-store' } }, err => {
-        if (err)
-            res.status(404).send('Not generated yet');
-    });
+  const liveViewPath = path_1.join(utils_1.getRootPath(), 'data', 'screenshots', 'live_view.jpg');
+  res.sendFile(liveViewPath, { headers: { 'Cache-Control': 'no-store' } }, (err) => {
+    if (err) res.status(404).send('Not generated yet');
+  });
 });
 app.get('/api/bot/status', (req, res) => {
-    res.json({
-        index: !!botProcesses.index,
-        parser: !!botProcesses.parser,
-        checker: !!botProcesses.checker
-    });
+  res.json({
+    index: !!botProcesses.index,
+    parser: !!botProcesses.parser,
+    checker: !!botProcesses.checker,
+  });
 });
 app.use(expressErrorHandler);
 app.post('/api/bot/start', (req, res) => {
-    const { type } = req.body;
-    if (!['index', 'parser', 'checker'].includes(type)) {
-        return res.status(400).json({ success: false, error: 'Invalid bot type' });
-    }
-    if (botProcesses[type]) {
-        return res.json({ success: false, error: 'Bot already running' });
-    }
-    refreshSession();
-    const isPkg = process['pkg'] !== undefined;
-    const scriptExt = 'js';
-    const scriptPath = path_1.join(__dirname, `${type}.${scriptExt}`);
-    if (!fs_1.existsSync(scriptPath)) {
-        return res.status(404).json({ success: false, error: `Script for ${type} not found at ${scriptPath}` });
-    }
-    const runner = isPkg ? process.execPath : 'node';
-    const args = isPkg ? [scriptPath] : [scriptPath];
-    const cwdPath = isPkg ? path_1.dirname(process.execPath) : __dirname;
-    const child = child_process_1.spawn(runner, args, {
-        cwd: cwdPath,
-        env: { ...process.env, FORCE_COLOR: '1' },
-        shell: false
-    });
-    botProcesses[type] = child;
-    // Обработка ошибки запуска самого процесса
-    child.on('error', (err) => {
-        broadcastLog(`${type}-error`, `Failed to start process: ${err.message}`);
-        botProcesses[type] = null;
-    });
-    child.stdout?.on('data', (data) => broadcastLog(type, data));
-    child.stderr?.on('data', (data) => broadcastLog(`${type}-error`, data));
-    child.on('close', (code) => {
-        broadcastLog('system', `${type} bot exited with code ${code}`);
-        botProcesses[type] = null;
-    });
-    res.json({ success: true });
+  const { type } = req.body;
+  if (!['index', 'parser', 'checker'].includes(type)) {
+    return res.status(400).json({ success: false, error: 'Invalid bot type' });
+  }
+  if (botProcesses[type]) {
+    return res.json({ success: false, error: 'Bot already running' });
+  }
+  refreshSession();
+  const isPkg = process['pkg'] !== undefined;
+  const scriptExt = 'js';
+  const scriptPath = path_1.join(__dirname, `${type}.${scriptExt}`);
+  if (!fs_1.existsSync(scriptPath)) {
+    return res
+      .status(404)
+      .json({ success: false, error: `Script for ${type} not found at ${scriptPath}` });
+  }
+  const runner = isPkg ? process.execPath : 'node';
+  const args = isPkg ? [scriptPath] : [scriptPath];
+  const cwdPath = isPkg ? path_1.dirname(process.execPath) : __dirname;
+  const child = child_process_1.spawn(runner, args, {
+    cwd: cwdPath,
+    env: { ...process.env, FORCE_COLOR: '1' },
+    shell: false,
+  });
+  botProcesses[type] = child;
+  // Обработка ошибки запуска самого процесса
+  child.on('error', (err) => {
+    broadcastLog(`${type}-error`, `Failed to start process: ${err.message}`);
+    botProcesses[type] = null;
+  });
+  child.stdout?.on('data', (data) => broadcastLog(type, data));
+  child.stderr?.on('data', (data) => broadcastLog(`${type}-error`, data));
+  child.on('close', (code) => {
+    broadcastLog('system', `${type} bot exited with code ${code}`);
+    botProcesses[type] = null;
+  });
+  res.json({ success: true });
 });
 app.post('/api/bot/stop', (req, res) => {
-    const { type } = req.body;
-    const child = botProcesses[type];
-    if (child) {
-        let finished = false;
-        const timeout = setTimeout(() => {
-            if (!finished) {
-                finished = true;
-                if (botProcesses[type] === child) {
-                    botProcesses[type] = null;
-                }
-                if (!res.headersSent) {
-                    res.json({ success: true, message: 'Stop timeout' });
-                }
-            }
-        }, 5000);
-
-        child.once('close', () => {
-            if (!finished) {
-                finished = true;
-                clearTimeout(timeout);
-                if (!res.headersSent) {
-                    res.json({ success: true });
-                }
-            }
-        });
-
-        if (process.platform === 'win32') {
-            (0, child_process_1.exec)(`taskkill /F /T /PID ${child.pid}`, (err) => {
-                if (err) {
-                    console.error(`[SYSTEM] Error killing process ${child.pid}:`, err);
-                    child.kill();
-                }
-            });
+  const { type } = req.body;
+  const child = botProcesses[type];
+  if (child) {
+    let finished = false;
+    const timeout = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        if (botProcesses[type] === child) {
+          botProcesses[type] = null;
         }
-        else {
-            child.kill();
+        if (!res.headersSent) {
+          res.json({ success: true, message: 'Stop timeout' });
         }
+      }
+    }, 5000);
+
+    child.once('close', () => {
+      if (!finished) {
+        finished = true;
+        clearTimeout(timeout);
+        if (!res.headersSent) {
+          res.json({ success: true });
+        }
+      }
+    });
+
+    if (process.platform === 'win32') {
+      (0, child_process_1.exec)(`taskkill /F /T /PID ${child.pid}`, (err) => {
+        if (err) {
+          console.error(`[SYSTEM] Error killing process ${child.pid}:`, err);
+          child.kill();
+        }
+      });
+    } else {
+      child.kill();
     }
-    else {
-        res.json({ success: false, error: 'Bot not running' });
-    }
+  } else {
+    res.json({ success: false, error: 'Bot not running' });
+  }
 });
 app.post('/api/skip-donor', async (req, res) => {
-    try {
-        console.log('📢 [API] Получен запрос на пропуск текущего донора...');
-        fs_1.writeFileSync(path_1.join((0, utils_1.getRootPath)(), 'data', 'skip_donor.flag'), 'skip');
-        res.json({ success: true, message: 'Сигнал пропуска донора отправлен' });
-    }
-    catch (e) {
-        console.error('❌ [API] Ошибка при создании skip_donor.flag:', e);
-        res.json({ success: false, error: 'Ошибка при отправке сигнала' });
-    }
+  try {
+    console.log('📢 [API] Получен запрос на пропуск текущего донора...');
+    fs_1.writeFileSync(path_1.join((0, utils_1.getRootPath)(), 'data', 'skip_donor.flag'), 'skip');
+    res.json({ success: true, message: 'Сигнал пропуска донора отправлен' });
+  } catch (e) {
+    console.error('❌ [API] Ошибка при создании skip_donor.flag:', e);
+    res.json({ success: false, error: 'Ошибка при отправке сигнала' });
+  }
 });
 app.post('/api/dm', async (req, res) => {
-    const { url, message } = req.body;
-    console.log({ url, message });
-    let currentContext = null;
-    try {
-        const accountsData = await (0, config_1.getAllAccounts)('server');
-        const firstAccount = accountsData[0] || {};
-        const reqConfig = {
-            id: firstAccount.id,
-            proxy: firstAccount.proxy,
-            cookies: firstAccount.cookies,
-            fingerprint: firstAccount.fingerprint
-        };
+  const { url, message } = req.body;
+  console.log({ url, message });
+  let currentContext = null;
+  try {
+    const accountsData = await (0, config_1.getAllAccounts)('server');
+    const firstAccount = accountsData[0] || {};
+    const reqConfig = {
+      id: firstAccount.id,
+      proxy: firstAccount.proxy,
+      cookies: firstAccount.cookies,
+      fingerprint: firstAccount.fingerprint,
+    };
 
-        if (!reqConfig.cookies || reqConfig.cookies.length === 0) {
-            return res.status(400).json({ success: false, error: 'Выбранный аккаунт не имеет куки. Пожалуйста, авторизуйте его сначала.' });
-        }
+    if (!reqConfig.cookies || reqConfig.cookies.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Выбранный аккаунт не имеет куки. Пожалуйста, авторизуйте его сначала.',
+      });
+    }
 
-        const showBrowser = await (0, config_1.getSetting)('showBrowser');
-        refreshSession();
-        const { browser, context } = await (0, browser_1.createBrowserContext)(reqConfig, !(showBrowser === 'true' || showBrowser === true));
-        console.log(`📡 [SENDER] Используется прокси: ${reqConfig.proxy ? reqConfig.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
-        console.log(`🍪 [SENDER] Загружено куки: ${reqConfig.cookies.length}`);
-        currentContext = context;
-        const liveViewInterval = (0, browser_1.startLiveView)(context);
-        const isSent = await sendMessageToProfile(context, url, message);
-        clearInterval(liveViewInterval);
-        if (isSent) {
-            try {
-                const db = await (0, db_1.getDB)();
-                await db.run(`INSERT INTO messages_log (url, message_text, status, timestamp) VALUES (?, ?, ?, ?)`, [url, message, 'sent', new Date().toISOString()]);
-            }
-            catch (dbErr) {
-                console.error('Ошибка сохранения в messages_log:', dbErr);
-            }
-            res.json({ success: true, message: 'Отправлено' });
-        }
-        else {
-            res.json({ success: false, message: 'Не отправлено' });
-        }
+    const showBrowser = await (0, config_1.getSetting)('showBrowser');
+    refreshSession();
+    const { browser, context } = await (0, browser_1.createBrowserContext)(
+      reqConfig,
+      !(showBrowser === 'true' || showBrowser === true)
+    );
+    console.log(
+      `📡 [SENDER] Используется прокси: ${reqConfig.proxy ? reqConfig.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`
+    );
+    console.log(`🍪 [SENDER] Загружено куки: ${reqConfig.cookies.length}`);
+    currentContext = context;
+    const liveViewInterval = (0, browser_1.startLiveView)(context);
+    const isSent = await sendMessageToProfile(context, url, message);
+    clearInterval(liveViewInterval);
+    if (isSent) {
+      try {
+        const db = await (0, db_1.getDB)();
+        await db.run(
+          `INSERT INTO messages_log (url, message_text, status, timestamp) VALUES (?, ?, ?, ?)`,
+          [url, message, 'sent', new Date().toISOString()]
+        );
+      } catch (dbErr) {
+        console.error('Ошибка сохранения в messages_log:', dbErr);
+      }
+      res.json({ success: true, message: 'Отправлено' });
+    } else {
+      res.json({ success: false, message: 'Не отправлено' });
     }
-    catch (e) {
-        console.error('Ошибка запуска:', e);
-        res.status(500).json({ success: false });
-    }
-    finally {
-        if (currentContext)
-            await currentContext.close();
-    }
+  } catch (e) {
+    console.error('Ошибка запуска:', e);
+    res.status(500).json({ success: false });
+  } finally {
+    if (currentContext) await currentContext.close();
+  }
 });
 app.get('/api/stats', async (req, res) => {
-    try {
-        const db = await (0, db_1.getDB)();
-        const rows = await db.all(`
+  try {
+    const db = await (0, db_1.getDB)();
+    const rows = await db.all(`
             SELECT 
                 message_text,
                 COUNT(*) as total_sent,
@@ -1157,168 +1252,164 @@ app.get('/api/stats', async (req, res) => {
             GROUP BY message_text
             ORDER BY total_sent DESC
         `);
-        res.json({ success: true, data: rows });
-    }
-    catch (e) {
-        console.error('Ошибка получения статистики:', e);
-        res.status(500).json({ success: false, error: 'Ошибка сервера' });
-    }
+    res.json({ success: true, data: rows });
+  } catch (e) {
+    console.error('Ошибка получения статистики:', e);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
 });
 
 // Update Routes
 app.get('/api/update/check', async (req, res) => {
-    try {
-        const latest = await updater.getLatestRelease();
-        const hasUpdate = latest.tag_name !== `v${pkg.version}`;
-        res.json({
-            currentVersion: pkg.version,
-            latestVersion: latest.tag_name.replace('v', ''),
-            hasUpdate,
-            releaseNotes: latest.body
-        });
-    } catch (e) {
-        res.status(500).json({ error: 'Failed to check for updates' });
-    }
+  try {
+    const latest = await updater.getLatestRelease();
+    const hasUpdate = latest.tag_name !== `v${pkg.version}`;
+    res.json({
+      currentVersion: pkg.version,
+      latestVersion: latest.tag_name.replace('v', ''),
+      hasUpdate,
+      releaseNotes: latest.body,
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check for updates' });
+  }
 });
 
 app.post('/api/update/install', isAdmin, async (req, res) => {
-    try {
-        const latest = await updater.getLatestRelease();
-        res.json({ success: true, message: 'Update started. The application will restart.' });
-        // Run update in next tick so response can be sent
-        setImmediate(async () => {
-            await updater.performUpdate(latest);
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+  try {
+    const latest = await updater.getLatestRelease();
+    res.json({ success: true, message: 'Update started. The application will restart.' });
+    // Run update in next tick so response can be sent
+    setImmediate(async () => {
+      await updater.performUpdate(latest);
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 if (process.env.NODE_ENV !== 'test') {
-    app.listen(PORT, async () => {
-        await state_1.StateManager.init();
-        console.log(`Сервер запущен: http://localhost:${PORT}`);
-    });
+  app.listen(PORT, async () => {
+    await state_1.StateManager.init();
+    console.log(`Сервер запущен: http://localhost:${PORT}`);
+  });
 }
 // SPA catch-all (must be after all API routes)
 app.use((req, res) => {
-    if (req.path.startsWith('/api/')) {
-        return res.status(404).json({ error: 'API route not found' });
-    }
-    const publicIndex = path_1.join(publicDir, 'index.html');
-    if (fs_1.existsSync(publicDir) && fs_1.existsSync(publicIndex)) {
-        res.sendFile(publicIndex);
-    }
-    else if (fs_1.existsSync(legacyHtml)) {
-        res.sendFile(legacyHtml);
-    }
-    else {
-        res.status(404).send('Not Found: Frontend build missing. API Server is running.');
-    }
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API route not found' });
+  }
+  const publicIndex = path_1.join(publicDir, 'index.html');
+  if (fs_1.existsSync(publicDir) && fs_1.existsSync(publicIndex)) {
+    res.sendFile(publicIndex);
+  } else if (fs_1.existsSync(legacyHtml)) {
+    res.sendFile(legacyHtml);
+  } else {
+    res.status(404).send('Not Found: Frontend build missing. API Server is running.');
+  }
 });
 const getSelectorString = (key) => {
-    const val = CONFIG.selectors[key];
-    return Array.isArray(val) ? val.join(',') : val;
+  const val = CONFIG.selectors[key];
+  return Array.isArray(val) ? val.join(',') : val;
 };
 // ==========================================
 // MAIN LOGIC
 // ==========================================
 const sendMessageToProfile = async (context, url, message) => {
-    const page = await context.newPage();
-    console.log(`\n📨 [SENDER] Начало обработки: ${url}`);
+  const page = await context.newPage();
+  console.log(`\n📨 [SENDER] Начало обработки: ${url}`);
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: CONFIG.timeouts.pageLoad });
+    await (0, browser_1.takeLiveScreenshot)(page);
+    await (0, utils_1.wait)(2000);
+    let accessButton = null;
+    const directBtnSelector = getSelectorString('directMessageBtn');
+    const directBtn = page.locator(directBtnSelector).first();
     try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: CONFIG.timeouts.pageLoad });
-        await (0, browser_1.takeLiveScreenshot)(page);
-        await (0, utils_1.wait)(2000);
-        let accessButton = null;
-        const directBtnSelector = getSelectorString('directMessageBtn');
-        const directBtn = page.locator(directBtnSelector).first();
+      await directBtn.waitFor({ state: 'visible', timeout: 5000 });
+      if (await directBtn.isVisible()) {
+        console.log('✅ Кнопка "Написать" (или аналог) найдена в профиле.');
+        accessButton = directBtn;
+      }
+    } catch (e) { }
+    if (!accessButton) {
+      console.log('⚠️ Прямая кнопка не найдена. Проверяем "3 точки"...');
+      const optionsBtn = page.locator(getSelectorString('optionsBtn')).first();
+      if (await optionsBtn.isVisible()) {
+        await optionsBtn.click();
+        await (0, utils_1.wait)(1500);
+        const menuMsgBtn = page.locator(getSelectorString('menuMessageBtn')).first();
         try {
-            await directBtn.waitFor({ state: 'visible', timeout: 5000 });
-            if (await directBtn.isVisible()) {
-                console.log('✅ Кнопка "Написать" (или аналог) найдена в профиле.');
-                accessButton = directBtn;
-            }
+          await menuMsgBtn.waitFor({ state: 'visible', timeout: 3000 });
+          console.log('✅ Кнопка "Написать" найдена в меню.');
+          accessButton = menuMsgBtn;
+        } catch (e) {
+          console.log('❌ В меню нет пункта отправки сообщения.');
         }
-        catch (e) { }
-        if (!accessButton) {
-            console.log('⚠️ Прямая кнопка не найдена. Проверяем "3 точки"...');
-            const optionsBtn = page.locator(getSelectorString('optionsBtn')).first();
-            if (await optionsBtn.isVisible()) {
-                await optionsBtn.click();
-                await (0, utils_1.wait)(1500);
-                const menuMsgBtn = page.locator(getSelectorString('menuMessageBtn')).first();
-                try {
-                    await menuMsgBtn.waitFor({ state: 'visible', timeout: 3000 });
-                    console.log('✅ Кнопка "Написать" найдена в меню.');
-                    accessButton = menuMsgBtn;
-                }
-                catch (e) {
-                    console.log('❌ В меню нет пункта отправки сообщения.');
-                }
-            }
-        }
-        if (!accessButton) {
-            console.log(`⛔ [SKIP] Кнопки нет. Делаю скриншот...`);
-            await page.screenshot({ path: path_1.join(__dirname, 'debug_error.png'), fullPage: true });
-            return false;
-        }
-        await accessButton.click();
-        await browser_1.takeLiveScreenshot(page);
-        try {
-            await Promise.race([
-                page.waitForSelector(CONFIG.selectors.chatInput, { state: 'visible', timeout: 15000 }),
-                page.waitForSelector(getSelectorString('notNowBtn'), { state: 'visible', timeout: 15000 })
-            ]);
-        }
-        catch (e) {
-            console.log('❌ Тайм-аут: чат не открылся.');
-            return false;
-        }
-        const notNowBtn = page.locator(getSelectorString('notNowBtn')).first();
-        if (await notNowBtn.isVisible()) {
-            await notNowBtn.click();
-            await (0, utils_1.wait)(1500);
-        }
-        const chatInput = page.locator(CONFIG.selectors.chatInput).first();
-        if (!await chatInput.isVisible()) {
-            console.log('❌ Поле ввода не найдено (ЛС закрыто).');
-            return false;
-        }
-        console.log('🔍 Проверка истории переписки...');
-        await (0, utils_1.wait)(2500);
-        const allRows = await page.locator(getSelectorString('messageRow')).all();
-        let realMessageCount = 0;
-        for (const row of allRows) {
-            const text = await row.innerText();
-            if (text.includes('Смотреть профиль') ||
-                text.includes('View profile') ||
-                text.includes('View Profile') ||
-                text.includes('Аккаунт в Instagram') ||
-                text.trim() === '') {
-                continue;
-            }
-            realMessageCount++;
-        }
-        if (realMessageCount > 0) {
-            console.log(`⛔ [SKIP] Уже есть переписка (${realMessageCount} реальных сообщений). Закрываем.`);
-            return false;
-        }
-        console.log('✅ История чиста (баннер проигнорирован). Отправляем сообщение.');
-        await (0, utils_1.humanType)(page, CONFIG.selectors.chatInput, message, CONFIG.timeouts);
-        await (0, utils_1.wait)(1000);
-        await page.keyboard.press('Enter');
-        await (0, browser_1.takeLiveScreenshot)(page);
-        console.log(`🚀 [SENT] Сообщение отправлено: ${url}`);
-        await (0, utils_1.wait)(3000);
-        return true;
+      }
     }
-    catch (error) {
-        console.error(`💥 Ошибка: ${error.message}`);
-        await (0, reporter_1.saveCrashReport)(page, error, 'sender');
-        return false;
+    if (!accessButton) {
+      console.log(`⛔ [SKIP] Кнопки нет. Делаю скриншот...`);
+      await page.screenshot({ path: path_1.join(__dirname, 'debug_error.png'), fullPage: true });
+      return false;
     }
-    finally {
-        await page.close();
+    await accessButton.click();
+    await browser_1.takeLiveScreenshot(page);
+    try {
+      await Promise.race([
+        page.waitForSelector(CONFIG.selectors.chatInput, { state: 'visible', timeout: 15000 }),
+        page.waitForSelector(getSelectorString('notNowBtn'), { state: 'visible', timeout: 15000 }),
+      ]);
+    } catch (e) {
+      console.log('❌ Тайм-аут: чат не открылся.');
+      return false;
     }
+    const notNowBtn = page.locator(getSelectorString('notNowBtn')).first();
+    if (await notNowBtn.isVisible()) {
+      await notNowBtn.click();
+      await (0, utils_1.wait)(1500);
+    }
+    const chatInput = page.locator(CONFIG.selectors.chatInput).first();
+    if (!(await chatInput.isVisible())) {
+      console.log('❌ Поле ввода не найдено (ЛС закрыто).');
+      return false;
+    }
+    console.log('🔍 Проверка истории переписки...');
+    await (0, utils_1.wait)(2500);
+    const allRows = await page.locator(getSelectorString('messageRow')).all();
+    let realMessageCount = 0;
+    for (const row of allRows) {
+      const text = await row.innerText();
+      if (
+        text.includes('Смотреть профиль') ||
+        text.includes('View profile') ||
+        text.includes('View Profile') ||
+        text.includes('Аккаунт в Instagram') ||
+        text.trim() === ''
+      ) {
+        continue;
+      }
+      realMessageCount++;
+    }
+    if (realMessageCount > 0) {
+      console.log(
+        `⛔ [SKIP] Уже есть переписка (${realMessageCount} реальных сообщений). Закрываем.`
+      );
+      return false;
+    }
+    console.log('✅ История чиста (баннер проигнорирован). Отправляем сообщение.');
+    await (0, utils_1.humanType)(page, CONFIG.selectors.chatInput, message, CONFIG.timeouts);
+    await (0, utils_1.wait)(1000);
+    await page.keyboard.press('Enter');
+    await (0, browser_1.takeLiveScreenshot)(page);
+    console.log(`🚀 [SENT] Сообщение отправлено: ${url}`);
+    await (0, utils_1.wait)(3000);
+    return true;
+  } catch (error) {
+    console.error(`💥 Ошибка: ${error.message}`);
+    await (0, reporter_1.saveCrashReport)(page, error, 'sender');
+    return false;
+  } finally {
+    await page.close();
+  }
 };
 module.exports = app;

@@ -8,9 +8,9 @@ console.log('PUBLIC_KEY_PATH:', PUBLIC_KEY_PATH);
 console.log('Exists:', fs.existsSync(PUBLIC_KEY_PATH));
 
 if (fs.existsSync(PUBLIC_KEY_PATH)) {
-    const content = fs.readFileSync(PUBLIC_KEY_PATH, 'utf8');
-    console.log('Content length:', content.length);
-    console.log('IS_ASYMMETRIC: true');
+  const content = fs.readFileSync(PUBLIC_KEY_PATH, 'utf8');
+  console.log('Content length:', content.length);
+  console.log('IS_ASYMMETRIC: true');
 } else {
-    console.log('IS_ASYMMETRIC: false');
+  console.log('IS_ASYMMETRIC: false');
 }

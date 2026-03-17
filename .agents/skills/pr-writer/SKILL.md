@@ -36,6 +36,7 @@ git log BASE..HEAD --oneline
 ```
 
 Ensure:
+
 - All changes are committed
 - Branch is up to date with remote
 - Changes are rebased on the base branch if needed
@@ -69,11 +70,13 @@ Use this structure for PR descriptions (ignoring any repository PR templates):
 ```
 
 **Do NOT include:**
+
 - "Test plan" sections
 - Checkbox lists of testing steps
 - Redundant summaries of the diff
 
 **Do include:**
+
 - Clear explanation of what and why
 - Links to relevant issues or tickets
 - Context that isn't obvious from the code
@@ -89,6 +92,7 @@ EOF
 ```
 
 **Title format** follows commit conventions:
+
 - `feat(scope): Add new feature`
 - `fix(scope): Fix the bug`
 - `ref: Refactor something`
@@ -141,12 +145,12 @@ duplicating logic across endpoints.
 
 Reference issues in the PR body:
 
-| Syntax | Effect |
-|--------|--------|
-| `Fixes #1234` | Closes GitHub issue on merge |
-| `Fixes SENTRY-1234` | Closes Sentry issue |
-| `Refs GH-1234` | Links without closing |
-| `Refs LINEAR-ABC-123` | Links Linear issue |
+| Syntax                | Effect                       |
+| --------------------- | ---------------------------- |
+| `Fixes #1234`         | Closes GitHub issue on merge |
+| `Fixes SENTRY-1234`   | Closes Sentry issue          |
+| `Refs GH-1234`        | Links without closing        |
+| `Refs LINEAR-ABC-123` | Links Linear issue           |
 
 ## Guidelines
 

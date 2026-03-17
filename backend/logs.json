@@ -1,1 +1,914 @@
-[{"timestamp":"2026-02-25T15:30:19.244Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772033419238"},{"timestamp":"2026-02-25T15:37:21.408Z","source":"server","message":"[GOLOS] like -> добавлен в профиль: https://www.instagram.com/alina__nano/","sessionId":"1772033419238"},{"timestamp":"2026-02-25T15:37:22.564Z","source":"server","message":"[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/tanya_artyukhova/","sessionId":"1772033419238"},{"timestamp":"2026-02-25T15:40:01.069Z","source":"server","message":"[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/callmebarneyyyy/","sessionId":"1772033419238"},{"timestamp":"2026-02-25T15:40:29.844Z","source":"server","message":"[object Object]","sessionId":"1772033419238"},{"timestamp":"2026-02-25T15:40:31.899Z","source":"server","message":"⚠️ Запуск без куки. Возможна переадресация на логин.","sessionId":"1772034029846"},{"timestamp":"2026-02-25T15:40:31.900Z","source":"server","message":"📡 [SENDER] Используется прокси: ПРЯМОЕ СОЕДИНЕНИЕ","sessionId":"1772034029846"},{"timestamp":"2026-02-25T15:40:31.900Z","source":"server-error","message":"Ошибка запуска: TypeError: Cannot read properties of undefined (reading 'length')","sessionId":"1772034029846"},{"timestamp":"2026-02-25T15:41:18.822Z","source":"server-error","message":"(node:20472) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.\n(Use `node --trace-deprecation ...` to show where the warning was created)","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:21.789Z","source":"index","message":"🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:21.790Z","source":"index","message":"----------------------------------------------","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:21.797Z","source":"index","message":"🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: 479","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:21.801Z","source":"index","message":"🎯 Загружено доноров: 2","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:21.802Z","source":"index","message":"🌐 Запуск браузера (Фоновый режим / Headless)...","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:21.802Z","source":"index","message":"📡 Прокси: http://191.96.125.137:4336","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:21.802Z","source":"index","message":"🍪 Загружено куки: 8","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:21.802Z","source":"index","message":"🎭 Применен уникальный отпечаток браузера: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap...","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:23.508Z","source":"index","message":"✅ Куки применены к браузерному контексту.","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:23.606Z","source":"index","message":"==============================================","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:23.606Z","source":"index","message":"📂 ОТКРЫВАЕМ ДОНОРА: https://www.instagram.com/spb.storees","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:23.606Z","source":"index","message":"==============================================","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:30.113Z","source":"index","message":"✅ Страница донора загружена. Ищем кнопку подписчиков...","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:40.121Z","source":"index","message":"⚠️ Кнопка подписчиков не найдена (возможно, аккаунт пуст или скрыт).","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:40.132Z","source":"index","message":"🚪 Донор закрыт.","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:40.244Z","source":"index","message":"🗑️ Донор удален из списка рассылки: https://www.instagram.com/spb.storees","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:40.245Z","source":"index","message":"==============================================","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:40.245Z","source":"index","message":"📂 ОТКРЫВАЕМ ДОНОРА: https://www.instagram.com/saintpgo","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:40.245Z","source":"index","message":"==============================================","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:41.694Z","source":"index","message":"✅ Страница донора загружена. Ищем кнопку подписчиков...","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:41.861Z","source":"index-error","message":"❌ КРИТИЧЕСКАЯ ОШИБКА ДОНОРА: locator.isVisible: Target page, context or browser has been closed","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:41.869Z","source":"index","message":"🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T15-41-41-862Z_donor_saintpgo","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:41.870Z","source":"index","message":"🚪 Донор закрыт.","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:41.871Z","source":"index-error","message":"❌ Непредвиденная ошибка: locator.isVisible: Target page, context or browser has been closed","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:43.041Z","source":"index","message":"✅ ========================================== ✅","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:43.041Z","source":"index","message":"👋 РАБОТА ПОЛНОСТЬЮ ЗАВЕРШЕНА! Все результаты сохранены.","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:43.041Z","source":"index","message":"✅ ========================================== ✅","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:41:43.088Z","source":"system","message":"index bot exited with code null","sessionId":"1772034078819"},{"timestamp":"2026-02-25T15:56:58.068Z","source":"index","message":"🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:58.068Z","source":"index","message":"----------------------------------------------","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:58.085Z","source":"index","message":"🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: 479","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:58.091Z","source":"index","message":"🎯 Загружено доноров: 1","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:58.092Z","source":"index","message":"🌐 Запуск браузера (Фоновый режим / Headless)...","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:58.092Z","source":"index","message":"📡 Прокси: http://191.96.125.137:4336","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:58.092Z","source":"index","message":"🍪 Загружено куки: 8","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:58.092Z","source":"index","message":"🎭 Применен уникальный отпечаток браузера: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap...","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:59.250Z","source":"index","message":"✅ Куки применены к браузерному контексту.","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:59.308Z","source":"index","message":"==============================================","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:59.308Z","source":"index","message":"📂 ОТКРЫВАЕМ ДОНОРА: https://www.instagram.com/saintpgo","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:56:59.308Z","source":"index","message":"==============================================","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:57:07.975Z","source":"index-error","message":"❌ КРИТИЧЕСКАЯ ОШИБКА ДОНОРА: page.goto: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - navigating to \"https://www.instagram.com/saintpgo\", waiting until \"domcontentloaded\"\u001b[22m","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:57:07.981Z","source":"index","message":"🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T15-57-07-975Z_donor_saintpgo","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:57:07.983Z","source":"index","message":"🚪 Донор закрыт.","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:57:07.983Z","source":"index-error","message":"❌ Непредвиденная ошибка: page.goto: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - navigating to \"https://www.instagram.com/saintpgo\", waiting until \"domcontentloaded\"\u001b[22m","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:57:09.543Z","source":"index","message":"✅ ========================================== ✅","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:57:09.544Z","source":"index","message":"👋 РАБОТА ПОЛНОСТЬЮ ЗАВЕРШЕНА! Все результаты сохранены.","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:57:09.544Z","source":"index","message":"✅ ========================================== ✅","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:57:09.595Z","source":"system","message":"index bot exited with code null","sessionId":"1772035015115"},{"timestamp":"2026-02-25T15:57:18.048Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772035038042"},{"timestamp":"2026-02-25T15:57:59.562Z","source":"server","message":"[object Object]","sessionId":"1772035038042"},{"timestamp":"2026-02-25T15:57:59.618Z","source":"server","message":"[object Object]","sessionId":"1772035079565"},{"timestamp":"2026-02-25T15:58:00.358Z","source":"server","message":"[object Object]","sessionId":"1772035079619"},{"timestamp":"2026-02-25T15:58:00.871Z","source":"server","message":"✅ Куки применены к браузерному контексту.","sessionId":"1772035080359"},{"timestamp":"2026-02-25T15:58:00.871Z","source":"server","message":"📡 [SENDER] Используется прокси: http://45.159.183.41:4637","sessionId":"1772035080359"},{"timestamp":"2026-02-25T15:58:00.871Z","source":"server","message":"🍪 [SENDER] Загружено куки: 8","sessionId":"1772035080359"},{"timestamp":"2026-02-25T15:58:00.873Z","source":"server","message":"✅ Куки применены к браузерному контексту.","sessionId":"1772035080359"},{"timestamp":"2026-02-25T15:58:00.873Z","source":"server","message":"📡 [SENDER] Используется прокси: http://45.159.183.41:4637","sessionId":"1772035080359"},{"timestamp":"2026-02-25T15:58:00.873Z","source":"server","message":"🍪 [SENDER] Загружено куки: 8","sessionId":"1772035080359"},{"timestamp":"2026-02-25T15:58:01.359Z","source":"server","message":"✅ Куки применены к браузерному контексту.","sessionId":"1772035080359"},{"timestamp":"2026-02-25T15:58:01.359Z","source":"server","message":"📡 [SENDER] Используется прокси: http://45.159.183.41:4637","sessionId":"1772035080359"},{"timestamp":"2026-02-25T15:58:01.359Z","source":"server","message":"🍪 [SENDER] Загружено куки: 8","sessionId":"1772035080359"},{"timestamp":"2026-02-25T15:58:02.485Z","source":"server","message":"[object Object]","sessionId":"1772035080359"},{"timestamp":"2026-02-25T15:58:04.090Z","source":"server","message":"📨 [SENDER] Начало обработки: https://www.instagram.com/beautiful_dashulka/","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:04.128Z","source":"server","message":"✅ Куки применены к браузерному контексту.","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:04.128Z","source":"server","message":"📡 [SENDER] Используется прокси: http://45.159.183.41:4637","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:04.128Z","source":"server","message":"🍪 [SENDER] Загружено куки: 8","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:04.991Z","source":"server","message":"📨 [SENDER] Начало обработки: https://www.instagram.com/mrs.kramar/","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:05.384Z","source":"server","message":"📨 [SENDER] Начало обработки: https://www.instagram.com/beautiful_dashulka/","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:06.411Z","source":"server","message":"📨 [SENDER] Начало обработки: https://www.instagram.com/mrs.kramar/","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:14.153Z","source":"server","message":"⚠️ Прямая кнопка не найдена. Проверяем \"3 точки\"...","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:14.155Z","source":"server-error","message":"💥 Ошибка: locator.isVisible: Target page, context or browser has been closed","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:14.159Z","source":"server","message":"🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T15-58-14-155Z_sender","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:15.583Z","source":"server","message":"⚠️ Прямая кнопка не найдена. Проверяем \"3 точки\"...","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:15.811Z","source":"server","message":"⛔ [SKIP] Кнопки нет. Делаю скриншот...","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:18.932Z","source":"server","message":"⚠️ Прямая кнопка не найдена. Проверяем \"3 точки\"...","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:18.933Z","source":"server-error","message":"💥 Ошибка: locator.isVisible: Target page, context or browser has been closed","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:18.938Z","source":"server","message":"🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T15-58-18-933Z_sender","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:22.581Z","source":"server","message":"⚠️ Прямая кнопка не найдена. Проверяем \"3 точки\"...","sessionId":"1772035082486"},{"timestamp":"2026-02-25T15:58:22.597Z","source":"server","message":"⛔ [SKIP] Кнопки нет. Делаю скриншот...","sessionId":"1772035082486"},{"timestamp":"2026-02-25T18:15:35.338Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772043335328"},{"timestamp":"2026-02-25T18:18:50.171Z","source":"server","message":"[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/mrs.kramar/","sessionId":"1772043335328"},{"timestamp":"2026-02-25T18:18:51.512Z","source":"server","message":"[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/aptos_denis_spb/","sessionId":"1772043335328"},{"timestamp":"2026-02-25T18:18:56.268Z","source":"server","message":"[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/beautiful_dashulka/","sessionId":"1772043335328"},{"timestamp":"2026-02-25T18:22:07.422Z","source":"server","message":"[object Object]","sessionId":"1772043335328"},{"timestamp":"2026-02-25T18:22:09.470Z","source":"server","message":"✅ Куки применены к браузерному контексту.","sessionId":"1772043727424"},{"timestamp":"2026-02-25T18:22:09.470Z","source":"server","message":"📡 [SENDER] Используется прокси: http://45.159.183.41:4637","sessionId":"1772043727424"},{"timestamp":"2026-02-25T18:22:09.470Z","source":"server","message":"🍪 [SENDER] Загружено куки: 8","sessionId":"1772043727424"},{"timestamp":"2026-02-25T18:22:12.261Z","source":"server","message":"📨 [SENDER] Начало обработки: https://www.instagram.com/dashuta_nazenceva/","sessionId":"1772043727424"},{"timestamp":"2026-02-25T18:22:13.433Z","source":"server-error","message":"💥 Ошибка: page.goto: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - navigating to \"https://www.instagram.com/dashuta_nazenceva/\", waiting until \"domcontentloaded\"\u001b[22m","sessionId":"1772043727424"},{"timestamp":"2026-02-25T18:22:13.440Z","source":"server","message":"🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T18-22-13-433Z_sender","sessionId":"1772043727424"},{"timestamp":"2026-02-25T18:22:32.901Z","source":"server-error","message":"(node:10968) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.\n(Use `node --trace-deprecation ...` to show where the warning was created)","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:36.549Z","source":"index","message":"🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:36.550Z","source":"index","message":"----------------------------------------------","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:36.569Z","source":"index","message":"🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: 479","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:36.573Z","source":"index","message":"🎯 Загружено доноров: 1","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:36.573Z","source":"index","message":"🌐 Запуск браузера (Фоновый режим / Headless)...","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:36.573Z","source":"index","message":"📡 Прокси: http://191.96.125.137:4336","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:36.574Z","source":"index","message":"🍪 Загружено куки: 8","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:36.574Z","source":"index","message":"🎭 Применен уникальный отпечаток браузера: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap...","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:37.855Z","source":"index","message":"✅ Куки применены к браузерному контексту.","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:37.918Z","source":"index","message":"==============================================","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:37.918Z","source":"index","message":"📂 ОТКРЫВАЕМ ДОНОРА: https://www.instagram.com/saintpgo","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:37.918Z","source":"index","message":"==============================================","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:43.617Z","source":"index","message":"✅ Страница донора загружена. Ищем кнопку подписчиков...","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:48.084Z","source":"index-error","message":"❌ КРИТИЧЕСКАЯ ОШИБКА ДОНОРА: locator.isVisible: Target page, context or browser has been closed","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:48.090Z","source":"index","message":"🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T18-22-48-084Z_donor_saintpgo","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:48.093Z","source":"index","message":"🚪 Донор закрыт.","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:48.093Z","source":"index-error","message":"❌ Непредвиденная ошибка: locator.isVisible: Target page, context or browser has been closed","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:49.286Z","source":"index","message":"✅ ========================================== ✅","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:49.286Z","source":"index","message":"👋 РАБОТА ПОЛНОСТЬЮ ЗАВЕРШЕНА! Все результаты сохранены.","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:49.287Z","source":"index","message":"✅ ========================================== ✅","sessionId":"1772043752898"},{"timestamp":"2026-02-25T18:22:49.336Z","source":"system","message":"index bot exited with code 0","sessionId":"1772043752898"},{"timestamp":"2026-02-26T07:51:35.112Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772092295104"},{"timestamp":"2026-02-26T07:53:51.989Z","source":"server-error","message":"(node:10824) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.\n(Use `node --trace-deprecation ...` to show where the warning was created)","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:55.032Z","source":"index","message":"🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:55.033Z","source":"index","message":"----------------------------------------------","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:55.041Z","source":"index","message":"🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: 479","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:55.047Z","source":"index","message":"🎯 Загружено доноров: 1","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:55.048Z","source":"index","message":"🌐 Запуск браузера (Фоновый режим / Headless)...","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:55.048Z","source":"index","message":"📡 Прокси: http://191.96.125.137:4336","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:55.049Z","source":"index","message":"🍪 Загружено куки: 8","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:55.049Z","source":"index","message":"🎭 Применен уникальный отпечаток браузера: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap...","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:57.787Z","source":"index","message":"✅ Куки применены к браузерному контексту.","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:57.802Z","source":"index","message":"==============================================","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:57.802Z","source":"index","message":"📂 ОТКРЫВАЕМ ДОНОРА: https://www.instagram.com/saintpgo","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:53:57.802Z","source":"index","message":"==============================================","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:54:03.674Z","source":"index","message":"✅ Страница донора загружена. Ищем кнопку подписчиков...","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:54:13.680Z","source":"index","message":"⚠️ Кнопка подписчиков не найдена (возможно, аккаунт пуст или скрыт).","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:54:13.688Z","source":"index","message":"🚪 Донор закрыт.","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:54:13.765Z","source":"index","message":"🗑️ Донор удален из списка рассылки: https://www.instagram.com/saintpgo","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:54:15.201Z","source":"index","message":"✅ ========================================== ✅","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:54:15.201Z","source":"index","message":"👋 РАБОТА ПОЛНОСТЬЮ ЗАВЕРШЕНА! Все результаты сохранены.","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:54:15.201Z","source":"index","message":"✅ ========================================== ✅","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:54:15.248Z","source":"system","message":"index bot exited with code null","sessionId":"1772092431986"},{"timestamp":"2026-02-26T07:56:35.070Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772092595065"},{"timestamp":"2026-02-26T07:57:10.794Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772092630788"},{"timestamp":"2026-02-26T07:57:48.895Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772092668888"},{"timestamp":"2026-02-26T07:58:18.998Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772092698992"},{"timestamp":"2026-02-26T08:42:35.890Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772095355879"},{"timestamp":"2026-02-26T08:47:43.992Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772095663981"},{"timestamp":"2026-02-26T09:14:48.093Z","source":"server","message":"Сервер запущен: http://localhost:1337","sessionId":"1772097288080"},{"timestamp":"2026-02-26T09:23:59.528Z","source":"server","message":"[GOLOS] like -> добавлен в профиль: https://www.instagram.com/darykaas/","sessionId":"1772097288080"},{"timestamp":"2026-02-26T09:57:59.111Z","source":"server","message":"[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/danila_aestheticss/","sessionId":"1772097288080"}]
+[
+  {
+    "timestamp": "2026-02-25T15:30:19.244Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772033419238"
+  },
+  {
+    "timestamp": "2026-02-25T15:37:21.408Z",
+    "source": "server",
+    "message": "[GOLOS] like -> добавлен в профиль: https://www.instagram.com/alina__nano/",
+    "sessionId": "1772033419238"
+  },
+  {
+    "timestamp": "2026-02-25T15:37:22.564Z",
+    "source": "server",
+    "message": "[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/tanya_artyukhova/",
+    "sessionId": "1772033419238"
+  },
+  {
+    "timestamp": "2026-02-25T15:40:01.069Z",
+    "source": "server",
+    "message": "[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/callmebarneyyyy/",
+    "sessionId": "1772033419238"
+  },
+  {
+    "timestamp": "2026-02-25T15:40:29.844Z",
+    "source": "server",
+    "message": "[object Object]",
+    "sessionId": "1772033419238"
+  },
+  {
+    "timestamp": "2026-02-25T15:40:31.899Z",
+    "source": "server",
+    "message": "⚠️ Запуск без куки. Возможна переадресация на логин.",
+    "sessionId": "1772034029846"
+  },
+  {
+    "timestamp": "2026-02-25T15:40:31.900Z",
+    "source": "server",
+    "message": "📡 [SENDER] Используется прокси: ПРЯМОЕ СОЕДИНЕНИЕ",
+    "sessionId": "1772034029846"
+  },
+  {
+    "timestamp": "2026-02-25T15:40:31.900Z",
+    "source": "server-error",
+    "message": "Ошибка запуска: TypeError: Cannot read properties of undefined (reading 'length')",
+    "sessionId": "1772034029846"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:18.822Z",
+    "source": "server-error",
+    "message": "(node:20472) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.\n(Use `node --trace-deprecation ...` to show where the warning was created)",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:21.789Z",
+    "source": "index",
+    "message": "🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:21.790Z",
+    "source": "index",
+    "message": "----------------------------------------------",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:21.797Z",
+    "source": "index",
+    "message": "🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: 479",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:21.801Z",
+    "source": "index",
+    "message": "🎯 Загружено доноров: 2",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:21.802Z",
+    "source": "index",
+    "message": "🌐 Запуск браузера (Фоновый режим / Headless)...",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:21.802Z",
+    "source": "index",
+    "message": "📡 Прокси: http://191.96.125.137:4336",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:21.802Z",
+    "source": "index",
+    "message": "🍪 Загружено куки: 8",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:21.802Z",
+    "source": "index",
+    "message": "🎭 Применен уникальный отпечаток браузера: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap...",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:23.508Z",
+    "source": "index",
+    "message": "✅ Куки применены к браузерному контексту.",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:23.606Z",
+    "source": "index",
+    "message": "==============================================",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:23.606Z",
+    "source": "index",
+    "message": "📂 ОТКРЫВАЕМ ДОНОРА: https://www.instagram.com/spb.storees",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:23.606Z",
+    "source": "index",
+    "message": "==============================================",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:30.113Z",
+    "source": "index",
+    "message": "✅ Страница донора загружена. Ищем кнопку подписчиков...",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:40.121Z",
+    "source": "index",
+    "message": "⚠️ Кнопка подписчиков не найдена (возможно, аккаунт пуст или скрыт).",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:40.132Z",
+    "source": "index",
+    "message": "🚪 Донор закрыт.",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:40.244Z",
+    "source": "index",
+    "message": "🗑️ Донор удален из списка рассылки: https://www.instagram.com/spb.storees",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:40.245Z",
+    "source": "index",
+    "message": "==============================================",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:40.245Z",
+    "source": "index",
+    "message": "📂 ОТКРЫВАЕМ ДОНОРА: https://www.instagram.com/saintpgo",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:40.245Z",
+    "source": "index",
+    "message": "==============================================",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:41.694Z",
+    "source": "index",
+    "message": "✅ Страница донора загружена. Ищем кнопку подписчиков...",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:41.861Z",
+    "source": "index-error",
+    "message": "❌ КРИТИЧЕСКАЯ ОШИБКА ДОНОРА: locator.isVisible: Target page, context or browser has been closed",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:41.869Z",
+    "source": "index",
+    "message": "🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T15-41-41-862Z_donor_saintpgo",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:41.870Z",
+    "source": "index",
+    "message": "🚪 Донор закрыт.",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:41.871Z",
+    "source": "index-error",
+    "message": "❌ Непредвиденная ошибка: locator.isVisible: Target page, context or browser has been closed",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:43.041Z",
+    "source": "index",
+    "message": "✅ ========================================== ✅",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:43.041Z",
+    "source": "index",
+    "message": "👋 РАБОТА ПОЛНОСТЬЮ ЗАВЕРШЕНА! Все результаты сохранены.",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:43.041Z",
+    "source": "index",
+    "message": "✅ ========================================== ✅",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:41:43.088Z",
+    "source": "system",
+    "message": "index bot exited with code null",
+    "sessionId": "1772034078819"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:58.068Z",
+    "source": "index",
+    "message": "🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:58.068Z",
+    "source": "index",
+    "message": "----------------------------------------------",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:58.085Z",
+    "source": "index",
+    "message": "🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: 479",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:58.091Z",
+    "source": "index",
+    "message": "🎯 Загружено доноров: 1",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:58.092Z",
+    "source": "index",
+    "message": "🌐 Запуск браузера (Фоновый режим / Headless)...",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:58.092Z",
+    "source": "index",
+    "message": "📡 Прокси: http://191.96.125.137:4336",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:58.092Z",
+    "source": "index",
+    "message": "🍪 Загружено куки: 8",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:58.092Z",
+    "source": "index",
+    "message": "🎭 Применен уникальный отпечаток браузера: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap...",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:59.250Z",
+    "source": "index",
+    "message": "✅ Куки применены к браузерному контексту.",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:59.308Z",
+    "source": "index",
+    "message": "==============================================",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:59.308Z",
+    "source": "index",
+    "message": "📂 ОТКРЫВАЕМ ДОНОРА: https://www.instagram.com/saintpgo",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:56:59.308Z",
+    "source": "index",
+    "message": "==============================================",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:07.975Z",
+    "source": "index-error",
+    "message": "❌ КРИТИЧЕСКАЯ ОШИБКА ДОНОРА: page.goto: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - navigating to \"https://www.instagram.com/saintpgo\", waiting until \"domcontentloaded\"\u001b[22m",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:07.981Z",
+    "source": "index",
+    "message": "🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T15-57-07-975Z_donor_saintpgo",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:07.983Z",
+    "source": "index",
+    "message": "🚪 Донор закрыт.",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:07.983Z",
+    "source": "index-error",
+    "message": "❌ Непредвиденная ошибка: page.goto: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - navigating to \"https://www.instagram.com/saintpgo\", waiting until \"domcontentloaded\"\u001b[22m",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:09.543Z",
+    "source": "index",
+    "message": "✅ ========================================== ✅",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:09.544Z",
+    "source": "index",
+    "message": "👋 РАБОТА ПОЛНОСТЬЮ ЗАВЕРШЕНА! Все результаты сохранены.",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:09.544Z",
+    "source": "index",
+    "message": "✅ ========================================== ✅",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:09.595Z",
+    "source": "system",
+    "message": "index bot exited with code null",
+    "sessionId": "1772035015115"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:18.048Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772035038042"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:59.562Z",
+    "source": "server",
+    "message": "[object Object]",
+    "sessionId": "1772035038042"
+  },
+  {
+    "timestamp": "2026-02-25T15:57:59.618Z",
+    "source": "server",
+    "message": "[object Object]",
+    "sessionId": "1772035079565"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:00.358Z",
+    "source": "server",
+    "message": "[object Object]",
+    "sessionId": "1772035079619"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:00.871Z",
+    "source": "server",
+    "message": "✅ Куки применены к браузерному контексту.",
+    "sessionId": "1772035080359"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:00.871Z",
+    "source": "server",
+    "message": "📡 [SENDER] Используется прокси: http://45.159.183.41:4637",
+    "sessionId": "1772035080359"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:00.871Z",
+    "source": "server",
+    "message": "🍪 [SENDER] Загружено куки: 8",
+    "sessionId": "1772035080359"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:00.873Z",
+    "source": "server",
+    "message": "✅ Куки применены к браузерному контексту.",
+    "sessionId": "1772035080359"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:00.873Z",
+    "source": "server",
+    "message": "📡 [SENDER] Используется прокси: http://45.159.183.41:4637",
+    "sessionId": "1772035080359"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:00.873Z",
+    "source": "server",
+    "message": "🍪 [SENDER] Загружено куки: 8",
+    "sessionId": "1772035080359"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:01.359Z",
+    "source": "server",
+    "message": "✅ Куки применены к браузерному контексту.",
+    "sessionId": "1772035080359"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:01.359Z",
+    "source": "server",
+    "message": "📡 [SENDER] Используется прокси: http://45.159.183.41:4637",
+    "sessionId": "1772035080359"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:01.359Z",
+    "source": "server",
+    "message": "🍪 [SENDER] Загружено куки: 8",
+    "sessionId": "1772035080359"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:02.485Z",
+    "source": "server",
+    "message": "[object Object]",
+    "sessionId": "1772035080359"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:04.090Z",
+    "source": "server",
+    "message": "📨 [SENDER] Начало обработки: https://www.instagram.com/beautiful_dashulka/",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:04.128Z",
+    "source": "server",
+    "message": "✅ Куки применены к браузерному контексту.",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:04.128Z",
+    "source": "server",
+    "message": "📡 [SENDER] Используется прокси: http://45.159.183.41:4637",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:04.128Z",
+    "source": "server",
+    "message": "🍪 [SENDER] Загружено куки: 8",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:04.991Z",
+    "source": "server",
+    "message": "📨 [SENDER] Начало обработки: https://www.instagram.com/mrs.kramar/",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:05.384Z",
+    "source": "server",
+    "message": "📨 [SENDER] Начало обработки: https://www.instagram.com/beautiful_dashulka/",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:06.411Z",
+    "source": "server",
+    "message": "📨 [SENDER] Начало обработки: https://www.instagram.com/mrs.kramar/",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:14.153Z",
+    "source": "server",
+    "message": "⚠️ Прямая кнопка не найдена. Проверяем \"3 точки\"...",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:14.155Z",
+    "source": "server-error",
+    "message": "💥 Ошибка: locator.isVisible: Target page, context or browser has been closed",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:14.159Z",
+    "source": "server",
+    "message": "🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T15-58-14-155Z_sender",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:15.583Z",
+    "source": "server",
+    "message": "⚠️ Прямая кнопка не найдена. Проверяем \"3 точки\"...",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:15.811Z",
+    "source": "server",
+    "message": "⛔ [SKIP] Кнопки нет. Делаю скриншот...",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:18.932Z",
+    "source": "server",
+    "message": "⚠️ Прямая кнопка не найдена. Проверяем \"3 точки\"...",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:18.933Z",
+    "source": "server-error",
+    "message": "💥 Ошибка: locator.isVisible: Target page, context or browser has been closed",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:18.938Z",
+    "source": "server",
+    "message": "🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T15-58-18-933Z_sender",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:22.581Z",
+    "source": "server",
+    "message": "⚠️ Прямая кнопка не найдена. Проверяем \"3 точки\"...",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T15:58:22.597Z",
+    "source": "server",
+    "message": "⛔ [SKIP] Кнопки нет. Делаю скриншот...",
+    "sessionId": "1772035082486"
+  },
+  {
+    "timestamp": "2026-02-25T18:15:35.338Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772043335328"
+  },
+  {
+    "timestamp": "2026-02-25T18:18:50.171Z",
+    "source": "server",
+    "message": "[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/mrs.kramar/",
+    "sessionId": "1772043335328"
+  },
+  {
+    "timestamp": "2026-02-25T18:18:51.512Z",
+    "source": "server",
+    "message": "[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/aptos_denis_spb/",
+    "sessionId": "1772043335328"
+  },
+  {
+    "timestamp": "2026-02-25T18:18:56.268Z",
+    "source": "server",
+    "message": "[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/beautiful_dashulka/",
+    "sessionId": "1772043335328"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:07.422Z",
+    "source": "server",
+    "message": "[object Object]",
+    "sessionId": "1772043335328"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:09.470Z",
+    "source": "server",
+    "message": "✅ Куки применены к браузерному контексту.",
+    "sessionId": "1772043727424"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:09.470Z",
+    "source": "server",
+    "message": "📡 [SENDER] Используется прокси: http://45.159.183.41:4637",
+    "sessionId": "1772043727424"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:09.470Z",
+    "source": "server",
+    "message": "🍪 [SENDER] Загружено куки: 8",
+    "sessionId": "1772043727424"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:12.261Z",
+    "source": "server",
+    "message": "📨 [SENDER] Начало обработки: https://www.instagram.com/dashuta_nazenceva/",
+    "sessionId": "1772043727424"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:13.433Z",
+    "source": "server-error",
+    "message": "💥 Ошибка: page.goto: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - navigating to \"https://www.instagram.com/dashuta_nazenceva/\", waiting until \"domcontentloaded\"\u001b[22m",
+    "sessionId": "1772043727424"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:13.440Z",
+    "source": "server",
+    "message": "🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T18-22-13-433Z_sender",
+    "sessionId": "1772043727424"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:32.901Z",
+    "source": "server-error",
+    "message": "(node:10968) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.\n(Use `node --trace-deprecation ...` to show where the warning was created)",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:36.549Z",
+    "source": "index",
+    "message": "🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:36.550Z",
+    "source": "index",
+    "message": "----------------------------------------------",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:36.569Z",
+    "source": "index",
+    "message": "🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: 479",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:36.573Z",
+    "source": "index",
+    "message": "🎯 Загружено доноров: 1",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:36.573Z",
+    "source": "index",
+    "message": "🌐 Запуск браузера (Фоновый режим / Headless)...",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:36.573Z",
+    "source": "index",
+    "message": "📡 Прокси: http://191.96.125.137:4336",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:36.574Z",
+    "source": "index",
+    "message": "🍪 Загружено куки: 8",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:36.574Z",
+    "source": "index",
+    "message": "🎭 Применен уникальный отпечаток браузера: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap...",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:37.855Z",
+    "source": "index",
+    "message": "✅ Куки применены к браузерному контексту.",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:37.918Z",
+    "source": "index",
+    "message": "==============================================",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:37.918Z",
+    "source": "index",
+    "message": "📂 ОТКРЫВАЕМ ДОНОРА: https://www.instagram.com/saintpgo",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:37.918Z",
+    "source": "index",
+    "message": "==============================================",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:43.617Z",
+    "source": "index",
+    "message": "✅ Страница донора загружена. Ищем кнопку подписчиков...",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:48.084Z",
+    "source": "index-error",
+    "message": "❌ КРИТИЧЕСКАЯ ОШИБКА ДОНОРА: locator.isVisible: Target page, context or browser has been closed",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:48.090Z",
+    "source": "index",
+    "message": "🚨 [REPORTER] Crash report saved to: C:\\Users\\root\\Documents\\Projects\\ig-bot\\data\\reports\\crash_2026-02-25T18-22-48-084Z_donor_saintpgo",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:48.093Z",
+    "source": "index",
+    "message": "🚪 Донор закрыт.",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:48.093Z",
+    "source": "index-error",
+    "message": "❌ Непредвиденная ошибка: locator.isVisible: Target page, context or browser has been closed",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:49.286Z",
+    "source": "index",
+    "message": "✅ ========================================== ✅",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:49.286Z",
+    "source": "index",
+    "message": "👋 РАБОТА ПОЛНОСТЬЮ ЗАВЕРШЕНА! Все результаты сохранены.",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:49.287Z",
+    "source": "index",
+    "message": "✅ ========================================== ✅",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-25T18:22:49.336Z",
+    "source": "system",
+    "message": "index bot exited with code 0",
+    "sessionId": "1772043752898"
+  },
+  {
+    "timestamp": "2026-02-26T07:51:35.112Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772092295104"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:51.989Z",
+    "source": "server-error",
+    "message": "(node:10824) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.\n(Use `node --trace-deprecation ...` to show where the warning was created)",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:55.032Z",
+    "source": "index",
+    "message": "🚀 ЗАПУСК СКРЕЙПЕРА (STEALTH MODE + LOGS)...",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:55.033Z",
+    "source": "index",
+    "message": "----------------------------------------------",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:55.041Z",
+    "source": "index",
+    "message": "🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: 479",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:55.047Z",
+    "source": "index",
+    "message": "🎯 Загружено доноров: 1",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:55.048Z",
+    "source": "index",
+    "message": "🌐 Запуск браузера (Фоновый режим / Headless)...",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:55.048Z",
+    "source": "index",
+    "message": "📡 Прокси: http://191.96.125.137:4336",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:55.049Z",
+    "source": "index",
+    "message": "🍪 Загружено куки: 8",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:55.049Z",
+    "source": "index",
+    "message": "🎭 Применен уникальный отпечаток браузера: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap...",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:57.787Z",
+    "source": "index",
+    "message": "✅ Куки применены к браузерному контексту.",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:57.802Z",
+    "source": "index",
+    "message": "==============================================",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:57.802Z",
+    "source": "index",
+    "message": "📂 ОТКРЫВАЕМ ДОНОРА: https://www.instagram.com/saintpgo",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:53:57.802Z",
+    "source": "index",
+    "message": "==============================================",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:54:03.674Z",
+    "source": "index",
+    "message": "✅ Страница донора загружена. Ищем кнопку подписчиков...",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:54:13.680Z",
+    "source": "index",
+    "message": "⚠️ Кнопка подписчиков не найдена (возможно, аккаунт пуст или скрыт).",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:54:13.688Z",
+    "source": "index",
+    "message": "🚪 Донор закрыт.",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:54:13.765Z",
+    "source": "index",
+    "message": "🗑️ Донор удален из списка рассылки: https://www.instagram.com/saintpgo",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:54:15.201Z",
+    "source": "index",
+    "message": "✅ ========================================== ✅",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:54:15.201Z",
+    "source": "index",
+    "message": "👋 РАБОТА ПОЛНОСТЬЮ ЗАВЕРШЕНА! Все результаты сохранены.",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:54:15.201Z",
+    "source": "index",
+    "message": "✅ ========================================== ✅",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:54:15.248Z",
+    "source": "system",
+    "message": "index bot exited with code null",
+    "sessionId": "1772092431986"
+  },
+  {
+    "timestamp": "2026-02-26T07:56:35.070Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772092595065"
+  },
+  {
+    "timestamp": "2026-02-26T07:57:10.794Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772092630788"
+  },
+  {
+    "timestamp": "2026-02-26T07:57:48.895Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772092668888"
+  },
+  {
+    "timestamp": "2026-02-26T07:58:18.998Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772092698992"
+  },
+  {
+    "timestamp": "2026-02-26T08:42:35.890Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772095355879"
+  },
+  {
+    "timestamp": "2026-02-26T08:47:43.992Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772095663981"
+  },
+  {
+    "timestamp": "2026-02-26T09:14:48.093Z",
+    "source": "server",
+    "message": "Сервер запущен: http://localhost:1337",
+    "sessionId": "1772097288080"
+  },
+  {
+    "timestamp": "2026-02-26T09:23:59.528Z",
+    "source": "server",
+    "message": "[GOLOS] like -> добавлен в профиль: https://www.instagram.com/darykaas/",
+    "sessionId": "1772097288080"
+  },
+  {
+    "timestamp": "2026-02-26T09:57:59.111Z",
+    "source": "server",
+    "message": "[GOLOS] dislike -> добавлен в профиль: https://www.instagram.com/danila_aestheticss/",
+    "sessionId": "1772097288080"
+  }
+]

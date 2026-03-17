@@ -1,22 +1,20 @@
 const path = require('path');
 const getRootPath = () => {
-    if (process.env.APP_ROOT) return path.resolve(process.env.APP_ROOT);
-    return process['pkg']
-        ? path.dirname(process.execPath)
-        : path.resolve(__dirname, '..', '..');
+  if (process.env.APP_ROOT) return path.resolve(process.env.APP_ROOT);
+  return process['pkg'] ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..');
 };
 exports.getRootPath = getRootPath;
-const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 exports.wait = wait;
 const randomDelay = (min = 200, max = 600) => (0, exports.wait)(min + Math.random() * (max - min));
 exports.randomDelay = randomDelay;
 const shuffleArray = (array) => {
-    const arr = [...array];
-    for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
 };
 exports.shuffleArray = shuffleArray;
 
@@ -24,34 +22,34 @@ const pickRandom = (array) => array[Math.floor(Math.random() * array.length)];
 exports.pickRandom = pickRandom;
 
 const parseProxyString = (proxyStr) => {
-    if (!proxyStr) return null;
-    const parts = proxyStr.trim().split(':');
-    if (parts.length >= 4) {
-        return {
-            server: `http://${parts[0]}:${parts[1]}`,
-            username: parts[2],
-            password: parts[3]
-        };
-    }
-    return null;
+  if (!proxyStr) return null;
+  const parts = proxyStr.trim().split(':');
+  if (parts.length >= 4) {
+    return {
+      server: `http://${parts[0]}:${parts[1]}`,
+      username: parts[2],
+      password: parts[3],
+    };
+  }
+  return null;
 };
 exports.parseProxyString = parseProxyString;
 
 const asyncPool = async (iterable, concurrency, task) => {
-    const results = [];
-    const executing = [];
-    for (const item of iterable) {
-        const p = Promise.resolve().then(() => task(item, iterable));
-        results.push(p);
-        if (concurrency <= iterable.length) {
-            const e = p.then(() => executing.splice(executing.indexOf(e), 1));
-            executing.push(e);
-            if (executing.length >= concurrency) {
-                await Promise.race(executing);
-            }
-        }
+  const results = [];
+  const executing = [];
+  for (const item of iterable) {
+    const p = Promise.resolve().then(() => task(item, iterable));
+    results.push(p);
+    if (concurrency <= iterable.length) {
+      const e = p.then(() => executing.splice(executing.indexOf(e), 1));
+      executing.push(e);
+      if (executing.length >= concurrency) {
+        await Promise.race(executing);
+      }
     }
-    return Promise.all(results);
+  }
+  return Promise.all(results);
 };
 exports.asyncPool = asyncPool;
 
@@ -63,35 +61,41 @@ const { SelectorError, AppError } = require('./errors');
  * Функция эмуляции человеческого ввода текста
  */
 const humanType = async (page, selector, text, timeouts) => {
-    try {
-        const element = typeof selector === 'string' ? page.locator(selector).first() : selector;
-        const exists = await element.count() > 0;
-        if (!exists) throw new SelectorError(typeof selector === 'string' ? selector : 'Locator', 'Element for typing not found');
+  try {
+    const element = typeof selector === 'string' ? page.locator(selector).first() : selector;
+    const exists = (await element.count()) > 0;
+    if (!exists)
+      throw new SelectorError(
+        typeof selector === 'string' ? selector : 'Locator',
+        'Element for typing not found'
+      );
 
-        await element.click();
-        const delayMin = timeouts?.typingDelayMin || 50;
-        const delayMax = timeouts?.typingDelayMax || 150;
-        for (const char of text) {
-            // 2% chance of making a typo and correcting it
-            if (Math.random() < 0.02 && char !== ' ') {
-                const incorrectChar = String.fromCharCode(char.charCodeAt(0) + (Math.random() > 0.5 ? 1 : -1));
-                await page.keyboard.type(incorrectChar);
-                await wait(Math.floor(Math.random() * 150) + 100);
-                await page.keyboard.press('Backspace');
-                await wait(Math.floor(Math.random() * 150) + 100);
-            }
-            await page.keyboard.type(char);
-            let delay = Math.floor(Math.random() * (delayMax - delayMin + 1)) + delayMin;
-            // Occasional "human" pause
-            if (Math.random() < 0.05)
-                await (0, exports.wait)(Math.floor(Math.random() * 300) + 300);
-            await (0, exports.wait)(delay);
-        }
+    await element.click();
+    const delayMin = timeouts?.typingDelayMin || 50;
+    const delayMax = timeouts?.typingDelayMax || 150;
+    for (const char of text) {
+      // 2% chance of making a typo and correcting it
+      if (Math.random() < 0.02 && char !== ' ') {
+        const incorrectChar = String.fromCharCode(
+          char.charCodeAt(0) + (Math.random() > 0.5 ? 1 : -1)
+        );
+        await page.keyboard.type(incorrectChar);
+        await wait(Math.floor(Math.random() * 150) + 100);
+        await page.keyboard.press('Backspace');
+        await wait(Math.floor(Math.random() * 150) + 100);
+      }
+      await page.keyboard.type(char);
+      let delay = Math.floor(Math.random() * (delayMax - delayMin + 1)) + delayMin;
+      // Occasional "human" pause
+      if (Math.random() < 0.05) await (0, exports.wait)(Math.floor(Math.random() * 300) + 300);
+      await (0, exports.wait)(delay);
     }
-    catch (e) {
-        if (e instanceof SelectorError) throw e;
-        throw new AppError(`Typing failed: ${e.message}`, { selector: typeof selector === 'string' ? selector : 'Locator' });
-    }
+  } catch (e) {
+    if (e instanceof SelectorError) throw e;
+    throw new AppError(`Typing failed: ${e.message}`, {
+      selector: typeof selector === 'string' ? selector : 'Locator',
+    });
+  }
 };
 exports.humanType = humanType;
 
@@ -99,20 +103,22 @@ exports.humanType = humanType;
  * Генерирует массив точек для кубической кривой Безье
  */
 const getBezierPoints = (p0, p1, p2, p3, steps = 30) => {
-    const points = [];
-    for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const x = Math.pow(1 - t, 3) * p0.x +
-            3 * Math.pow(1 - t, 2) * t * p1.x +
-            3 * (1 - t) * Math.pow(t, 2) * p2.x +
-            Math.pow(t, 3) * p3.x;
-        const y = Math.pow(1 - t, 3) * p0.y +
-            3 * Math.pow(1 - t, 2) * t * p1.y +
-            3 * (1 - t) * Math.pow(t, 2) * p2.y +
-            Math.pow(t, 3) * p3.y;
-        points.push({ x, y });
-    }
-    return points;
+  const points = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x =
+      Math.pow(1 - t, 3) * p0.x +
+      3 * Math.pow(1 - t, 2) * t * p1.x +
+      3 * (1 - t) * Math.pow(t, 2) * p2.x +
+      Math.pow(t, 3) * p3.x;
+    const y =
+      Math.pow(1 - t, 3) * p0.y +
+      3 * Math.pow(1 - t, 2) * t * p1.y +
+      3 * (1 - t) * Math.pow(t, 2) * p2.y +
+      Math.pow(t, 3) * p3.y;
+    points.push({ x, y });
+  }
+  return points;
 };
 exports.getBezierPoints = getBezierPoints;
 
@@ -120,58 +126,58 @@ exports.getBezierPoints = getBezierPoints;
  * Плавное движение мыши по кривой
  */
 const humanMove = async (page, targetX, targetY, options = {}) => {
-    try {
-        const steps = options.steps || (15 + Math.floor(Math.random() * 15));
+  try {
+    const steps = options.steps || 15 + Math.floor(Math.random() * 15);
 
-        let startPos = mouseTracker.get(page) || {
-            x: 100 + Math.random() * 400,
-            y: 100 + Math.random() * 400
-        };
-        const startX = options.startX || startPos.x;
-        const startY = options.startY || startPos.y;
+    let startPos = mouseTracker.get(page) || {
+      x: 100 + Math.random() * 400,
+      y: 100 + Math.random() * 400,
+    };
+    const startX = options.startX || startPos.x;
+    const startY = options.startY || startPos.y;
 
-        // Контрольные точки для кривой Безье
-        const p1 = {
-            x: startX + (targetX - startX) * Math.random(),
-            y: startY + (targetY - startY) * Math.random()
-        };
-        const p2 = {
-            x: startX + (targetX - startX) * Math.random(),
-            y: startY + (targetY - startY) * Math.random()
-        };
+    // Контрольные точки для кривой Безье
+    const p1 = {
+      x: startX + (targetX - startX) * Math.random(),
+      y: startY + (targetY - startY) * Math.random(),
+    };
+    const p2 = {
+      x: startX + (targetX - startX) * Math.random(),
+      y: startY + (targetY - startY) * Math.random(),
+    };
 
-        const points = getBezierPoints(
-            { x: startX, y: startY },
-            p1,
-            p2,
-            { x: targetX, y: targetY },
-            steps
-        );
+    const points = getBezierPoints(
+      { x: startX, y: startY },
+      p1,
+      p2,
+      { x: targetX, y: targetY },
+      steps
+    );
 
-        for (const point of points) {
-            // "Дрожание" (jitter) - добавляем случайное смещение
-            const jitterX = (Math.random() - 0.5) * 3;
-            const jitterY = (Math.random() - 0.5) * 3;
+    for (const point of points) {
+      // "Дрожание" (jitter) - добавляем случайное смещение
+      const jitterX = (Math.random() - 0.5) * 3;
+      const jitterY = (Math.random() - 0.5) * 3;
 
-            // "Угловатость" - иногда пропускаем промежуточные точки или делаем резкие скачки
-            if (Math.random() > 0.1) {
-                await page.mouse.move(point.x + jitterX, point.y + jitterY);
-            }
+      // "Угловатость" - иногда пропускаем промежуточные точки или делаем резкие скачки
+      if (Math.random() > 0.1) {
+        await page.mouse.move(point.x + jitterX, point.y + jitterY);
+      }
 
-            // Рандомные паузы для имитации "неуверенности"
-            if (Math.random() > 0.85) {
-                await wait(Math.random() * 20 + 10);
-            }
-        }
-
-        // Финальный микро-прыжок к цели
-        await page.mouse.move(targetX, targetY);
-        mouseTracker.set(page, { x: targetX, y: targetY });
-    } catch (e) {
-        // Fallback or ignore for movement
-        await page.mouse.move(targetX, targetY).catch(() => { });
-        mouseTracker.set(page, { x: targetX, y: targetY });
+      // Рандомные паузы для имитации "неуверенности"
+      if (Math.random() > 0.85) {
+        await wait(Math.random() * 20 + 10);
+      }
     }
+
+    // Финальный микро-прыжок к цели
+    await page.mouse.move(targetX, targetY);
+    mouseTracker.set(page, { x: targetX, y: targetY });
+  } catch (e) {
+    // Fallback or ignore for movement
+    await page.mouse.move(targetX, targetY).catch(() => {});
+    mouseTracker.set(page, { x: targetX, y: targetY });
+  }
 };
 exports.humanMove = humanMove;
 exports.humanMouseMove = humanMove;
@@ -180,23 +186,27 @@ exports.humanMouseMove = humanMove;
  * Эмуляция наведения мыши
  */
 const humanHover = async (page, selector) => {
-    try {
-        const element = typeof selector === 'string' ? page.locator(selector).first() : selector;
-        const box = await element.boundingBox();
-        if (box) {
-            const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
-            const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
+  try {
+    const element = typeof selector === 'string' ? page.locator(selector).first() : selector;
+    const box = await element.boundingBox();
+    if (box) {
+      const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
+      const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
 
-            await humanMove(page, targetX, targetY);
-            await wait(500 + Math.random() * 1000);
-        } else {
-            throw new SelectorError(typeof selector === 'string' ? selector : 'Locator', 'Bounding box not found for hover');
-        }
+      await humanMove(page, targetX, targetY);
+      await wait(500 + Math.random() * 1000);
+    } else {
+      throw new SelectorError(
+        typeof selector === 'string' ? selector : 'Locator',
+        'Bounding box not found for hover'
+      );
     }
-    catch (e) {
-        if (e instanceof SelectorError) throw e;
-        throw new AppError(`Hover failed: ${e.message}`, { selector: typeof selector === 'string' ? selector : 'Locator' });
-    }
+  } catch (e) {
+    if (e instanceof SelectorError) throw e;
+    throw new AppError(`Hover failed: ${e.message}`, {
+      selector: typeof selector === 'string' ? selector : 'Locator',
+    });
+  }
 };
 exports.humanHover = humanHover;
 
@@ -204,62 +214,73 @@ exports.humanHover = humanHover;
  * Эмуляция человеческого клика
  */
 const humanClick = async (page, selectorOrHandle, options = {}) => {
-    try {
-        const element = typeof selectorOrHandle === 'string' ? page.locator(selectorOrHandle).first() : selectorOrHandle;
-        const box = await element.boundingBox();
-        if (box) {
-            const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
-            const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
+  try {
+    const element =
+      typeof selectorOrHandle === 'string'
+        ? page.locator(selectorOrHandle).first()
+        : selectorOrHandle;
+    const box = await element.boundingBox();
+    if (box) {
+      const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
+      const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
 
-            await humanMove(page, targetX, targetY);
-            await wait(100 + Math.random() * 200);
-            await element.click(options);
-        } else {
-            const count = await element.count();
-            if (count > 0) {
-                await element.click(options);
-            } else {
-                throw new SelectorError(typeof selectorOrHandle === 'string' ? selectorOrHandle : 'Locator', 'Element for click not found');
-            }
-        }
-    } catch (e) {
-        if (e instanceof SelectorError) throw e;
-        throw new AppError(`Click failed: ${e.message}`, { selector: typeof selectorOrHandle === 'string' ? selectorOrHandle : 'Locator' });
+      await humanMove(page, targetX, targetY);
+      await wait(100 + Math.random() * 200);
+      await element.click(options);
+    } else {
+      const count = await element.count();
+      if (count > 0) {
+        await element.click(options);
+      } else {
+        throw new SelectorError(
+          typeof selectorOrHandle === 'string' ? selectorOrHandle : 'Locator',
+          'Element for click not found'
+        );
+      }
     }
+  } catch (e) {
+    if (e instanceof SelectorError) throw e;
+    throw new AppError(`Click failed: ${e.message}`, {
+      selector: typeof selectorOrHandle === 'string' ? selectorOrHandle : 'Locator',
+    });
+  }
 };
 exports.humanClick = humanClick;
 /**
  * Режим "Раздумье" (длительная пауза)
  */
 const daydream = async (chance = 0.05) => {
-    if (Math.random() < chance) {
-        const delay = 15000 + Math.random() * 25000;
-        console.log(`👤 [HUMAN] Задумался на ${Math.round(delay / 1000)}с...`);
-        await (0, exports.wait)(delay);
-    }
+  if (Math.random() < chance) {
+    const delay = 15000 + Math.random() * 25000;
+    console.log(`👤 [HUMAN] Задумался на ${Math.round(delay / 1000)}с...`);
+    await (0, exports.wait)(delay);
+  }
 };
 exports.daydream = daydream;
 /**
  * Плавный скролл через JS ивенты
  */
 const humanScroll = async (page, selector, direction = 'down', amount = 300) => {
-    try {
-        const steps = 10 + Math.floor(Math.random() * 10);
-        const delta = direction === 'down' ? (amount / steps) : -(amount / steps);
+  try {
+    const steps = 10 + Math.floor(Math.random() * 10);
+    const delta = direction === 'down' ? amount / steps : -(amount / steps);
 
-        for (let i = 0; i < steps; i++) {
-            const ease = 1 - Math.pow(1 - (i / steps), 2); // Quadratic ease out
-            const stepDelta = delta * (1 + (Math.random() - 0.5) * 0.2); // Random variation
+    for (let i = 0; i < steps; i++) {
+      const ease = 1 - Math.pow(1 - i / steps, 2); // Quadratic ease out
+      const stepDelta = delta * (1 + (Math.random() - 0.5) * 0.2); // Random variation
 
-            await page.mouse.wheel(0, stepDelta);
-            await (0, exports.wait)(30 + Math.random() * 40);
-        }
-    } catch (e) {
-        // Fallback to JS scroll
-        await page.evaluate(({ dir, amt }) => {
-            window.scrollBy({ top: dir === 'down' ? amt : -amt, behavior: 'smooth' });
-        }, { dir: direction, amt: amount });
+      await page.mouse.wheel(0, stepDelta);
+      await (0, exports.wait)(30 + Math.random() * 40);
     }
+  } catch (e) {
+    // Fallback to JS scroll
+    await page.evaluate(
+      ({ dir, amt }) => {
+        window.scrollBy({ top: dir === 'down' ? amt : -amt, behavior: 'smooth' });
+      },
+      { dir: direction, amt: amount }
+    );
+  }
 };
 exports.humanScroll = humanScroll;
 
@@ -267,12 +288,12 @@ exports.humanScroll = humanScroll;
  * Оверскролл: проскроллить дальше, а потом немного вернуться
  */
 const humanOverscroll = async (page, direction = 'down', amount = 300) => {
-    try {
-        const overshoot = amount * (1.2 + Math.random() * 0.5); // 20-70% overscroll
-        await humanScroll(page, null, direction, overshoot);
-        await wait(200 + Math.random() * 500);
-        await humanScroll(page, null, direction === 'down' ? 'up' : 'down', overshoot - amount);
-    } catch (e) { }
+  try {
+    const overshoot = amount * (1.2 + Math.random() * 0.5); // 20-70% overscroll
+    await humanScroll(page, null, direction, overshoot);
+    await wait(200 + Math.random() * 500);
+    await humanScroll(page, null, direction === 'down' ? 'up' : 'down', overshoot - amount);
+  } catch (e) {}
 };
 exports.humanOverscroll = humanOverscroll;
 
@@ -280,16 +301,19 @@ exports.humanOverscroll = humanOverscroll;
  * Мышка покидает экран (потеря фокуса)
  */
 const humanMouseLeave = async (page) => {
-    try {
-        const viewport = page.viewportSize();
-        if (!viewport) return;
-        const targetX = Math.random() > 0.5 ? -10 : viewport.width + 10;
-        const targetY = Math.random() * viewport.height;
-        await humanMove(page, targetX, targetY);
-        console.log(`👤 [HUMAN] Mouse left the viewport (simulating distraction).`);
-        await wait(2000 + Math.random() * 5000); // stay out for a bit
-        mouseTracker.set(page, { x: Math.max(0, Math.min(targetX, viewport.width)), y: Math.max(0, Math.min(targetY, viewport.height)) });
-    } catch (e) { }
+  try {
+    const viewport = page.viewportSize();
+    if (!viewport) return;
+    const targetX = Math.random() > 0.5 ? -10 : viewport.width + 10;
+    const targetY = Math.random() * viewport.height;
+    await humanMove(page, targetX, targetY);
+    console.log(`👤 [HUMAN] Mouse left the viewport (simulating distraction).`);
+    await wait(2000 + Math.random() * 5000); // stay out for a bit
+    mouseTracker.set(page, {
+      x: Math.max(0, Math.min(targetX, viewport.width)),
+      y: Math.max(0, Math.min(targetY, viewport.height)),
+    });
+  } catch (e) {}
 };
 exports.humanMouseLeave = humanMouseLeave;
 
@@ -297,51 +321,57 @@ exports.humanMouseLeave = humanMouseLeave;
  * Выделение текста на странице рандомно
  */
 const humanSelection = async (page) => {
-    try {
-        const paragraphs = await page.$$('p, span, h1, h2, h3, li');
-        if (paragraphs.length > 0) {
-            const p = paragraphs[Math.floor(Math.random() * paragraphs.length)];
-            const isVisible = await p.isVisible();
-            if (!isVisible) return;
-            const box = await p.boundingBox();
-            if (box && box.height > 10 && box.width > 20) {
-                const startX = box.x + box.width * Math.random();
-                const startY = box.y + box.height * Math.random();
-                await humanMove(page, startX, startY);
-                // Double click behavior vs drag
-                if (Math.random() > 0.5) {
-                    await page.mouse.click(startX, startY, { clickCount: 2 });
-                    console.log(`👤 [HUMAN] Double clicked random text.`);
-                } else {
-                    await page.mouse.down();
-                    await wait(100 + Math.random() * 200);
-                    await humanMove(page, startX + (Math.random() * 80 - 40), startY + (Math.random() * 20 - 10)); // drag
-                    await page.mouse.up();
-                    console.log(`👤 [HUMAN] Selected random text by dragging.`);
-                }
-                await wait(1000 + Math.random() * 3000);
-            }
+  try {
+    const paragraphs = await page.$$('p, span, h1, h2, h3, li');
+    if (paragraphs.length > 0) {
+      const p = paragraphs[Math.floor(Math.random() * paragraphs.length)];
+      const isVisible = await p.isVisible();
+      if (!isVisible) return;
+      const box = await p.boundingBox();
+      if (box && box.height > 10 && box.width > 20) {
+        const startX = box.x + box.width * Math.random();
+        const startY = box.y + box.height * Math.random();
+        await humanMove(page, startX, startY);
+        // Double click behavior vs drag
+        if (Math.random() > 0.5) {
+          await page.mouse.click(startX, startY, { clickCount: 2 });
+          console.log(`👤 [HUMAN] Double clicked random text.`);
+        } else {
+          await page.mouse.down();
+          await wait(100 + Math.random() * 200);
+          await humanMove(
+            page,
+            startX + (Math.random() * 80 - 40),
+            startY + (Math.random() * 20 - 10)
+          ); // drag
+          await page.mouse.up();
+          console.log(`👤 [HUMAN] Selected random text by dragging.`);
         }
-    } catch (e) { }
+        await wait(1000 + Math.random() * 3000);
+      }
+    }
+  } catch (e) {}
 };
 exports.humanSelection = humanSelection;
 const { execSync } = require('child_process');
 const getScreenResolution = () => {
-    try {
-        if (process.platform === 'win32') {
-            // Use Windows Forms to get logical screen bounds (accounts for Scaling)
-            const output = execSync('powershell "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height"').toString();
-            const lines = output.trim().split(/\r?\n/);
-            if (lines.length >= 2) {
-                const width = parseInt(lines[0]);
-                const height = parseInt(lines[1]);
-                if (!isNaN(width) && !isNaN(height)) {
-                    return { width, height };
-                }
-            }
+  try {
+    if (process.platform === 'win32') {
+      // Use Windows Forms to get logical screen bounds (accounts for Scaling)
+      const output = execSync(
+        'powershell "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height"'
+      ).toString();
+      const lines = output.trim().split(/\r?\n/);
+      if (lines.length >= 2) {
+        const width = parseInt(lines[0]);
+        const height = parseInt(lines[1]);
+        if (!isNaN(width) && !isNaN(height)) {
+          return { width, height };
         }
-    } catch (e) { }
-    // Fallback to a common logical resolution
-    return { width: 1280, height: 720 };
+      }
+    }
+  } catch (e) {}
+  // Fallback to a common logical resolution
+  return { width: 1280, height: 720 };
 };
 exports.getScreenResolution = getScreenResolution;

@@ -58,7 +58,11 @@
 body,
 html {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    sans-serif;
   background-color: hsl(var(--bg-deep));
   color: hsl(var(--text-main));
   -webkit-font-smoothing: antialiased;
@@ -68,7 +72,7 @@ html {
 
 /* Background Atmosphere */
 body::before {
-  content: "";
+  content: '';
   position: fixed;
   inset: 0;
   background:
@@ -843,13 +847,14 @@ body::before {
   color: hsl(var(--text-dim));
 }
 
-
 /* Skeleton Loading */
 .skeleton {
-  background: linear-gradient(90deg,
-      hsl(var(--bg-elevated)) 25%,
-      hsl(var(--bg-card)) 50%,
-      hsl(var(--bg-elevated)) 75%);
+  background: linear-gradient(
+    90deg,
+    hsl(var(--bg-elevated)) 25%,
+    hsl(var(--bg-card)) 50%,
+    hsl(var(--bg-elevated)) 75%
+  );
   background-size: 200% 100%;
   animation: skeleton-loading 1.5s infinite linear;
   border-radius: var(--radius-sm);
