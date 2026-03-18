@@ -68,7 +68,7 @@ const checkSkipSignal = (contextState) => {
       if (contextState) contextState.skipped = true;
       logger.info('⏭️ [СИГНАЛ] Получен сигнал пропуска. Завершаем работу с донором...');
       return true;
-    } catch (e) {}
+    } catch (e) { }
   }
   return false;
 };
@@ -166,13 +166,13 @@ const scrollAndCollectUrls = async (page, config, contextState) => {
 
     try {
       await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 });
-    } catch (e) {}
+    } catch (e) { }
     await utils_1.wait(50);
     const newHeight = scrollInfo.found
       ? await page.evaluate((sel) => {
-          const el = document.querySelector(sel);
-          return el ? el.scrollHeight : false;
-        }, scrollInfo.selector)
+        const el = document.querySelector(sel);
+        return el ? el.scrollHeight : false;
+      }, scrollInfo.selector)
       : false;
     if (newHeight === previousHeight) {
       sameHeightCount++;
@@ -291,7 +291,7 @@ const analyzeProfile = async (context, url, config, donor = '') => {
                 postCount = json.data.user.edge_owner_to_timeline_media.count;
             }
           }
-        } catch (e) {}
+        } catch (e) { }
         if (!pUrl) {
           const html = document.documentElement.innerHTML;
           const matches = [...html.matchAll(/"profile_pic_url_hd":"([^"]+)"/g)];
@@ -520,7 +520,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
                 pCount = json.data.user.edge_owner_to_timeline_media.count;
             }
           }
-        } catch (e) {}
+        } catch (e) { }
 
         if (!photo) {
           const html = document.documentElement.innerHTML;
@@ -618,13 +618,13 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       await page.keyboard.press('Backspace');
       try {
         await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 2000 });
-      } catch (e) {}
+      } catch (e) { }
       const typeDelay = Math.floor(Math.random() * (60 - 20 + 1) + 20);
       await searchInput.pressSequentially(name, { delay: typeDelay });
       logger.info(`      ⏳ Ждем выдачу результатов от Инстаграма...`);
       try {
         await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 });
-      } catch (e) {}
+      } catch (e) { }
       await (0, browser_1.takeLiveScreenshot)(page);
       await (0, utils_1.wait)(50);
       const candidates = await scrollAndCollectUrls(page, config, contextState);
@@ -857,7 +857,7 @@ const run = async () => {
         await (0, utils_1.humanScroll)(feedPage, null, 'down', 800 + Math.random() * 1000);
         await (0, utils_1.wait)(3000 + Math.random() * 4000);
         await feedPage.close();
-      } catch (e) {}
+      } catch (e) { }
     }
   }
   clearInterval(liveViewInterval);

@@ -1,0 +1,66 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: InstaPanel 3.0
+      - generic [ref=e7]:
+        - generic [ref=e8]: "Ранее не открыты: 787"
+        - generic [ref=e9]: "Просмотрено: 0"
+        - generic [ref=e10]: "Отправлено ЛС: 0"
+        - generic [ref=e12]: "Лайков: 90"
+    - generic [ref=e13]:
+      - generic [ref=e14]: admin@igbot.com
+      - button "RU" [ref=e15] [cursor=pointer]
+      - button "OUT" [ref=e16] [cursor=pointer]
+      - button "Шаблоны" [ref=e17] [cursor=pointer]
+  - navigation [ref=e18]:
+    - generic [ref=e19]:
+      - button "Профили" [ref=e20] [cursor=pointer]
+      - button "Управление" [ref=e21] [cursor=pointer]
+      - button "Настройки" [active] [ref=e22] [cursor=pointer]
+  - generic [ref=e24]:
+    - generic [ref=e25]:
+      - generic [ref=e26]:
+        - button "Аккаунты" [ref=e27] [cursor=pointer]
+        - button "Имена" [ref=e28] [cursor=pointer]
+        - button "Города" [ref=e29] [cursor=pointer]
+        - button "Ниши" [ref=e30] [cursor=pointer]
+        - button "Доноры" [ref=e31] [cursor=pointer]
+      - generic [ref=e32]:
+        - generic [ref=e33] [cursor=pointer]:
+          - checkbox "Эмуляция человека" [ref=e34]
+          - text: Эмуляция человека
+        - generic [ref=e35] [cursor=pointer]:
+          - checkbox "Показывать браузер" [ref=e36]
+          - text: Показывать браузер
+        - generic [ref=e37] [cursor=pointer]:
+          - text: "Потоков:"
+          - spinbutton "Потоков:" [ref=e38]: "5"
+        - 'button "Доступно обновление: vbot" [ref=e39] [cursor=pointer]'
+    - generic [ref=e40]:
+      - generic [ref=e41]:
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - heading "Парсер" [level=4] [ref=e44]
+            - generic [ref=e46]: Нет выбранных аккаунтов
+          - generic [ref=e47]:
+            - heading "Скрапер" [level=4] [ref=e48]
+            - generic [ref=e50]: Нет выбранных аккаунтов
+        - generic [ref=e51]:
+          - generic [ref=e52]:
+            - heading "Сендер" [level=4] [ref=e53]
+            - generic [ref=e55]: Нет выбранных аккаунтов
+          - generic [ref=e56]:
+            - heading "Профили" [level=4] [ref=e57]
+            - generic [ref=e59]: Нет выбранных аккаунтов
+        - generic [ref=e60]:
+          - heading "Добавить аккаунт" [level=4] [ref=e61]
+          - generic [ref=e62]:
+            - textbox "Имя (напр. Аккаунт 1)" [ref=e63]
+            - 'textbox "Прокси: IP:PORT:USER:PASS" [ref=e64]'
+          - textbox "Куки (raw text)" [ref=e65]
+          - button "Добавить" [ref=e66] [cursor=pointer]
+      - heading "Все аккаунты" [level=4] [ref=e68]
+```

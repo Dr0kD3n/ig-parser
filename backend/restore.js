@@ -38,7 +38,7 @@ const refreshProfile = async (context, profile, config) => {
     await takeLiveScreenshot(page);
     await page.waitForSelector('header', { timeout: 15000 });
     // Wait for profile image to appear in the header
-    await page.waitForSelector('header img', { timeout: 10000 }).catch(() => {});
+    await page.waitForSelector('header img', { timeout: 10000 }).catch(() => { });
     // Give extra time for the IG API to respond with HD photo data
     await wait(3000 + Math.random() * 1000);
 
@@ -68,7 +68,7 @@ const refreshProfile = async (context, profile, config) => {
               name = u.full_name || uname;
             }
           }
-        } catch (e) {}
+        } catch (e) { }
 
         if (!pUrl) {
           // Fallback to HTML scraping
@@ -144,7 +144,7 @@ const refreshProfile = async (context, profile, config) => {
     logger.error(`         ❌ Ошибка: ${e.message.split('\n')[0]}`);
     await saveCrashReport(page, e, `restore_${url.split('/').filter(Boolean).pop()}`);
   } finally {
-    await page.close().catch(() => {});
+    await page.close().catch(() => { });
   }
 };
 

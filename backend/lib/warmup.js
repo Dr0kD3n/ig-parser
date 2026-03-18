@@ -142,7 +142,7 @@ async function getRegionFromProxy(proxy) {
   });
 }
 
-async function startWarmup(accountId, progressCallback = (p) => {}) {
+async function startWarmup(accountId, progressCallback = (p) => { }) {
   console.log(`🔥 [WARMUP] Starting for account: ${accountId}`);
 
   const db = await getDB();
@@ -162,7 +162,7 @@ async function startWarmup(accountId, progressCallback = (p) => {}) {
 
   const showBrowserRow = await db.get(`SELECT value FROM settings WHERE key = 'showBrowser'`);
   const showBrowser = showBrowserRow?.value === 'true';
-  const headless = !showBrowser;
+  const headless = !showBrowser; // Respect the showBrowser setting instead of always being headless
 
   let sitePool = [...GLOBAL_SITES];
   if (regionalSites.length > 0) {
@@ -217,12 +217,12 @@ async function startWarmup(accountId, progressCallback = (p) => {}) {
               `button:has-text("${text}"), a:has-text("${text}"), [role="button"]:has-text("${text}")`
             );
             if (handle && (await handle.isVisible())) {
-              await humanClick(page, handle, { timeout: 2000 }).catch(() => {});
+              await humanClick(page, handle, { timeout: 2000 }).catch(() => { });
               console.log(`🍪 [WARMUP] Clicked cookie button: "${text}" on ${currentSite}`);
               break;
             }
           }
-        } catch (e) {}
+        } catch (e) { }
 
         await wait(Math.random() * 3000 + 3000);
 
@@ -250,8 +250,8 @@ async function startWarmup(accountId, progressCallback = (p) => {}) {
           if (validLinks.length > 0) {
             const randomLink = pickRandom(validLinks);
             console.log(`🔗 [WARMUP] Navigating deeper into ${currentSite}`);
-            await humanClick(page, randomLink, { timeout: 3000 }).catch(() => {});
-            await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+            await humanClick(page, randomLink, { timeout: 3000 }).catch(() => { });
+            await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => { });
             await wait(Math.random() * 4000 + 3000);
           }
         }

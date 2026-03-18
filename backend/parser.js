@@ -199,8 +199,8 @@ const run = async () => {
               const searchLinks = resultsContainer
                 ? resultsContainer.querySelectorAll('a[href]')
                 : document.querySelectorAll(
-                    'div[role="dialog"] a[href], div[style*="position: absolute"] a[href]'
-                  );
+                  'div[role="dialog"] a[href], div[style*="position: absolute"] a[href]'
+                );
               searchLinks.forEach((a) => {
                 const href = a.getAttribute('href');
                 if (href && href.startsWith('/') && href.split('/').length === 3) {
@@ -257,8 +257,8 @@ const run = async () => {
       await (0, reporter_1.saveCrashReport)(page, e, 'parser');
     } finally {
       if (typeof liveViewInterval !== 'undefined') clearInterval(liveViewInterval);
-      await page.close().catch(() => {});
-      await browser.close().catch(() => {});
+      await page.close().catch(() => { });
+      await browser.close().catch(() => { });
       console.log('\n✅ ========================================== ✅');
       console.log('👋 РАБОТА ПАРСЕРА ЗАВЕРШЕНА! Браузер закрыт.');
       console.log('✅ ========================================== ✅');

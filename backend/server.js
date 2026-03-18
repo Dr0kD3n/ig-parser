@@ -16,7 +16,25 @@ const warmup_1 = require('./lib/warmup');
 const { restorePhotos, stopRestorePhotos } = require('./lib/photo-restorer');
 
 const logEmitter = new events_1.EventEmitter();
-const LOGS_FILE = path_1.join(utils_1.getRootPath(), 'data', 'logs.json');
+const originalLog = console.log;
+const originalError = console.error;
+const originalWarn = console.warn;
+
+const LOGS_DIR = path_1.join(utils_1.getRootPath(), 'data');
+const LOGS_FILE = path_1.join(LOGS_DIR, 'logs.json');
+
+// Ensure necessary directories exist
+try {
+  ['', 'screenshots', 'reports', 'logs'].forEach((sub) => {
+    const dir = path_1.join(LOGS_DIR, sub);
+    if (!fs_1.existsSync(dir)) {
+      fs_1.mkdirSync(dir, { recursive: true });
+    }
+  });
+} catch (e) {
+  originalLog('Error creating data directories:', e);
+}
+
 const { handleError, expressErrorHandler, setupProcessHandlers } = require('./lib/error-handler');
 const { verifyToken, isAdmin } = require('./lib/auth-middleware');
 const { rateLimit } = require('express-rate-limit');
@@ -49,12 +67,12 @@ function refreshSession() {
   currentSessionId = Date.now().toString();
 }
 let historicalLogs = [];
-const originalLog = console.log;
-const originalError = console.error;
-const originalWarn = console.warn;
 try {
   if (fs_1.existsSync(LOGS_FILE)) {
-    historicalLogs = JSON.parse(fs_1.readFileSync(LOGS_FILE, 'utf8'));
+    const data = fs_1.readFileSync(LOGS_FILE, 'utf8');
+    if (data && data.trim()) {
+      historicalLogs = JSON.parse(data);
+    }
   }
 } catch (e) {
   originalLog('Error loading logs:', e);
@@ -150,8 +168,8 @@ async function getSettings() {
   const accounts = rows.map((r) => ({
     id: r.id,
     name: r.name,
-    proxy: r.proxy,
-    cookies: r.cookies,
+    proxy: decrypt(r.proxy),
+    cookies: decrypt(r.cookies),
     fingerprint: r.fingerprint,
     warmup_score: r.warmup_score,
     last_warmup: r.last_warmup,
@@ -212,7 +230,9 @@ app.use(express_1.json({ limit: '1mb' }));
 // --- Static frontend (production build from frontend/) ---
 const baseDir = (0, utils_1.getRootPath)();
 const publicDir = path_1.join(baseDir, 'public');
-const legacyHtml = path_1.join(baseDir, 'index.html');
+console.log('[DEBUG] baseDir:', baseDir);
+console.log('[DEBUG] publicDir:', publicDir);
+console.log('[DEBUG] publicDir exists:', fs_1.existsSync(publicDir));
 if (fs_1.existsSync(publicDir)) {
   app.use(express_1.static(publicDir));
 } else {
@@ -505,7 +525,7 @@ app.post('/api/settings', async (req, res) => {
               [a.id]
             );
             if (existing) {
-              if (!finalCookies && existing.cookies) finalCookies = existing.cookies;
+              if (!finalCookies && existing.cookies) finalCookies = decrypt(existing.cookies);
               if (!finalLocalStorage && existing.local_storage)
                 finalLocalStorage = existing.local_storage;
             }
@@ -595,21 +615,20 @@ app.post('/api/accounts/:id/authorize/start', async (req, res) => {
   const { id } = req.params;
   try {
     const db = await (0, db_1.getDB)();
-    const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [id]);
-    if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
+    const account = await db.get(`SELECT * FROM accounts WHERE id = ?`, [id]);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
 
     const result = await authorizer_1.startAuthorization(
-      id,
-      acc.name,
-      decrypt(acc.proxy),
-      acc.fingerprint ? JSON.parse(acc.fingerprint) : null,
-      true,
-      acc.cookies ? JSON.parse(decrypt(acc.cookies)) : null,
-      acc.local_storage
+      account.id,
+      account.name,
+      decrypt(account.proxy),
+      account.fingerprint,
+      true, // isLogin = true
+      decrypt(account.cookies),
+      account.local_storage
     );
     res.json(result);
   } catch (e) {
-    console.error('Error starting auth:', e);
     res.status(500).json({ success: false, error: e.message });
   }
 });
@@ -627,64 +646,22 @@ app.post('/api/accounts/:id/authorize/stop', async (req, res) => {
 
 app.post('/api/accounts/:id/browser/start', async (req, res) => {
   const { id } = req.params;
-  const { restore } = req.query;
   try {
     const db = await (0, db_1.getDB)();
-    const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [id]);
-    if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
+    const account = await db.get(`SELECT * FROM accounts WHERE id = ?`, [id]);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
 
     const result = await authorizer_1.startAuthorization(
-      id,
-      acc.name,
-      decrypt(acc.proxy),
-      acc.fingerprint ? JSON.parse(acc.fingerprint) : null,
-      false,
-      acc.cookies ? JSON.parse(decrypt(acc.cookies)) : null,
-      acc.local_storage
+      account.id,
+      account.name,
+      decrypt(account.proxy),
+      account.fingerprint,
+      false, // isLogin = false (just browser)
+      decrypt(account.cookies),
+      account.local_storage
     );
-
-    if (result.success && restore === 'true') {
-      const context = authorizer_1.getAuthorizationContext(id);
-      if (context) {
-        if (!restorePhotosStatus.running) {
-          restorePhotosStatus = {
-            running: true,
-            current: 0,
-            total: 0,
-            status: 'Starting (via browser)...',
-          };
-          restorePhotos(
-            (progress) => {
-              restorePhotosStatus = { running: true, ...progress };
-            },
-            { accountId: id, existingContext: context, failedUrls: req.body?.failedUrls }
-          )
-            .then((res) => {
-              restorePhotosStatus = {
-                running: false,
-                done: true,
-                result: res,
-                status: 'Done',
-                current: restorePhotosStatus.current,
-                total: restorePhotosStatus.total,
-              };
-              invalidateGirlsCache();
-            })
-            .catch((e) => {
-              restorePhotosStatus = {
-                running: false,
-                error: e.message,
-                status: 'Error',
-                current: restorePhotosStatus.current,
-                total: restorePhotosStatus.total,
-              };
-            });
-        }
-      }
-    }
     res.json(result);
   } catch (e) {
-    console.error('Error starting browser:', e);
     res.status(500).json({ success: false, error: e.message });
   }
 });

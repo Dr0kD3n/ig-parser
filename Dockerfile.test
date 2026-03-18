@@ -1,0 +1,20 @@
+# Use Playwright image as it contains all browser dependencies
+FROM mcr.microsoft.com/playwright:v1.40.0-jammy
+
+# WORKDIR
+WORKDIR /app
+
+# Copy the backend source and build
+COPY backend/package*.json ./
+RUN npm install --omit=dev
+
+# Copy the rest
+COPY backend/ .
+COPY dist/public ./public
+
+# ENV
+ENV PORT=5000
+EXPOSE 5000
+
+# Start
+CMD ["node", "server.js"]

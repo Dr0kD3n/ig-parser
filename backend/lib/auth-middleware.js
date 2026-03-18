@@ -19,10 +19,14 @@ exports.verifyToken = async (req, res, next) => {
     return res.status(401).json({ error: 'Access denied. No token provided.' });
   }
 
+  const PROD_URL = 'https://botback-production-1011.up.railway.app';
   const authUrl =
     process.env.AUTH_SERVER_URL ||
-    process.env.VITE_AUTH_URL;
+    process.env.VITE_AUTH_URL ||
+    (process.env.NODE_ENV === 'production' ? PROD_URL : PROD_URL); // Fallback to PROD_URL even in dev to verify remote tokens
   const isRemote = !!authUrl;
+
+
 
   const key = IS_ASYMMETRIC ? JWT_PUBLIC_KEY : JWT_SECRET;
   let decoded;

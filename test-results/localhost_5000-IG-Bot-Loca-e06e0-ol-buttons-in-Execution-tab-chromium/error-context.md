@@ -1,0 +1,66 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: InstaPanel 3.0
+      - generic [ref=e7]:
+        - generic [ref=e8]: "Ранее не открыты: 787"
+        - generic [ref=e9]: "Просмотрено: 0"
+        - generic [ref=e10]: "Отправлено ЛС: 0"
+        - generic [ref=e12]: "Лайков: 90"
+    - generic [ref=e13]:
+      - generic [ref=e14]: admin@igbot.com
+      - button "RU" [ref=e15] [cursor=pointer]
+      - button "OUT" [ref=e16] [cursor=pointer]
+      - button "Шаблоны" [ref=e17] [cursor=pointer]
+  - navigation [ref=e18]:
+    - generic [ref=e19]:
+      - button "Профили" [ref=e20] [cursor=pointer]
+      - button "Управление" [ref=e21] [cursor=pointer]
+      - button "Настройки" [ref=e22] [cursor=pointer]
+  - generic [ref=e24]:
+    - generic [ref=e25]:
+      - heading "Фарм профилей ▲" [level=3] [ref=e26] [cursor=pointer]:
+        - text: Фарм профилей
+        - generic [ref=e29]: ▲
+      - generic [ref=e30]:
+        - paragraph [ref=e31]: Сбор профилей по донорам.
+        - button "Запустить" [ref=e32] [cursor=pointer]
+    - generic [ref=e33]:
+      - heading "Фарм доноров ▲" [level=3] [ref=e34] [cursor=pointer]:
+        - text: Фарм доноров
+        - generic [ref=e37]: ▲
+      - generic [ref=e38]:
+        - paragraph [ref=e39]: Поиск активных доноров.
+        - button "Запустить" [ref=e40] [cursor=pointer]
+    - generic [ref=e41]:
+      - generic [ref=e42]:
+        - heading "Логи" [level=3] [ref=e43] [cursor=pointer]:
+          - img [ref=e44]
+          - text: Логи
+        - generic [ref=e47]:
+          - button "Очистить" [active] [ref=e48] [cursor=pointer]
+          - generic [ref=e49]: Live
+          - generic [ref=e50] [cursor=pointer]: ▲
+      - generic [ref=e52]:
+        - generic [ref=e53] [cursor=pointer]:
+          - generic [ref=e54]:
+            - generic [ref=e55]: SERVER
+            - generic [ref=e56]: 22:35:38
+            - generic [ref=e57]: БАТЧ • 2 записей
+          - generic [ref=e58]: −
+        - generic [ref=e59]:
+          - generic [ref=e60]:
+            - generic [ref=e61]: 22:35:38
+            - generic [ref=e62]: "[DEBUG] POST /api/settings received. Keys: accounts,activeParserAccountIds,activeServerAccountIds,activeIndexAccountIds,activeProfilesAccountIds,names,cities,niches,donors,showBrowser,humanEmulation,concurrentProfiles,checkedDonors,dolphinToken"
+          - generic [ref=e63]:
+            - generic [ref=e64]: 22:35:38
+            - generic [ref=e65]: "[DEBUG] Transaction started"
+    - generic [ref=e67]:
+      - generic [ref=e68] [cursor=pointer]:
+        - heading "Стрим" [level=3] [ref=e69]
+        - generic [ref=e72]: ▲
+      - generic [ref=e74]: Браузер не запущен
+```

@@ -27,12 +27,12 @@ const safeStorage = {
       } else {
         localStorage.setItem(key, val);
       }
-    } catch (e) {}
+    } catch (e) { }
   },
   removeItem: (key) => {
     try {
       localStorage.removeItem(key);
-    } catch (e) {}
+    } catch (e) { }
   },
   parse: (key, def) => {
     try {
@@ -146,8 +146,21 @@ export default function App() {
         authFetch('/api/girls', { cache: 'no-store' }),
         authFetch('/api/votes', { cache: 'no-store' }),
       ]);
+
+      if (!girlsRes.ok || !votesRes.ok) {
+        console.warn('[FETCH] Data fetch failed with status:', girlsRes.status, votesRes.status);
+        return;
+      }
+
       const girlsData = await girlsRes.json();
       const votesData = await votesRes.json();
+
+      if (!Array.isArray(girlsData)) {
+        console.error('[FETCH] girlsData is not an array:', girlsData);
+        setGirls([]);
+        return;
+      }
+
       const viewedArr = safeStorage.parse('ig_viewed_profiles', []);
       const sentArr = safeStorage.parse('ig_sent_dm', []);
       const taggedArr = safeStorage.parse('ig_tg_tagged', []);
@@ -157,7 +170,7 @@ export default function App() {
         g.dmSent = sentArr.includes(g.url);
         g.tgTagged = taggedArr.includes(g.url);
       });
-      setGirls(girlsData || []);
+      setGirls(girlsData);
       setVotes(votesData || {});
     } catch (e) {
       console.error('Error loading data', e);
@@ -168,14 +181,15 @@ export default function App() {
     if (!user) return;
     try {
       const res = await authFetch('/api/settings');
+      if (!res.ok) return;
       const data = await res.json();
       setSettingsData((prev) => ({
         ...prev,
         ...data,
-        names: data.names || [],
-        cities: data.cities || [],
-        niches: data.niches || [],
-        donors: data.donors || [],
+        names: Array.isArray(data.names) ? data.names : [],
+        cities: Array.isArray(data.cities) ? data.cities : [],
+        niches: Array.isArray(data.niches) ? data.niches : [],
+        donors: Array.isArray(data.donors) ? data.donors : [],
         showBrowser: data.showBrowser || false,
         humanEmulation: data.humanEmulation || false,
         concurrentProfiles: data.concurrentProfiles || 3,
@@ -191,9 +205,11 @@ export default function App() {
     if (!user) return;
     try {
       const res = await authFetch('/api/bot/status');
-      const data = await res.json();
-      setBotStatus(data);
-    } catch (e) {}
+      if (res.ok) {
+        const data = await res.json();
+        setBotStatus(data);
+      }
+    } catch (e) { }
   }, [user, authFetch]);
 
   useEffect(() => {
@@ -220,11 +236,11 @@ export default function App() {
   useEffect(() => {
     if (user) {
       authFetch('/api/profiles/restore-photos/status')
-        .then((res) => res.json())
+        .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
-          if (data.running) setRestoreStatus(data);
+          if (data && data.running) setRestoreStatus(data);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [user, authFetch]);
 
@@ -352,10 +368,10 @@ export default function App() {
         prev.map((p) =>
           p.url === g.url
             ? {
-                ...p,
-                tgTagged: !isCurrentlyTagged,
-                status: !isCurrentlyTagged && p.status === 'like' ? '' : p.status,
-              }
+              ...p,
+              tgTagged: !isCurrentlyTagged,
+              status: !isCurrentlyTagged && p.status === 'like' ? '' : p.status,
+            }
             : p
         )
       );
@@ -423,7 +439,7 @@ export default function App() {
     setLogs([]);
     try {
       await authFetch('/api/logs/clear', { method: 'POST' });
-    } catch (e) {}
+    } catch (e) { }
   }, [authFetch]);
 
   const handleRestorePhotos = async () => {
@@ -431,7 +447,7 @@ export default function App() {
       try {
         await authFetch('/api/profiles/restore-photos/stop', { method: 'POST' });
         setRestoreStatus((prev) => ({ ...prev, status: 'Stopping...' }));
-      } catch (err) {}
+      } catch (err) { }
       return;
     }
     try {
@@ -448,7 +464,7 @@ export default function App() {
         setRestoreStatus({ running: true, current: 0, total: 0, status: 'Starting...' });
         toast.success('Запущено восстановление фото');
       }
-    } catch (err) {}
+    } catch (err) { }
   };
 
   const handleCheckAllTg = async () => {

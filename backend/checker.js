@@ -68,8 +68,8 @@ async function checkAccounts() {
         console.error(`   💥 Ошибка проверки аккаунта ${account.name}: ${err.message}`);
         results.errors++;
       } finally {
-        if (context) await context.close().catch(() => {});
-        if (browser) await browser.close().catch(() => {});
+        if (context) await context.close().catch(() => { });
+        if (browser) await browser.close().catch(() => { });
       }
     }
   };

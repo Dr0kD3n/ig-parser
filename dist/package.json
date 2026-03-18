@@ -8,7 +8,7 @@
     "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "pkg . --targets node18-win-x64",
-    "postinstall": "node scripts/patch-playwright-mcp.js"
+    "postinstall": "node ./scripts/patch-playwright-mcp.js"
   },
   "keywords": [],
   "author": "",
@@ -26,7 +26,7 @@
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^6.0.1"
   },
   "pkg": {
     "assets": [

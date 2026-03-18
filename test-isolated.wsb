@@ -1,0 +1,12 @@
+<Configuration>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\Users\root\Documents\Projects\ig\ig-bot\dist</HostFolder>
+      <SandboxFolder>C:\Users\WDAGUtilityAccount\Desktop\ig-bot</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell.exe -Command "Start-Process explorer.exe C:\Users\WDAGUtilityAccount\Desktop\ig-bot"</Command>
+  </LogonCommand>
+</Configuration>

@@ -137,7 +137,7 @@ async function startAuthorization(
 
       await context.addInitScript(injectionCode);
       // Also evaluate immediately if page is already open (common in persistent contexts/Dolphin)
-      await page.evaluate(injectionCode).catch(() => {});
+      await page.evaluate(injectionCode).catch(() => { });
 
       await page.goto('https://www.instagram.com/', {
         waitUntil: 'domcontentloaded',
@@ -151,7 +151,7 @@ async function startAuthorization(
           await context
             .pages()[0]
             .goto('about:blank')
-            .catch(() => {});
+            .catch(() => { });
         }
       } catch (e) {
         console.warn(`[Authorizer] Warning while opening blank page: ${e.message}`);

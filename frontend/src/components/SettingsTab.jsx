@@ -82,8 +82,8 @@ export default function SettingsTab({
     const cookiesEl = document.getElementById('new-acc-cookies');
     const name = nameEl.value.trim();
     const cookies = cookiesEl.value.trim();
-    if (!name || !cookies) {
-      toast.error(tr('error_name_cookies_required'));
+    if (!name) {
+      toast.error(tr('name_placeholder'));
       return;
     }
     setAccounts([
@@ -122,7 +122,7 @@ export default function SettingsTab({
     let fp = {};
     try {
       fp = JSON.parse(acc.fingerprint || '{}');
-    } catch (e) {}
+    } catch (e) { }
     setEditForm({
       name: acc.name,
       proxy: acc.proxy || '',
@@ -144,7 +144,7 @@ export default function SettingsTab({
           fp.userAgent = data.userAgent;
           data.fingerprint = JSON.stringify(fp);
         }
-      } catch (e) {}
+      } catch (e) { }
 
       await authFetch(`/api/accounts/${id}`, {
         method: 'PUT',
@@ -413,7 +413,7 @@ export default function SettingsTab({
                                   let fp = {};
                                   try {
                                     fp = JSON.parse(data.fingerprint);
-                                  } catch (e) {}
+                                  } catch (e) { }
                                   setEditForm((prev) => ({
                                     ...prev,
                                     fingerprint: data.fingerprint,
@@ -474,7 +474,7 @@ export default function SettingsTab({
                           <TrashIcon />
                         </button>
                       </div>
-                      <div className="acc-proxy-text">{acc.proxy || 'Direct Connection'}</div>
+                      <div className="acc-proxy-text">{acc.proxy || tr('direct_connection')}</div>
                       <div className="flex-between align-end">
                         <div className="flex-wrap gap-6 flex-1">
                           {[

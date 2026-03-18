@@ -106,6 +106,7 @@ export const TRANSLATIONS = {
     regenerate_system_data: 'Обновить отпечаток',
     regenerate_success: 'Данные системы обновлены',
     save_success: 'Аккаунт сохранен',
+    direct_connection: 'Прямое соединение',
   },
   en: {
     logo: 'InstaPanel 3.0',
@@ -213,6 +214,7 @@ export const TRANSLATIONS = {
     regenerate_system_data: 'Regenerate System Data',
     regenerate_success: 'System data updated',
     save_success: 'Account saved',
+    direct_connection: 'Direct Connection',
   },
 };
 export const t = (lang, key) => TRANSLATIONS[lang]?.[key] ?? key;

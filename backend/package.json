@@ -8,7 +8,7 @@
     "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "pkg . --targets node18-win-x64",
-    "postinstall": "node scripts/patch-playwright-mcp.js"
+    "postinstall": "node ./scripts/patch-playwright-mcp.js"
   },
   "keywords": [],
   "author": "",
