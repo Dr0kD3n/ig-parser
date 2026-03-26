@@ -16,10 +16,12 @@ const getConfigPath = (fileName) => path_1.join((0, utils_1.getRootPath)(), 'con
 exports.getConfigPath = getConfigPath;
 // Нормализация ссылок (убирает слэши на конце и параметры)
 const normalizeUrl = (url) => {
+  const urlStr = typeof url === 'object' && url !== null ? url.url : url;
+  if (typeof urlStr !== 'string') return '';
   try {
-    return new URL(url).href.split('?')[0].replace(/\/$/, '');
+    return new URL(urlStr).href.split('?')[0].replace(/\/$/, '');
   } catch {
-    return url.replace(/\/$/, '');
+    return urlStr.replace(/\/$/, '');
   }
 };
 exports.normalizeUrl = normalizeUrl;

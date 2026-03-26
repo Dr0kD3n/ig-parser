@@ -36,18 +36,18 @@ exports.StateManager = {
     }
   },
   hasDonor(url) {
-    return this.processedDonors.has((0, config_1.normalizeUrl)(url));
+    const urlStr = typeof url === 'object' && url !== null ? url.url : url;
+    return this.processedDonors.has((0, config_1.normalizeUrl)(urlStr));
   },
   async addDonor(url) {
-    await this.add(url);
-    const normUrl = (0, config_1.normalizeUrl)(url);
+    const urlStr = typeof url === 'object' && url !== null ? url.url : url;
+    await this.add(urlStr);
+    const normUrl = (0, config_1.normalizeUrl)(urlStr);
     this.processedDonors.add(normUrl);
     // We now delete from 'donor' type to keep the list clean after processing
     const db = await (0, db_1.getDB)();
     try {
       // [MARK] Donors are no longer deleted from the list after processing to allow visual marking in UI
-      // await db.run('DELETE FROM urls WHERE type = ? AND url = ?', ['donor', normUrl]);
-      // console.log(`🗑️ Донор удален из списка: ${normUrl}`);
     } catch (e) {
       console.error('Ошибка при удалении отработанного донора:', e);
     }
@@ -104,27 +104,30 @@ exports.StateManager = {
   },
   async loadDonors() {
     const db = await (0, db_1.getDB)();
-    const rows = await db.all(`SELECT url FROM urls WHERE type = 'donor' ORDER BY id DESC`);
-    return rows.map((r) => r.url);
+    const rows = await db.all(`SELECT url, niche, city FROM urls WHERE type = 'donor' ORDER BY id DESC`);
+    return rows; // Now returns objects {url, niche, city}
   },
-  async saveDonor(url) {
+  async saveDonor(url, niche = null, city = null) {
     const normUrl = (0, config_1.normalizeUrl)(url);
     const db = await (0, db_1.getDB)();
 
     try {
-      await db.run(`INSERT OR REPLACE INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
-      console.log(`✅ Сохранен новый донор: ${normUrl}`);
+      await db.run(`INSERT OR REPLACE INTO urls (type, url, niche, city) VALUES (?, ?, ?, ?)`, ['donor', normUrl, niche, city]);
+      console.log(`✅ Сохранен новый донор: ${normUrl} (${niche || ''} ${city || ''})`);
     } catch (e) {
       // Ignore if already exists in donor table
     }
   },
-  async saveDonors(urls) {
+  async saveDonors(donors) {
     const db = await (0, db_1.getDB)();
     try {
       await db.run(`DELETE FROM urls WHERE type = 'donor'`);
-      for (const url of urls) {
+      for (const donor of donors) {
+        const url = typeof donor === 'string' ? donor : donor.url;
+        const niche = donor.niche || null;
+        const city = donor.city || null;
         const normUrl = (0, config_1.normalizeUrl)(url);
-        await db.run(`INSERT OR REPLACE INTO urls (type, url) VALUES (?, ?)`, ['donor', normUrl]);
+        await db.run(`INSERT OR REPLACE INTO urls (type, url, niche, city) VALUES (?, ?, ?, ?)`, ['donor', normUrl, niche, city]);
       }
     } catch (e) {
       console.error('Ошибка при сохранении списка доноров:', e);

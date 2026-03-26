@@ -9,8 +9,9 @@ const { FingerprintInjector } = require('fingerprint-injector');
 const http = require('http');
 
 const { BrowserError, NetworkError } = require('./errors');
-const { handleError } = require('./error-handler');
 const { getDB } = require('./db');
+const { info, warn, error: logError } = require('./logger');
+const { handleError } = require('./error-handler');
 
 const fingerprintGenerator = new FingerprintGenerator();
 const fingerprintInjector = new FingerprintInjector();
@@ -70,14 +71,14 @@ async function createBrowserContext(config, headless = false) {
         dolphinToken = row.value;
       }
     } catch (e) {
-      console.error('Error fetching global dolphin token:', e);
+      logError(`Error fetching global dolphin token: ${e.message}`);
     }
   }
 
   let dolphinSuccess = false;
   if (dolphinToken && dolphinProfileId) {
     try {
-      console.log(`🐬 [DOLPHIN] Launching profile: ${dolphinProfileId}`);
+      info(`🐬 [DOLPHIN] Launching profile: ${dolphinProfileId}`);
       const launchUrl = `http://127.0.0.1:3001/v1.0/browser_profiles/${dolphinProfileId}/start?automation=1`;
 
       const response = await new Promise((resolve, reject) => {
@@ -114,7 +115,7 @@ async function createBrowserContext(config, headless = false) {
           response.error ||
           `HTTP ${response.statusCode}`;
         handleError(new NetworkError(`[DOLPHIN] ${msg}`, { profileId: dolphinProfileId }));
-        console.warn(`⚠️ [DOLPHIN] Falling back to local browser.`);
+        warn(`⚠️ [DOLPHIN] Falling back to local browser.`);
       }
     } catch (e) {
       handleError(
@@ -122,7 +123,7 @@ async function createBrowserContext(config, headless = false) {
           profileId: dolphinProfileId,
         })
       );
-      console.warn(`⚠️ [DOLPHIN] Falling back to local browser.`);
+      warn(`⚠️ [DOLPHIN] Falling back to local browser.`);
     }
   }
 
@@ -167,7 +168,7 @@ async function createBrowserContext(config, headless = false) {
   }
 
   await applyFingerprint(context, config.fingerprint);
-  if (config.cookies) await context.addCookies(config.cookies).catch(() => {});
+  if (config.cookies) await context.addCookies(config.cookies).catch(() => { });
   if (config.local_storage) {
     await context.addInitScript((ls) => {
       try {
@@ -175,7 +176,7 @@ async function createBrowserContext(config, headless = false) {
         for (const key in data) {
           window.localStorage.setItem(key, data[key]);
         }
-      } catch (e) {}
+      } catch (e) { }
     }, config.local_storage);
   }
 
@@ -324,7 +325,7 @@ function startLiveView(context) {
         );
         await pages[pages.length - 1].screenshot({ path: liveViewPath, type: 'jpeg', quality: 30 });
       }
-    } catch (e) {}
+    } catch (e) { }
   }, 2000);
 }
 
@@ -337,7 +338,7 @@ async function takeLiveScreenshot(page) {
       'live_view.jpg'
     );
     await page.screenshot({ path: liveViewPath, type: 'jpeg', quality: 30 });
-  } catch (e) {}
+  } catch (e) { }
 }
 
 async function watchStory(page) {
@@ -352,7 +353,7 @@ async function watchStory(page) {
 
     if ((await storyBtn.count()) > 0 && (await storyBtn.isVisible())) {
       await storyBtn.click();
-      console.log(`👤 [HUMAN] Watching story...`);
+      info(`👤 [HUMAN] Watching story...`);
       // Watch for 5-10 seconds
       await (0, utils_1.wait)(5000 + Math.random() * 5000);
 
@@ -366,7 +367,7 @@ async function watchStory(page) {
       await (0, utils_1.wait)(1000);
     }
   } catch (e) {
-    console.warn(`⚠️ [HUMAN] Failed to watch story: ${e.message}`);
+    warn(`⚠️ [HUMAN] Failed to watch story: ${e.message}`);
   }
 }
 

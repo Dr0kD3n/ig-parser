@@ -797,14 +797,16 @@ const run = async () => {
 
     try {
       if (humanEmulation) {
-        await processDonor(context, currentDonors[0], CONFIG, accounts.length);
-        await state_1.StateManager.addDonor(currentDonors[0]);
+        const donorUrl = typeof currentDonors[0] === 'object' ? currentDonors[0].url : currentDonors[0];
+        await processDonor(context, donorUrl, CONFIG, accounts.length);
+        await state_1.StateManager.addDonor(donorUrl);
         // Reset to full names list for next donor
         CONFIG.target.names = (0, utils_1.shuffleArray)(await (0, config_1.getList)('names.txt'));
       } else {
         logger.info(`🚀 Запускаем параллельную обработку ${currentDonors.length} доноров...`);
         await Promise.all(
-          currentDonors.map(async (donorUrl) => {
+          currentDonors.map(async (donor) => {
+            const donorUrl = typeof donor === 'object' ? donor.url : donor;
             // Clone config for each donor to avoid shared naming lists
             const donorConfig = JSON.parse(JSON.stringify(CONFIG));
             await processDonor(context, donorUrl, donorConfig, accounts.length);

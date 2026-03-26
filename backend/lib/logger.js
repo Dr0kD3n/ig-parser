@@ -10,13 +10,34 @@ exports.logFile = logFile;
 function log(message, level = 'INFO') {
   const timestamp = new Date().toISOString();
   const formattedMessage = `[${timestamp}] [${level}] ${message}`;
+
+  // Console colors
+  const colors = {
+    reset: '\x1b[0m',
+    dim: '\x1b[90m',
+    info: '\x1b[32m',
+    warn: '\x1b[33m',
+    error: '\x1b[31m',
+    debug: '\x1b[36m',
+  };
+
+  const levelColors = {
+    INFO: colors.info,
+    WARN: colors.warn,
+    ERROR: colors.error,
+    DEBUG: colors.debug,
+  };
+
+  const color = levelColors[level] || colors.reset;
+  const consoleMessage = `${colors.dim}[${timestamp}]${colors.reset} ${color}[${level}]${colors.reset} ${message}`;
+
   // Print to console
   if (level === 'ERROR') {
     const errorMsg =
       typeof message === 'object' ? message.message || JSON.stringify(message) : message;
-    console.error(errorMsg);
+    console.error(`${colors.dim}[${timestamp}]${colors.reset} ${colors.error}[ERROR]${colors.reset} ${errorMsg}`);
   } else {
-    console.log(message);
+    console.log(consoleMessage);
   }
   // Write to file
   try {

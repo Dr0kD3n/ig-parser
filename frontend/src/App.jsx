@@ -63,8 +63,6 @@ export default function App() {
   const [sentDM, setSentDM] = useState(() => safeStorage.parse('ig_sent_dm', []));
   const [tgTagged, setTgTagged] = useState(() => safeStorage.parse('ig_tg_tagged', []));
   const [failedImages, setFailedImages] = useState(new Set());
-  const [modalOpen, setModalOpen] = useState(false);
-  const [messagesText, setMessagesText] = useState('');
 
   const [settingsData, setSettingsData] = useState(() => {
     const defaultState = {
@@ -80,13 +78,18 @@ export default function App() {
       showBrowser: false,
       humanEmulation: false,
       concurrentProfiles: 3,
+      donorGroups: [],
     };
     return { ...defaultState, ...safeStorage.parse('ig_settings', {}) };
   });
 
   const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false });
   const [logs, setLogs] = useState([]);
-  const [activeTab, setActiveTab] = useState(() => safeStorage.getItem('ig_active_tab', 'main'));
+  const [activeTab, setActiveTab] = useState(() => safeStorage.getItem('ig_active_tab', 'profiles'));
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    safeStorage.setItem('ig_active_tab', tab);
+  };
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState('idle');
 
@@ -177,29 +180,35 @@ export default function App() {
     }
   }, [user, authFetch]);
 
-  const fetchSettings = useCallback(async () => {
-    if (!user) return;
-    try {
-      const res = await authFetch('/api/settings');
-      if (!res.ok) return;
-      const data = await res.json();
-      setSettingsData((prev) => ({
-        ...prev,
-        ...data,
-        names: Array.isArray(data.names) ? data.names : [],
-        cities: Array.isArray(data.cities) ? data.cities : [],
-        niches: Array.isArray(data.niches) ? data.niches : [],
-        donors: Array.isArray(data.donors) ? data.donors : [],
-        showBrowser: data.showBrowser || false,
-        humanEmulation: data.humanEmulation || false,
-        concurrentProfiles: data.concurrentProfiles || 3,
-      }));
-      settingsLoaded.current = true;
-      setIsLoading(false);
-    } catch (e) {
-      console.error('Error fetching settings', e);
-    }
-  }, [user, authFetch]);
+  const fetchSettings = useCallback(
+    async (force = false) => {
+      if (!user) return;
+      // Skip polling if on settings tab to prevent state overwrite during editing
+      if (!force && activeTab === 'settings') return;
+      try {
+        const res = await authFetch('/api/settings');
+        if (!res.ok) return;
+        const data = await res.json();
+        setSettingsData((prev) => ({
+          ...prev,
+          ...data,
+          names: Array.isArray(data.names) ? data.names : [],
+          cities: Array.isArray(data.cities) ? data.cities : [],
+          niches: Array.isArray(data.niches) ? data.niches : [],
+          donors: Array.isArray(data.donors) ? data.donors : [],
+          showBrowser: data.showBrowser || false,
+          humanEmulation: data.humanEmulation || false,
+          concurrentProfiles: data.concurrentProfiles || 3,
+          donorGroups: Array.isArray(data.donorGroups) ? data.donorGroups : [],
+        }));
+        settingsLoaded.current = true;
+        setIsLoading(false);
+      } catch (e) {
+        console.error('Error fetching settings', e);
+      }
+    },
+    [user, authFetch, activeTab]
+  );
 
   const fetchBotStatus = useCallback(async () => {
     if (!user) return;
@@ -252,14 +261,12 @@ export default function App() {
   useEffect(() => {
     if (user) {
       fetchData();
-      fetchSettings();
+      fetchSettings(true); // Force load initial settings
       fetchBotStatus();
       const interval = setInterval(() => {
         fetchBotStatus();
         fetchSettings();
       }, 5000);
-      const saved = safeStorage.parse('ig_first_messages', []);
-      setMessagesText(saved.join('\n'));
       return () => clearInterval(interval);
     } else {
       setIsLoading(false);
@@ -342,7 +349,37 @@ export default function App() {
 
   const handleSendDM = useCallback(
     async (g) => {
-      const msgs = safeStorage.parse('ig_first_messages', []);
+      let msgs = [];
+
+      // If profile has a donor, check for group-specific messages
+      if (g.donor && settingsData.donorGroups?.length > 0) {
+        const getUsername = (d) => {
+          const url = typeof d === 'string' ? d : d.url;
+          return url.replace('https://www.instagram.com/', '').replace(/[@/]/g, '').trim();
+        };
+
+        const targetDonor = g.donor.replace('@', '').trim();
+        const specificGroup = settingsData.donorGroups.find((grp) =>
+          (grp.donors || []).some(d => getUsername(d) === targetDonor)
+        );
+
+        if (specificGroup && specificGroup.messages?.length > 0) {
+          msgs = specificGroup.messages;
+        } else {
+          // Fallback to 'all' group if defined
+          const allGroup = settingsData.donorGroups.find((grp) => grp.id === 'all');
+          if (allGroup && allGroup.messages?.length > 0) {
+            msgs = allGroup.messages;
+          }
+        }
+      } else {
+        // Fallback to 'all' group if no donor or no groups
+        const allGroup = settingsData.donorGroups?.find((grp) => grp.id === 'all');
+        if (allGroup && allGroup.messages?.length > 0) {
+          msgs = allGroup.messages;
+        }
+      }
+
       const m = msgs[Math.floor(Math.random() * msgs.length)] || 'Hello!';
       const newSent = [...sentDM, g.url];
       setSentDM(newSent);
@@ -354,7 +391,7 @@ export default function App() {
         body: JSON.stringify({ url: g.url, message: m }),
       });
     },
-    [sentDM, authFetch]
+    [sentDM, authFetch, settingsData.donorGroups]
   );
 
   const handleTagTg = useCallback(
@@ -564,9 +601,6 @@ export default function App() {
           <button className="btn-primary btn-sm btn-danger" onClick={handleLogout}>
             OUT
           </button>
-          <button className="btn-primary" onClick={() => setModalOpen(true)}>
-            {tr('templates')}
-          </button>
         </div>
       </header>
 
@@ -580,7 +614,7 @@ export default function App() {
             <button
               key={id}
               className={`tab-btn${activeTab === id ? ' active' : ''}`}
-              onClick={() => setActiveTab(id)}
+              onClick={() => handleTabChange(id)}
             >
               {label}
             </button>
@@ -665,40 +699,10 @@ export default function App() {
             isLoading={isLoading}
             authFetch={authFetch}
             failedUrls={Array.from(failedImages)}
+            scrapedDonors={Array.from(new Set(girls.map((g) => g.donor).filter(Boolean))).sort()}
           />
         )}
       </div>
-
-      {modalOpen && (
-        <div className="modal" onClick={() => setModalOpen(false)}>
-          <div className="modalContent" onClick={(e) => e.stopPropagation()}>
-            <h3 className="modal-title">{tr('modal_templates_title')}</h3>
-            <textarea
-              className="msg-textarea"
-              value={messagesText}
-              onChange={(e) => setMessagesText(e.target.value)}
-              placeholder={tr('one_msg_per_line')}
-            />
-            <div className="modal-footer">
-              <button className="btn-primary btn-ghost" onClick={() => setModalOpen(false)}>
-                {tr('cancel')}
-              </button>
-              <button
-                className="btn-primary"
-                onClick={() => {
-                  safeStorage.setItem(
-                    'ig_first_messages',
-                    JSON.stringify(messagesText.split('\n').filter((l) => l.trim()))
-                  );
-                  setModalOpen(false);
-                }}
-              >
-                {tr('save_changes')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

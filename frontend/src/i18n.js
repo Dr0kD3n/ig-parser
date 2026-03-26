@@ -107,6 +107,9 @@ export const TRANSLATIONS = {
     regenerate_success: 'Данные системы обновлены',
     save_success: 'Аккаунт сохранен',
     direct_connection: 'Прямое соединение',
+    donor_groups: 'Группы доноров',
+    add_group: 'Добавить группу',
+    all_other_donors: 'Все остальные доноры',
   },
   en: {
     logo: 'InstaPanel 3.0',
@@ -215,6 +218,9 @@ export const TRANSLATIONS = {
     regenerate_success: 'System data updated',
     save_success: 'Account saved',
     direct_connection: 'Direct Connection',
+    donor_groups: 'Donor Groups',
+    add_group: 'Add Group',
+    all_other_donors: 'All other donors',
   },
 };
 export const t = (lang, key) => TRANSLATIONS[lang]?.[key] ?? key;

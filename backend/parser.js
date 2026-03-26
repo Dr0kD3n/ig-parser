@@ -1,12 +1,14 @@
 const path = require('path');
 const { resolve } = path;
-const { handleError, setupProcessHandlers } = require('./lib/error-handler');
+const reporter_1 = require('./lib/reporter');
 const { AppError, BrowserError } = require('./lib/errors');
 const config_1 = require('./lib/config');
 const state_1 = require('./lib/state');
 const browser_1 = require('./lib/browser');
 const utils_1 = require('./lib/utils');
-const reporter_1 = require('./lib/reporter');
+const { info, warn, error: logError } = require('./lib/logger');
+const { handleError, setupProcessHandlers } = require('./lib/error-handler');
+const { getDB } = require('./lib/db');
 
 const getDynamicConfig = async () => {
   try {
@@ -52,15 +54,15 @@ const getCombinedKeywords = (cities, niches) => {
   const combined = [];
   for (const city of cities) {
     for (const niche of niches) {
-      combined.push(`${city} ${niche}`);
+      combined.push({ keyword: `${city} ${niche}`, city, niche });
     }
   }
   return shuffleArray(combined);
 };
 
 const run = async () => {
-  console.log('🚀 ЗАПУСК ПАРСЕРА ДОНОРОВ (STEALTH MODE + LOGS)...');
-  console.log('----------------------------------------------');
+  info('🚀 ЗАПУСК ПАРСЕРА ДОНОРОВ (STEALTH MODE + LOGS)...');
+  info('----------------------------------------------');
 
   let CONFIG;
   try {
@@ -77,16 +79,13 @@ const run = async () => {
     handleError(new AppError('Список ключевых слов (города/ниши) пуст.'));
     return;
   }
-  console.log(`🎯 Загружено комбинаций ключевых слов для поиска: ${keywords.length}`);
-  // Файл для сохранения найденных профилей доноров
-  const profilesFile = resolve((0, utils_1.getRootPath)(), 'config', 'profiles.txt');
   const savedProfiles = await state_1.StateManager.loadDonors();
   const collectedUrls = new Set(savedProfiles.map(config_1.normalizeUrl));
-  console.log(`📂 В базе уже сохранено доноров: ${collectedUrls.size}`);
+  info(`📂 В базе уже сохранено доноров: ${collectedUrls.size}`);
 
-  console.log(`🌐 Запуск браузера для аккаунта: ${account.name || account.id}...`);
-  console.log(`📡 Прокси: ${account.proxy ? account.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
-  console.log(`🍪 Загружено куки: ${account.cookies.length}`);
+  info(`🌐 Запуск браузера для аккаунта: ${account.name || account.id}...`);
+  info(`📡 Прокси: ${account.proxy ? account.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
+  info(`🍪 Загружено куки: ${account.cookies.length}`);
 
   let browser, context, liveViewInterval;
   try {
@@ -115,7 +114,7 @@ const run = async () => {
     const page = await context.newPage();
 
     try {
-      console.log('Открываем главную страницу Instagram...');
+      info('Открываем главную страницу Instagram...');
       await page.goto('https://www.instagram.com/', {
         waitUntil: 'domcontentloaded',
         timeout: CONFIG.timeouts.pageLoad,
@@ -131,7 +130,7 @@ const run = async () => {
         .first();
       // Если строка поиска скрыта, нужно кликнуть по иконке/вкладке поиска в левом меню
       if ((await searchInputLocator.count()) === 0) {
-        console.log('🔍 Ищем вкладку поиска в меню...');
+        info('🔍 Ищем вкладку поиска в меню...');
         const searchIcon = page
           .locator(
             'svg[aria-label*="Search"], svg[aria-label*="Поиск"], svg[aria-label*="Recherche"], svg[aria-label*="Rechercher"], svg[aria-label*="Buscar"]'
@@ -155,7 +154,8 @@ const run = async () => {
         .first();
 
       if ((await searchInputLocator.count()) > 0) {
-        for (const keyword of keywords) {
+        for (const kwObj of keywords) {
+          const { keyword, city, niche } = kwObj;
           try {
             console.log(`\n🔎 Ищем профили по запросу: "${keyword}"`);
             await (0, utils_1.humanClick)(page, searchInputLocator, { clickCount: 3 });
@@ -164,7 +164,7 @@ const run = async () => {
             await searchInputLocator.pressSequentially(keyword, {
               delay: Math.floor(Math.random() * (120 - 50 + 1) + 50),
             });
-            console.log(`⏳ Ждем результаты поиска от Instagram...`);
+            info(`⏳ Ждем результаты поиска от Instagram...`);
             await (0, browser_1.takeLiveScreenshot)(page);
             await (0, utils_1.wait)(4000);
             await (0, browser_1.takeLiveScreenshot)(page);
@@ -223,7 +223,7 @@ const run = async () => {
             });
 
             const { links, container } = searchResultsData;
-            console.log(
+            info(
               `📡 [DEBUG] Контейнер результатов: ${container} | Найдено ссылок: ${links.length}`
             );
 
@@ -234,11 +234,11 @@ const run = async () => {
               const normLink = (0, config_1.normalizeUrl)(link);
               if (!collectedUrls.has(normLink)) {
                 collectedUrls.add(normLink);
-                await state_1.StateManager.saveDonor(normLink);
+                await state_1.StateManager.saveDonor(normLink, niche, city);
                 addedCount++;
               }
             }
-            console.log(`✅ Найдено профилей: ${finalLinks.length} | Из них новых: ${addedCount}`);
+            info(`✅ Найдено профилей: ${finalLinks.length} | Из них новых: ${addedCount}`);
             await (0, utils_1.wait)(2000 + Math.random() * 3000);
           } catch (itemErr) {
             handleError(
@@ -259,9 +259,9 @@ const run = async () => {
       if (typeof liveViewInterval !== 'undefined') clearInterval(liveViewInterval);
       await page.close().catch(() => { });
       await browser.close().catch(() => { });
-      console.log('\n✅ ========================================== ✅');
-      console.log('👋 РАБОТА ПАРСЕРА ЗАВЕРШЕНА! Браузер закрыт.');
-      console.log('✅ ========================================== ✅');
+      info('\n✅ ========================================== ✅');
+      info('👋 РАБОТА ПАРСЕРА ЗАВЕРШЕНА! Браузер закрыт.');
+      info('✅ ========================================== ✅');
     }
   } catch (launchErr) {
     handleError(launchErr);

@@ -103,8 +103,25 @@ function broadcastLog(source, message) {
     message: message.toString().trim(),
     sessionId: currentSessionId,
   };
-  // Use originalLog to avoid infinite recursion when console.log is overridden
-  originalLog(`[${source}] ${logEntry.message}`);
+
+  const colors = {
+    reset: '\x1b[0m',
+    dim: '\x1b[90m',
+    error: '\x1b[31m',
+    warn: '\x1b[33m',
+    info: '\x1b[32m',
+    source: '\x1b[36m',
+  };
+
+  let color = colors.info;
+  if (source.includes('error')) color = colors.error;
+  else if (source.includes('warn')) color = colors.warn;
+  else if (source === 'server' || source === 'parser' || source === 'index') color = colors.source;
+
+  // Print colorized to terminal, but keep logEntry.message clean for frontend/DB
+  const timeStr = `${colors.dim}[${new Date().toLocaleTimeString()}]${colors.reset}`;
+  originalLog(`${timeStr} ${color}[${source.toUpperCase()}]${colors.reset} ${logEntry.message}`);
+
   historicalLogs.push(logEntry);
   if (historicalLogs.length > 1000) historicalLogs.shift();
   debouncedSaveLogs();
@@ -210,6 +227,8 @@ async function getSettings() {
   const humanEmulation = humanEmulationStr ? humanEmulationStr.value === 'true' : false;
   const dolphinTokenStr = await db.get(`SELECT value FROM settings WHERE key = 'dolphinToken'`);
   const dolphinToken = dolphinTokenStr ? dolphinTokenStr.value : '';
+  const donorGroupsStr = await db.get(`SELECT value FROM settings WHERE key = 'donorGroups'`);
+  const donorGroups = donorGroupsStr ? JSON.parse(donorGroupsStr.value) : [];
   return {
     accounts,
     activeParserAccountIds: activeParserIds,
@@ -221,6 +240,7 @@ async function getSettings() {
     concurrentProfiles,
     humanEmulation,
     dolphinToken,
+    donorGroups,
   };
 }
 app.use((req, res, next) => {
@@ -493,6 +513,7 @@ app.get('/api/settings', async (req, res) => {
     concurrentProfiles: settings.concurrentProfiles,
     humanEmulation: settings.humanEmulation,
     dolphinToken: settings.dolphinToken,
+    donorGroups: settings.donorGroups,
   });
 });
 app.post('/api/settings', async (req, res) => {
@@ -577,10 +598,15 @@ app.post('/api/settings', async (req, res) => {
       await updateList('city', 'cities', cities);
       await updateList('niche', 'niches', niches);
       if (req.body.hasOwnProperty('donors')) {
-        const cleanDonors = (donors || []).map((d) => d.trim()).filter(Boolean);
+        const processedDonorsInReq = (donors || []).map((d) => {
+          if (typeof d === 'string') return d.trim();
+          if (d && typeof d === 'object' && d.url) return { ...d, url: d.url.trim() };
+          return d;
+        }).filter(Boolean);
+
         const existingDonorsCount = (await state_1.StateManager.loadDonors()).length;
-        if (!(existingDonorsCount > 5 && cleanDonors.length === 0 && !req.body.forceEmpty)) {
-          await state_1.StateManager.saveDonors(cleanDonors);
+        if (!(existingDonorsCount > 5 && processedDonorsInReq.length === 0 && !req.body.forceEmpty)) {
+          await state_1.StateManager.saveDonors(processedDonorsInReq);
         }
       }
       if (req.body.hasOwnProperty('showBrowser')) {
@@ -605,6 +631,12 @@ app.post('/api/settings', async (req, res) => {
         await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'dolphinToken',
           req.body.dolphinToken || '',
+        ]);
+      }
+      if (req.body.hasOwnProperty('donorGroups')) {
+        await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          'donorGroups',
+          JSON.stringify(req.body.donorGroups || []),
         ]);
       }
       await db.run('COMMIT');

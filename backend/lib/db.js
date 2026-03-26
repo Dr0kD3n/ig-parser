@@ -63,7 +63,10 @@ async function getDB() {
         CREATE TABLE IF NOT EXISTS urls (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             type TEXT NOT NULL, -- 'history', 'donor'
-            url TEXT NOT NULL UNIQUE
+            url TEXT NOT NULL,
+            niche TEXT,
+            city TEXT,
+            UNIQUE(type, url)
         );
 
         CREATE TABLE IF NOT EXISTS profiles (
@@ -142,6 +145,20 @@ async function getDB() {
         );
 
     `);
+  try {
+    await dbInstance.exec(`ALTER TABLE urls ADD COLUMN niche TEXT`);
+  } catch (e) { }
+
+  try {
+    await dbInstance.exec(`ALTER TABLE urls ADD COLUMN city TEXT`);
+  } catch (e) { }
+
+  try {
+    // Try to drop the former index/constraint if possible, but SQLite doesn't easily drop constraints.
+    // We will just try to create a new unique index.
+    await dbInstance.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_urls_type_url ON urls(type, url)`);
+  } catch (e) { }
+
   try {
     await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN tg_status TEXT`);
   } catch (e) {

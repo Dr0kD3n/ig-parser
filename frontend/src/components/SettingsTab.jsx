@@ -26,6 +26,96 @@ const SkeletonSettings = memo(function SkeletonSettings() {
     </div>
   );
 });
+
+const plural = (n, one, two, many) => {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return two;
+  return many;
+};
+
+const DonorGroupCard = ({ group, allDonors, onUpdate, onDelete, isAll, tr, TrashIcon, settingsData }) => {
+  return (
+    <div className={`donor-group-card ${isAll ? 'all-group' : ''}`}>
+      <div className="flex-between mb-12">
+        <div className="flex align-center gap-10 m-0">
+          {isAll ? (
+            <h5 className="fs-16 font-bold m-0">
+              {isAll ? 'Все' : (group.donors || []).length}{' '}
+              {isAll ? 'доноры' : plural((group.donors || []).length, 'донор', 'донора', 'доноров')}
+
+            </h5>
+          ) : (
+            <input
+              className="group-name-input"
+              value={group.name}
+              onChange={(e) => onUpdate({ ...group, name: e.target.value })}
+              placeholder="Название группы"
+            />
+          )}
+          <h5 className="count-badge fs-16 font-bold m-0">
+          </h5>
+        </div>
+        <div className="flex gap-8">
+          {!isAll && (
+            <button className="btn-primary btn-danger btn-xs" onClick={onDelete}>
+              <TrashIcon />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {!isAll && (
+        <div className="donors-selector mb-12">
+          <div className="flex-wrap gap-6 max-h-120 scroll-y p-8 bg-black-20 rounded-8">
+            {(allDonors || []).map((d) => {
+              const url = typeof d === 'string' ? d : d.url;
+              const isSelected = (group.donors || []).some(gd => (typeof gd === 'string' ? gd : gd.url) === url);
+              const isProcessed = (settingsData?.checkedDonors || []).includes(url);
+              const niche = d.niche;
+              const city = d.city;
+
+              return (
+                <button
+                  key={url}
+                  className={`acc-task-tag ${isSelected ? 'active' : 'inactive'} ${isProcessed ? 'donor-processed' : ''}`}
+                  onClick={() => {
+                    const newDonors = isSelected
+                      ? group.donors.filter((u) => (typeof u === 'string' ? u : u.url) !== url)
+                      : [...(group.donors || []), d];
+                    onUpdate({ ...group, donors: newDonors });
+                  }}
+                  title={isProcessed ? 'Отработан' : ''}
+                >
+                  @{url.replace('https://www.instagram.com/', '').replace('/', '')}
+                  {(niche || city) && (
+                    <span className="donor-keyword">
+                      ({[niche, city].filter(Boolean).join(', ')})
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            {allDonors.length === 0 && <div className="fs-12 color-dim">Нет доноров в списке</div>}
+          </div>
+        </div>
+      )}
+
+      <div className="group-messages">
+        <label className="fs-12 mb-4 block color-muted">{tr('modal_templates_title')}:</label>
+        <textarea
+          className="msg-textarea h-100 fs-13"
+          value={(group.messages || []).join('\n')}
+          onChange={(e) => onUpdate({ ...group, messages: e.target.value.split('\n') })}
+          placeholder={tr('one_msg_per_line')}
+        />
+      </div>
+    </div>
+  );
+};
+
 export default function SettingsTab({
   settingsData,
   onSettingsChange,
@@ -33,8 +123,13 @@ export default function SettingsTab({
   isLoading,
   authFetch,
   failedUrls,
+  scrapedDonors,
 }) {
-  const [settingsTab, setSettingsTab] = useState('accounts');
+  const [settingsTab, setSettingsTab] = useState(() => localStorage.getItem('ig_settings_tab') || 'accounts');
+  const handleSettingsTabChange = (tab) => {
+    setSettingsTab(tab);
+    localStorage.setItem('ig_settings_tab', tab);
+  };
   const [draggedItem, setDraggedItem] = useState(null);
   const [editingAccount, setEditingAccount] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -46,6 +141,7 @@ export default function SettingsTab({
   });
   const [updateInfo, setUpdateInfo] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
+
 
   React.useEffect(() => {
     const checkUpdates = async () => {
@@ -262,7 +358,7 @@ export default function SettingsTab({
             <button
               key={tab}
               className={`tab-btn${settingsTab === tab ? ' active' : ''}`}
-              onClick={() => setSettingsTab(tab)}
+              onClick={() => handleSettingsTabChange(tab)}
             >
               {tr(`tab_${tab}`)}
             </button>
@@ -559,14 +655,122 @@ export default function SettingsTab({
         />
       )}
       {settingsTab === 'donors' && (
-        <textarea
-          className="msg-textarea"
-          style={{ height: 500 }}
-          value={(settingsData.donors || []).join('\n')}
-          onChange={(e) =>
-            onSettingsChange({ ...settingsData, donors: e.target.value.split('\n') })
-          }
-        />
+        <div className="donor-groups-manager">
+          <div className="donors-raw-list mb-24">
+            <h4 className="mb-12 fs-16 color-accent">📋 {tr('tab_donors')} (Общий список)</h4>
+            <div className="donors-editor-container">
+              <div
+                id="donors-visual"
+                className="donors-visual-layer"
+                style={{ height: 180 }}
+              >
+                {(settingsData.donors || []).map((d, i) => {
+                  const url = typeof d === 'string' ? d : d.url;
+                  const isProcessed = (settingsData.checkedDonors || []).includes(url);
+                  return (
+                    <div key={i} className="donor-line">
+                      <span className={isProcessed ? 'donor-processed' : ''}>{url}</span>
+                      {(d.niche || d.city) && (
+                        <span className="donor-keyword">({[d.niche, d.city].filter(Boolean).join(', ')})</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <textarea
+                className="donors-input-layer"
+                style={{ height: 180 }}
+                value={(settingsData.donors || []).map(d => typeof d === 'string' ? d : d.url).join('\n')}
+                onScroll={(e) => {
+                  const visual = document.getElementById('donors-visual');
+                  if (visual) visual.scrollTop = e.target.scrollTop;
+                }}
+                onChange={(e) => {
+                  const lines = e.target.value.split('\n');
+                  const updatedDonors = lines.map(line => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return line; // Keep empty lines or spaces while typing
+                    const existing = (settingsData.donors || []).find(ed => (typeof ed === 'string' ? ed : ed.url) === trimmed);
+                    return existing || line;
+                  });
+                  onSettingsChange({ ...settingsData, donors: updatedDonors });
+                }}
+                placeholder="@username1\n@username2..."
+              />
+            </div>
+          </div>
+
+          <div className="groups-header flex-between mb-20">
+            <h4 className="fs-18 font-bold">🧩 {tr('donor_groups')}</h4>
+            <button
+              className="btn-primary btn-sm"
+              onClick={() => {
+                const name = prompt(tr('add_group') + ':');
+                if (!name) return;
+                const newGroups = [
+                  ...(settingsData.donorGroups || []),
+                  { id: Date.now().toString(), name, donors: [], messages: [] },
+                ];
+                onSettingsChange({ ...settingsData, donorGroups: newGroups });
+              }}
+            >
+              + {tr('add_group')}
+            </button>
+          </div>
+
+          <div className="donor-groups-list flex-v gap-24">
+            {/* Special 'all' group */}
+            <DonorGroupCard
+              group={
+                (settingsData.donorGroups || []).find((g) => g.id === 'all') || {
+                  id: 'all',
+                  name: tr('all_other_donors'),
+                  donors: [],
+                  messages: [],
+                }
+              }
+              allDonors={(scrapedDonors || []).map(u => `https://www.instagram.com/${u}/`)}
+              onUpdate={(updated) => {
+                const groups = settingsData.donorGroups || [];
+                const exists = groups.some((g) => g.id === 'all');
+                const newGroups = exists
+                  ? groups.map((g) => (g.id === 'all' ? updated : g))
+                  : [updated, ...groups];
+                onSettingsChange({ ...settingsData, donorGroups: newGroups });
+              }}
+              onDelete={() => { }}
+              isAll={true}
+              tr={tr}
+              TrashIcon={TrashIcon}
+              settingsData={settingsData}
+            />
+
+            {/* Other groups */}
+            {(settingsData.donorGroups || [])
+              .filter((g) => g.id !== 'all')
+              .map((group) => (
+                <DonorGroupCard
+                  key={group.id}
+                  group={group}
+                  allDonors={(scrapedDonors || []).map(u => `https://www.instagram.com/${u}/`)}
+                  onUpdate={(updated) => {
+                    const newGroups = settingsData.donorGroups.map((g) =>
+                      g.id === group.id ? updated : g
+                    );
+                    onSettingsChange({ ...settingsData, donorGroups: newGroups });
+                  }}
+                  onDelete={() => {
+                    if (!confirm('Удалить эту группу?')) return;
+                    const newGroups = settingsData.donorGroups.filter((g) => g.id !== group.id);
+                    onSettingsChange({ ...settingsData, donorGroups: newGroups });
+                  }}
+                  tr={tr}
+                  TrashIcon={TrashIcon}
+                  settingsData={settingsData}
+                />
+              ))}
+          </div>
+        </div>
       )}
     </div>
   );

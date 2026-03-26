@@ -1047,12 +1047,10 @@ body::before {
 
 /* Skeleton Loading */
 .skeleton {
-  background: linear-gradient(
-    90deg,
-    hsl(var(--bg-elevated)) 25%,
-    hsl(var(--bg-card)) 50%,
-    hsl(var(--bg-elevated)) 75%
-  );
+  background: linear-gradient(90deg,
+      hsl(var(--bg-elevated)) 25%,
+      hsl(var(--bg-card)) 50%,
+      hsl(var(--bg-elevated)) 75%);
   background-size: 200% 100%;
   animation: skeleton-loading 1.5s infinite linear;
   border-radius: var(--radius-sm);
@@ -1685,6 +1683,81 @@ body::before {
   animation: bgPulse 1.5s infinite;
 }
 
+.donors-editor-container {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  background: hsl(var(--bg-elevated));
+  border: 1px solid hsl(var(--border));
+  overflow: hidden;
+}
+
+.donors-visual-layer,
+.donors-input-layer {
+  width: 100%;
+  padding: 16px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre;
+  word-wrap: break-word;
+  /* Allow wrapping if needed, but better use pre-wrap */
+  white-space: pre-wrap;
+  margin: 0;
+  border: none;
+  background: transparent;
+  min-height: 120px;
+}
+
+.donors-visual-layer {
+  color: #fff;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+  scrollbar-width: none;
+}
+
+.donors-visual-layer::-webkit-scrollbar {
+  display: none;
+}
+
+.donors-input-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  color: transparent;
+  caret-color: white;
+  z-index: 2;
+  resize: none;
+}
+
+.donors-input-layer:focus {
+  outline: none;
+}
+
+.donor-line {
+  margin: 0;
+  padding: 0;
+  height: 1.5em;
+  /* Matches line-height: 1.5 */
+  display: flex;
+  align-items: center;
+}
+
+.donor-processed {
+  text-decoration: underline;
+  text-decoration-color: #a855f7 !important;
+  text-decoration-thickness: 2px;
+}
+
+.donor-keyword {
+  opacity: 0.5;
+  font-size: 0.85em;
+  margin-left: 6px;
+  color: hsl(var(--text-muted));
+}
+
 .acc-task-tag {
   font-size: 10px;
   font-weight: 400;
@@ -1883,4 +1956,111 @@ body::before {
 
 .go2072408551 {
   z-index: 99999 !important;
+}
+
+/* Donor Groups */
+.donor-groups-manager {
+  display: flex;
+  flex-direction: column;
+  padding: 0 32px;
+}
+
+.donors-raw-list {
+  background: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.donors-raw-list .msg-textarea {
+  margin: 0;
+  width: 100%;
+}
+
+.donor-group-card {
+  background: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 20px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.donor-group-card:hover {
+  border-color: hsla(var(--primary), 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.donor-group-card.all-group {
+  border-left: 4px solid hsl(var(--accent));
+  background: linear-gradient(90deg, hsla(var(--accent), 0.05), transparent);
+}
+
+.group-name-input {
+  background: hsla(var(--bg-elevated), 0.3);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 4px 10px;
+  width: 240px;
+  transition: all 0.2s;
+}
+
+.group-name-input:focus {
+  outline: none;
+  background: hsla(var(--bg-elevated), 0.6);
+  border-color: hsl(var(--primary));
+}
+
+.donors-selector {
+  border-top: 1px solid hsla(var(--border), 0.5);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.group-messages {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group-messages .msg-textarea {
+  margin: 0;
+  width: 100%;
+}
+
+.max-h-120 {
+  max-height: 120px;
+}
+
+.scroll-y {
+  overflow-y: auto;
+}
+
+.bg-black-20 {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.rounded-8 {
+  border-radius: 8px;
+}
+
+.fs-13 {
+  font-size: 13px;
+}
+
+.fs-16 {
+  font-size: 16px;
+}
+
+.p-8 {
+  padding: 8px;
+}
+
+.block {
+  display: block;
 }
