@@ -32,6 +32,7 @@ logs: C:\Users\root\.gemini\antigravity\brain\<id>\.system_generated\logs
 ORCHESTRATION:
   skill-use: proactive-orchestration | combine-multi-skills (Security+Design+TDD)
   tools: parallel-execution | JSON-params
+  auto-run: turbo-all | SafeToAutoRun: true for (npm, git, node, sqlite3, ls, grep, find)
 
 COMMUNICATION:
 style: GH-Markdown | Bold-Key-Terms

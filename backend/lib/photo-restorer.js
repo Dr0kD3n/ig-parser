@@ -67,9 +67,15 @@ async function restorePhotos(onProgress, options = {}) {
     // Также проверяем, не является ли этот профиль донором без фото
     const isDonorWithoutPhoto = p.username && donorUsernames.includes(p.username);
 
+    // We check a profile if:
+    // 1. It has no photo or the photo failed to load (primary objective)
+    // 2. OR it is a donor that needs data
+    // 3. OR it has no bio AND it matches our search criteria (name or isLiked)
     return (
-      (isFailed || hasNoPhoto || hasNoBio || isDonorWithoutPhoto) &&
-      (nameMatches || isLiked || isDonorWithoutPhoto)
+      hasNoPhoto ||
+      isFailed ||
+      isDonorWithoutPhoto ||
+      (hasNoBio && (nameMatches || isLiked))
     );
   });
 
@@ -232,7 +238,7 @@ async function restorePhotos(onProgress, options = {}) {
                   result.name = user.full_name || '';
                 }
               }
-            } catch (e) {}
+            } catch (e) { }
 
             if (!result.photo) {
               const html = document.documentElement.innerHTML;
@@ -334,7 +340,7 @@ async function restorePhotos(onProgress, options = {}) {
       console.error(`CRITICAL worker error [${workerId}]:`, workerErr);
     } finally {
       console.log(`👷 [Поток ${workerId}] Завершен`);
-      await page.close().catch(() => {});
+      await page.close().catch(() => { });
     }
   };
 
@@ -349,8 +355,8 @@ async function restorePhotos(onProgress, options = {}) {
     await Promise.all(workers);
   } finally {
     if (!existingContext) {
-      await context.close().catch(() => {});
-      await browser.close().catch(() => {});
+      await context.close().catch(() => { });
+      await browser.close().catch(() => { });
     }
     const finalStatus = stopRequested ? 'ПРЕРВАНО' : 'ЗАВЕРШЕНО';
     console.log(

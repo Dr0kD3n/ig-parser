@@ -220,8 +220,13 @@ export default function App() {
           const res = await authFetch('/api/profiles/restore-photos/status');
           const data = await res.json();
           setRestoreStatus(data);
-          if (data.running) fetchData();
-          if (!data.running && data.done) {
+
+          if (data.error) {
+            toast.error(`Ошибка восстановления: ${data.error}`);
+            setRestoreStatus({ running: false, error: data.error });
+          } else if (data.running) {
+            fetchData();
+          } else if (data.done) {
             toast.success(`Обновлено профилей: ${data.result?.updatedCount || 0}`);
             fetchData();
           }
@@ -249,7 +254,10 @@ export default function App() {
       fetchData();
       fetchSettings();
       fetchBotStatus();
-      const interval = setInterval(fetchBotStatus, 5000);
+      const interval = setInterval(() => {
+        fetchBotStatus();
+        fetchSettings();
+      }, 5000);
       const saved = safeStorage.parse('ig_first_messages', []);
       setMessagesText(saved.join('\n'));
       return () => clearInterval(interval);
@@ -463,8 +471,12 @@ export default function App() {
       if (data.success) {
         setRestoreStatus({ running: true, current: 0, total: 0, status: 'Starting...' });
         toast.success('Запущено восстановление фото');
+      } else {
+        toast.error(data.error || 'Ошибка при запуске');
       }
-    } catch (err) { }
+    } catch (err) {
+      toast.error('Ошибка сети или сервера');
+    }
   };
 
   const handleCheckAllTg = async () => {

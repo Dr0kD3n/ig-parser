@@ -17,12 +17,26 @@ function encrypt(text) {
 function decrypt(text) {
     if (!text || !text.includes(':')) return text;
     const parts = text.split(':');
-    const iv = Buffer.from(parts.shift(), 'hex');
-    const encryptedText = Buffer.from(parts.join(':'), 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return decrypted.toString();
+    const ivHex = parts[0];
+
+    // For aes-256-cbc, IV must be 16 bytes (32 hex characters)
+    if (ivHex.length !== 32 || !/^[0-9a-fA-F]+$/.test(ivHex)) {
+        return text;
+    }
+
+    try {
+        const iv = Buffer.from(ivHex, 'hex');
+        if (iv.length !== 16) return text;
+
+        const encryptedText = Buffer.from(parts.slice(1).join(':'), 'hex');
+        const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+        let decrypted = decipher.update(encryptedText);
+        decrypted = Buffer.concat([decrypted, decipher.final()]);
+        return decrypted.toString();
+    } catch (e) {
+        // Return original text if decryption fails (e.g. wrong key or corrupted data)
+        return text;
+    }
 }
 
 module.exports = { encrypt, decrypt };

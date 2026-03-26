@@ -43,15 +43,19 @@ const pkg = JSON.parse(fs_1.readFileSync(path_1.join(__dirname, 'package.json'),
 const { encrypt, decrypt } = require('./lib/encryption');
 
 // Rate limiters
+const isLocal = (ip) => ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1' || ip === 'localhost';
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // limit each IP to 20 requests per windowMs
+  max: 20,
+  skip: (req) => isLocal(req.ip),
   message: { error: 'Too many requests, please try again later.' },
 });
 
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // limit each IP to 100 requests per minute
+  max: 1000, // Increased for stability
+  skip: (req) => isLocal(req.ip),
   message: { error: 'Rate limit exceeded' },
 });
 
@@ -173,6 +177,8 @@ async function getSettings() {
     fingerprint: r.fingerprint,
     warmup_score: r.warmup_score,
     last_warmup: r.last_warmup,
+    warmup_progress: r.warmup_progress || 0,
+    warmup_running: !!r.warmup_running,
   }));
   const activeParserIds = rows
     .filter((r) => r.active_parser)
@@ -230,6 +236,7 @@ app.use(express_1.json({ limit: '1mb' }));
 // --- Static frontend (production build from frontend/) ---
 const baseDir = (0, utils_1.getRootPath)();
 const publicDir = path_1.join(baseDir, 'public');
+const legacyHtml = path_1.join(baseDir, 'index.html');
 console.log('[DEBUG] baseDir:', baseDir);
 console.log('[DEBUG] publicDir:', publicDir);
 console.log('[DEBUG] publicDir exists:', fs_1.existsSync(publicDir));
@@ -470,6 +477,8 @@ app.get('/api/settings', async (req, res) => {
       last_warmup: a.last_warmup,
       fingerprint: a.fingerprint,
       cookies: a.cookies,
+      warmup_progress: a.warmup_progress,
+      warmup_running: a.warmup_running,
     })),
     activeParserAccountIds: settings.activeParserAccountIds,
     activeServerAccountIds: settings.activeServerAccountIds,

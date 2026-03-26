@@ -1679,6 +1679,12 @@ body::before {
   border-radius: 4px;
 }
 
+.acc-card-score.running {
+  background: hsl(var(--primary));
+  color: white;
+  animation: bgPulse 1.5s infinite;
+}
+
 .acc-task-tag {
   font-size: 10px;
   font-weight: 400;

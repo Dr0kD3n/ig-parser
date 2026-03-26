@@ -215,6 +215,18 @@ async function getDB() {
   }
 
   try {
+    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN warmup_progress INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
+    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN warmup_running INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
     await dbInstance.exec(`ALTER TABLE donors ADD COLUMN publications_count INTEGER DEFAULT 0`);
   } catch (e) {
     // Ignore if column already exists

@@ -24,6 +24,46 @@ const GLOBAL_SITES = [
   'https://www.netflix.com',
   'https://www.bing.com',
   'https://www.yahoo.com',
+  'https://www.pinterest.com',
+  'https://www.tiktok.com',
+  'https://www.twitch.tv',
+  'https://www.tumblr.com',
+  'https://www.quora.com',
+  'https://www.medium.com',
+  'https://www.bbc.com',
+  'https://www.reuters.com',
+  'https://www.theguardian.com',
+  'https://www.forbes.com',
+  'https://www.bloomberg.com',
+  'https://www.wired.com',
+  'https://www.techcrunch.com',
+  'https://www.theverge.com',
+  'https://www.nationalgeographic.com',
+  'https://www.history.com',
+  'https://www.ebay.com',
+  'https://www.etsy.com',
+  'https://www.walmart.com',
+  'https://www.target.com',
+  'https://www.bestbuy.com',
+  'https://www.ikea.com',
+  'https://www.booking.com',
+  'https://www.airbnb.com',
+  'https://www.tripadvisor.com',
+  'https://www.expedia.com',
+  'https://www.zillow.com',
+  'https://www.imdb.com',
+  'https://www.rottentomatoes.com',
+  'https://www.github.com',
+  'https://www.stackoverflow.com',
+  'https://www.discord.com',
+  'https://www.zoom.us',
+  'https://www.slack.com',
+  'https://www.microsoft.com',
+  'https://www.apple.com',
+  'https://www.adobe.com',
+  'https://www.dropbox.com',
+  'https://www.spotify.com',
+  'https://www.twitch.tv',
 ];
 
 const REGIONAL_SITES = {
@@ -43,6 +83,36 @@ const REGIONAL_SITES = {
     'https://www.gosuslugi.ru',
     'https://www.hh.ru',
     'https://www.kinopoisk.ru',
+    'https://www.pikabu.ru',
+    'https://www.sports.ru',
+    'https://www.habr.com',
+    'https://www.vc.ru',
+    'https://www.auto.ru',
+    'https://www.championat.com',
+    'https://www.gismeteo.ru',
+    'https://www.ria.ru',
+    'https://www.tass.ru',
+    'https://www.gazeta.ru',
+    'https://www.kommersant.ru',
+    'https://www.forbes.ru',
+    'https://www.drom.ru',
+    'https://www.cian.ru',
+    'https://www.domofond.ru',
+    'https://www.banki.ru',
+    'https://www.sberbank.ru',
+    'https://www.tinkoff.ru',
+    'https://www.ivi.ru',
+    'https://www.okko.tv',
+    'https://www.megafon.ru',
+    'https://www.mts.ru',
+    'https://www.beeline.ru',
+    'https://www.tele2.ru',
+    'https://www.eldorado.ru',
+    'https://www.citilink.ru',
+    'https://www.lamoda.ru',
+    'https://www.kupivip.ru',
+    'https://www.superjob.ru',
+    'https://www.yaplakal.com',
   ],
   FR: [
     'https://www.lemonde.fr',
@@ -169,7 +239,7 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
     sitePool = [...sitePool, ...regionalSites, ...regionalSites];
   }
 
-  const sitesToVisit = sitePool.sort(() => Math.random() - 0.5).slice(0, 50);
+  const sitesToVisit = sitePool.sort(() => Math.random() - 0.5).slice(0, 100);
 
   const { browser, context } = await createBrowserContext(
     {
@@ -189,6 +259,9 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
 
   try {
     let completed = 0;
+    await db.run('UPDATE accounts SET warmup_running = 1, warmup_progress = 0 WHERE id = ?', [
+      accountId,
+    ]);
 
     await asyncPool(sitesToVisit, 5, async (currentSite) => {
       const page = await context.newPage();
@@ -211,6 +284,7 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
             'Принять все',
             'ОК',
             'OK',
+            'OK, accept',
           ];
           for (const text of cookieButtons) {
             const handle = await page.$(
@@ -260,6 +334,11 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
       } finally {
         await page.close();
         completed++;
+        const currentProgress = Math.round((completed / sitesToVisit.length) * 100);
+        await db.all('UPDATE accounts SET warmup_progress = ? WHERE id = ?', [
+          currentProgress,
+          accountId,
+        ]);
         progressCallback({ current: completed, total: sitesToVisit.length, site: currentSite });
       }
     });
@@ -291,7 +370,7 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
     const lastWarmup = new Date().toISOString();
 
     await db.run(
-      'UPDATE accounts SET cookies = ?, local_storage = ?, warmup_score = ?, last_warmup = ? WHERE id = ?',
+      'UPDATE accounts SET cookies = ?, local_storage = ?, warmup_score = ?, last_warmup = ?, warmup_running = 0, warmup_progress = 0 WHERE id = ?',
       [JSON.stringify(cookies), localStorage, warmupScore, lastWarmup, accountId]
     );
 
@@ -299,6 +378,9 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
     return { success: true };
   } catch (error) {
     console.error(`❌ [WARMUP] Error: ${error.message}`);
+    await db
+      .run('UPDATE accounts SET warmup_running = 0 WHERE id = ?', [accountId])
+      .catch(() => { });
     return { success: false, error: error.message };
   } finally {
     await context.close();

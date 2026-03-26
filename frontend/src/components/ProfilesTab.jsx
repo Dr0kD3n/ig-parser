@@ -299,17 +299,28 @@ export default function ProfilesTab({
   authFetch,
   token,
 }) {
-  const [filterText, setFilterText] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterTgStatus, setFilterTgStatus] = useState('all');
-  const [sortOption, setSortOption] = useState('newest');
-  const [hideNoImage, setHideNoImage] = useState(false);
-  const [hideViewed, setHideViewed] = useState(false);
-  const [cityOnly, setCityOnly] = useState(false);
-  const [filterDonor, setFilterDonor] = useState('all');
+  const [filterText, setFilterText] = useState(() => localStorage.getItem('ig_filter_text') || '');
+  const [filterStatus, setFilterStatus] = useState(() => localStorage.getItem('ig_filter_status') || 'all');
+  const [filterTgStatus, setFilterTgStatus] = useState(() => localStorage.getItem('ig_filter_tg') || 'all');
+  const [sortOption, setSortOption] = useState(() => localStorage.getItem('ig_sort_option') || 'newest');
+  const [hideNoImage, setHideNoImage] = useState(() => localStorage.getItem('ig_hide_no_img') === 'true');
+  const [hideViewed, setHideViewed] = useState(() => localStorage.getItem('ig_hide_viewed') === 'true');
+  const [cityOnly, setCityOnly] = useState(() => localStorage.getItem('ig_city_only') === 'true');
+  const [filterDonor, setFilterDonor] = useState(() => localStorage.getItem('ig_filter_donor') || 'all');
   const [currentPage, setCurrentPage] = useState(1);
   const [checkingAllTg, setCheckingAllTg] = useState(false);
-  const ITEMS_PER_PAGE = 24;
+
+  React.useEffect(() => {
+    localStorage.setItem('ig_filter_text', filterText);
+    localStorage.setItem('ig_filter_status', filterStatus);
+    localStorage.setItem('ig_filter_tg', filterTgStatus);
+    localStorage.setItem('ig_sort_option', sortOption);
+    localStorage.setItem('ig_hide_no_img', String(hideNoImage));
+    localStorage.setItem('ig_hide_viewed', String(hideViewed));
+    localStorage.setItem('ig_city_only', String(cityOnly));
+    localStorage.setItem('ig_filter_donor', filterDonor);
+  }, [filterText, filterStatus, filterTgStatus, sortOption, hideNoImage, hideViewed, cityOnly, filterDonor]);
+  const ITEMS_PER_PAGE = 60;
   const handleCheckAllTg = async () => {
     const toCheck = girls.filter((g) => !g.tg_status).map((g) => g.name);
     if (toCheck.length === 0) {
@@ -477,25 +488,25 @@ export default function ProfilesTab({
         {isLoading
           ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
           : pageData.map((g) => (
-              <ProfileCard
-                key={g.url}
-                g={g}
-                votes={votes}
-                failedImages={failedImages}
-                onVote={onVote}
-                onOpen={onOpen}
-                onSendDM={onSendDM}
-                onTagTg={onTagTg}
-                onDeleteProfile={onDeleteProfile}
-                onSaveAsDonor={onSaveAsDonor}
-                onImageError={onImageError}
-                useProxyImages={useProxyImages}
-                tr={tr}
-                onTgCheck={onTgCheck}
-                authFetch={authFetch}
-                token={token}
-              />
-            ))}
+            <ProfileCard
+              key={g.url}
+              g={g}
+              votes={votes}
+              failedImages={failedImages}
+              onVote={onVote}
+              onOpen={onOpen}
+              onSendDM={onSendDM}
+              onTagTg={onTagTg}
+              onDeleteProfile={onDeleteProfile}
+              onSaveAsDonor={onSaveAsDonor}
+              onImageError={onImageError}
+              useProxyImages={useProxyImages}
+              tr={tr}
+              onTgCheck={onTgCheck}
+              authFetch={authFetch}
+              token={token}
+            />
+          ))}
         {!isLoading && pageData.length === 0 && (
           <div className="empty-state-msg">Нет профилей по выбранным фильтрам</div>
         )}

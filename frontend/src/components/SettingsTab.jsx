@@ -454,9 +454,13 @@ export default function SettingsTab({
                       <div className="flex-between mb-4">
                         <div className="flex-1 flex-baseline gap-8">
                           <div className="font-bold fs-15">{acc.name}</div>
-                          {acc.warmup_score > 0 && (
+                          {acc.warmup_running && (
+                            <div className="acc-card-score running">
+                              {acc.warmup_progress || 0}%
+                            </div>
+                          ) || (acc.warmup_score > 0 && (
                             <div className="acc-card-score">{acc.warmup_score}%</div>
-                          )}
+                          ))}
                         </div>
 
                         <button
