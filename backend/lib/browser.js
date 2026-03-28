@@ -145,6 +145,7 @@ async function createBrowserContext(config, headless = false) {
             '--ignore-certificate-errors',
             '--ignore-certificate-errors-spki-list',
             '--disable-web-security',
+            '--mute-audio',
             `--window-size=${viewport.width},${viewport.height}`,
           ],
           ignoreDefaultArgs: ['--enable-automation'],
@@ -156,10 +157,12 @@ async function createBrowserContext(config, headless = false) {
           channel: 'chrome-beta',
           args: [
             '--disable-blink-features=AutomationControlled',
+            '--mute-audio',
             `--window-size=${viewport.width},${viewport.height}`,
           ],
           ignoreDefaultArgs: ['--enable-automation'],
         });
+
         context = await browser.newContext(contextOptions);
       }
     }

@@ -14,6 +14,10 @@ const reporter_1 = require('./lib/reporter');
 const config_1 = require('./lib/config');
 const warmup_1 = require('./lib/warmup');
 const { restorePhotos, stopRestorePhotos } = require('./lib/photo-restorer');
+const { startMassMessaging, stopMassMessaging, getMassMessengerStatus } = require('./lib/mass-messenger');
+const { checkFeedback, getCheckerStatus, stopChecker } = require('./lib/feedback-checker');
+const logger = require('./lib/logger');
+
 
 const logEmitter = new events_1.EventEmitter();
 const originalLog = console.log;
@@ -252,7 +256,7 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.use(express_1.json({ limit: '1mb' }));
+app.use(express_1.json({ limit: '10mb' }));
 // --- Static frontend (production build from frontend/) ---
 const baseDir = (0, utils_1.getRootPath)();
 const publicDir = path_1.join(baseDir, 'public');
@@ -787,6 +791,43 @@ app.get('/api/profiles/restore-photos/status', (req, res) => {
   res.json(restorePhotosStatus);
 });
 
+// Mass Messaging Endpoints
+app.post('/api/mass-messages/start', async (req, res) => {
+  const options = req.body || {};
+  startMassMessaging((status) => {
+    if (status.status && status.status !== 'Running') {
+      broadcastLog('sender', status.status);
+    }
+  }, options).catch(e => console.error('Mass messenger crash:', e));
+  res.json({ success: true });
+});
+
+
+app.post('/api/mass-messages/stop', (req, res) => {
+  stopMassMessaging();
+  res.json({ success: true });
+});
+
+// Feedback Checker Endpoints
+app.post('/api/feedback/start', async (req, res) => {
+  checkFeedback().catch(e => console.error('Feedback checker crash:', e));
+  res.json({ success: true });
+});
+
+app.get('/api/feedback/status', (req, res) => {
+  res.json(getCheckerStatus());
+});
+
+app.post('/api/feedback/stop', (req, res) => {
+  stopChecker();
+  res.json({ success: true });
+});
+
+
+app.get('/api/mass-messages/status', (req, res) => {
+  res.json(getMassMessengerStatus());
+});
+
 app.put('/api/accounts/:id', async (req, res) => {
   const { id } = req.params;
   const { name, proxy, cookies, fingerprint, regenerateFingerprint } = req.body;
@@ -1239,10 +1280,13 @@ app.post('/api/dm', async (req, res) => {
     if (isSent) {
       try {
         const db = await (0, db_1.getDB)();
+        const profile = await db.get(`SELECT username, name FROM profiles WHERE url = ?`, [url]);
+        const username = profile ? (profile.username || profile.name) : url.split('/').pop();
         await db.run(
-          `INSERT INTO messages_log (url, message_text, status, timestamp) VALUES (?, ?, ?, ?)`,
-          [url, message, 'sent', new Date().toISOString()]
+          `INSERT INTO messages_log (url, username, message_text, status, timestamp) VALUES (?, ?, ?, ?, ?)`,
+          [url, username, message, 'sent', new Date().toISOString()]
         );
+        await db.run(`UPDATE profiles SET dmSent = 1 WHERE url = ?`, [url]);
       } catch (dbErr) {
         console.error('Ошибка сохранения в messages_log:', dbErr);
       }
@@ -1260,19 +1304,26 @@ app.post('/api/dm', async (req, res) => {
 app.get('/api/stats', async (req, res) => {
   try {
     const db = await (0, db_1.getDB)();
-    const rows = await db.all(`
-            SELECT 
-                message_text,
-                COUNT(*) as total_sent,
-                SUM(CASE WHEN status IN ('replied', 'continued') THEN 1 ELSE 0 END) as replies,
-                SUM(CASE WHEN status = 'continued' THEN 1 ELSE 0 END) as continuations
-            FROM messages_log
-            GROUP BY message_text
-            ORDER BY total_sent DESC
-        `);
-    res.json({ success: true, data: rows });
-  } catch (e) {
-    console.error('Ошибка получения статистики:', e);
+    const summary = await db.all(`
+      SELECT message_text, count(*) as total_sent 
+      FROM messages_log 
+      GROUP BY message_text
+    `);
+
+    // Detailed breakdown
+    const details = await db.get(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'replied' THEN 1 ELSE 0 END) as replied,
+        SUM(CASE WHEN status = 'liked' THEN 1 ELSE 0 END) as liked,
+        SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent
+      FROM messages_log
+    `);
+
+    const records = await db.all(`SELECT * FROM messages_log ORDER BY timestamp DESC LIMIT 100`);
+    res.json({ success: true, summary, records, details });
+  } catch (err) {
+    console.error('Ошибка получения статистики:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 });

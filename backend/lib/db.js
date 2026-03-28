@@ -82,6 +82,7 @@ async function getDB() {
             donor TEXT,
             vote TEXT, -- 'like', 'dislike'
             tg_status TEXT, -- 'valid', 'invalid', NULL
+            dmSent INTEGER DEFAULT 0,
             isInCity INTEGER DEFAULT 0,
             timestamp TEXT
         );
@@ -94,10 +95,13 @@ async function getDB() {
         CREATE TABLE IF NOT EXISTS messages_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             url TEXT,
+            username TEXT,
+            name TEXT,
             message_text TEXT,
             status TEXT, -- 'sent', 'replied', etc.
             timestamp TEXT
         );
+
 
         CREATE TABLE IF NOT EXISTS donors (
             username TEXT PRIMARY KEY,
@@ -253,6 +257,18 @@ async function getDB() {
     await dbInstance.exec(`ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0`);
   } catch (e) {
     // Ignore if column already exists
+  }
+
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN dmSent INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
+    await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN username TEXT`);
+  } catch (e) {
+    // Ignore
   }
 
   // Seeding removed for security.

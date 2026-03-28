@@ -232,14 +232,16 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
 
   const showBrowserRow = await db.get(`SELECT value FROM settings WHERE key = 'showBrowser'`);
   const showBrowser = showBrowserRow?.value === 'true';
-  const headless = !showBrowser; // Respect the showBrowser setting instead of always being headless
+  const headless = !showBrowser;
+
 
   let sitePool = [...GLOBAL_SITES];
   if (regionalSites.length > 0) {
     sitePool = [...sitePool, ...regionalSites, ...regionalSites];
   }
 
-  const sitesToVisit = sitePool.sort(() => Math.random() - 0.5).slice(0, 100);
+  const sitesToVisit = sitePool.sort(() => Math.random() - 0.5).slice(0, 40);
+
 
   const { browser, context } = await createBrowserContext(
     {
@@ -263,50 +265,76 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
       accountId,
     ]);
 
-    await asyncPool(sitesToVisit, 5, async (currentSite) => {
+    await asyncPool(sitesToVisit, 12, async (currentSite) => {
+
       const page = await context.newPage();
       try {
         console.log(`🔥 [WARMUP] Visiting [${countryCode}]: ${currentSite}`);
         await page.goto(currentSite, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-        // Accept cookies logic
-        try {
-          const cookieButtons = [
-            'Accept',
-            'Allow',
-            'Agree',
-            'I accept',
-            'Accept all',
-            'Allow all',
-            'Принять',
-            'Согласен',
-            'Разрешить',
-            'Принять все',
-            'ОК',
-            'OK',
-            'OK, accept',
-          ];
-          for (const text of cookieButtons) {
-            const handle = await page.$(
-              `button:has-text("${text}"), a:has-text("${text}"), [role="button"]:has-text("${text}")`
-            );
-            if (handle && (await handle.isVisible())) {
-              await humanClick(page, handle, { timeout: 2000 }).catch(() => { });
-              console.log(`🍪 [WARMUP] Clicked cookie button: "${text}" on ${currentSite}`);
-              break;
+        const applyCookieConsent = async () => {
+          try {
+            const cookieButtons = [
+              'Accept', 'Allow', 'Agree', 'I accept', 'Accept all', 'Allow all', 'I agree', 'Accept cookies', 'Accept everything',
+              'Принять', 'Согласен', 'Разрешить', 'Принять все', 'ОК', 'OK', 'OK, accept', 'Принять куки', 'Да, согласен',
+              'Aceptar', 'Permitir', 'Acepto', 'Aceptar todo', 'Aceptar cookies',
+              'Accepter', 'Autoriser', 'J\'accepte', 'Tout accepter', 'Accepter les cookies',
+              'Annehmen', 'Zustimmen', 'Akzeptieren', 'Alle akzeptieren', 'Cookies akzeptieren', 'Save settings'
+            ];
+
+            const commonSelectors = [
+              '#onetrust-accept-btn-handler', '#cookie-accept', '.cookie-accept', '.accept-cookies', '#accept-all-cookies',
+              'button[id*="accept" i]', 'button[class*="accept" i]', 'button[id*="cookie" i]', 'button[class*="cookie" i]'
+            ];
+
+            const tryAccept = async (frame) => {
+              for (const selector of commonSelectors) {
+                const handle = await frame.$(selector).catch(() => null);
+                if (handle && (await handle.isVisible())) {
+                  await humanClick(page, handle, { timeout: 2000 }).catch(() => { });
+                  console.log(`🍪 [WARMUP] Clicked selector in frame: "${selector}" on ${currentSite}`);
+                  return true;
+                }
+              }
+              for (const text of cookieButtons) {
+                const handle = await frame.$(`button:has-text("${text}"), a:has-text("${text}"), [role="button"]:has-text("${text}")`).catch(() => null);
+                if (handle && (await handle.isVisible())) {
+                  await humanClick(page, handle, { timeout: 2000 }).catch(() => { });
+                  console.log(`🍪 [WARMUP] Clicked button in frame: "${text}" on ${currentSite}`);
+                  return true;
+                }
+              }
+              return false;
+            };
+
+            if (await tryAccept(page)) return true;
+            const frames = page.frames();
+            for (const frame of frames) {
+              if (frame === page.mainFrame()) continue;
+              if (await tryAccept(frame)) return true;
             }
-          }
-        } catch (e) { }
+          } catch (e) { }
+          return false;
+        };
 
-        await wait(Math.random() * 3000 + 3000);
+        // First attempt immediately after load
+        const matched = await applyCookieConsent();
 
-        // Human interaction
-        if (Math.random() > 0.3) {
-          const scrollAmount = Math.random() * 800 + 400;
-          if (Math.random() > 0.5) await humanOverscroll(page, 'down', scrollAmount);
-          else await page.mouse.wheel(0, scrollAmount);
-          await wait(Math.random() * 2000);
+        // Shorter wait for potential late-loading banners
+        if (!matched) {
+          await wait(1500);
+          if (Math.random() > 0.3) await applyCookieConsent();
         }
+
+        await wait(Math.random() * 2000 + 1000);
+
+        // Faster human interaction
+        if (Math.random() > 0.4) {
+          const scrollAmount = Math.random() * 600 + 400;
+          await page.mouse.wheel(0, scrollAmount);
+          await wait(Math.random() * 1000);
+        }
+
 
         if (Math.random() > 0.6) await humanSelection(page);
         if (Math.random() > 0.7) await humanMouseLeave(page);

@@ -3,6 +3,7 @@ import { t } from './i18n';
 import ProfilesTab from './components/ProfilesTab';
 import ControlsTab from './components/ControlsTab';
 import SettingsTab from './components/SettingsTab';
+import StatisticsTab from './components/StatisticsTab';
 import AuthPage from './components/AuthPage';
 import { TelegramIcon } from './components/Icons';
 import { API_BASE, LOCAL_API_BASE } from './config';
@@ -95,6 +96,7 @@ export default function App() {
 
   const [checkingAllTg, setCheckingAllTg] = useState(false);
   const [restoreStatus, setRestoreStatus] = useState({ running: false, current: 0, total: 0 });
+  const [massMessagingStatus, setMassMessagingStatus] = useState({ running: false, current: 0, total: 0 });
 
   useEffect(() => {
     safeStorage.setItem('ig_active_tab', activeTab);
@@ -169,9 +171,9 @@ export default function App() {
       const taggedArr = safeStorage.parse('ig_tg_tagged', []);
 
       girlsData.forEach((g) => {
-        g.viewed = viewedArr.includes(g.url);
-        g.dmSent = sentArr.includes(g.url);
-        g.tgTagged = taggedArr.includes(g.url);
+        g.viewed = g.viewed || viewedArr.includes(g.url);
+        g.dmSent = g.dmSent || sentArr.includes(g.url);
+        g.tgTagged = g.tgTagged || taggedArr.includes(g.url);
       });
       setGirls(girlsData);
       setVotes(votesData || {});
@@ -183,7 +185,6 @@ export default function App() {
   const fetchSettings = useCallback(
     async (force = false) => {
       if (!user) return;
-      // Skip polling if on settings tab to prevent state overwrite during editing
       if (!force && activeTab === 'settings') return;
       try {
         const res = await authFetch('/api/settings');
@@ -201,8 +202,10 @@ export default function App() {
           concurrentProfiles: data.concurrentProfiles || 3,
           donorGroups: Array.isArray(data.donorGroups) ? data.donorGroups : [],
         }));
+        pendingSave.current = false; // Reset dirty flag after polling
         settingsLoaded.current = true;
         setIsLoading(false);
+
       } catch (e) {
         console.error('Error fetching settings', e);
       }
@@ -248,7 +251,32 @@ export default function App() {
   }, [restoreStatus.running, authFetch, fetchData]);
 
   useEffect(() => {
+    let interval;
+    if (massMessagingStatus.running) {
+      interval = setInterval(async () => {
+        try {
+          const res = await authFetch('/api/mass-messages/status');
+          const data = await res.json();
+          setMassMessagingStatus(data);
+          if (!data.running) {
+            if (data.status === 'Done') toast.success('Рассылка завершена');
+            fetchData();
+          }
+        } catch (e) { }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [massMessagingStatus.running, authFetch, fetchData]);
+
+  useEffect(() => {
     if (user) {
+      authFetch('/api/mass-messages/status')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.running) setMassMessagingStatus(data);
+        })
+        .catch(() => { });
+
       authFetch('/api/profiles/restore-photos/status')
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -261,7 +289,7 @@ export default function App() {
   useEffect(() => {
     if (user) {
       fetchData();
-      fetchSettings(true); // Force load initial settings
+      fetchSettings(true);
       fetchBotStatus();
       const interval = setInterval(() => {
         fetchBotStatus();
@@ -274,8 +302,9 @@ export default function App() {
   }, [user, fetchData, fetchSettings, fetchBotStatus]);
 
   useEffect(() => {
-    if (!settingsLoaded.current || !user) return;
+    if (!settingsLoaded.current || !user || !pendingSave.current) return;
     setSaveStatus('saving');
+
     const timer = setTimeout(() => {
       if (saveAbortRef.current) saveAbortRef.current.abort();
       const controller = new AbortController();
@@ -288,6 +317,7 @@ export default function App() {
       })
         .then(() => {
           setSaveStatus('saved');
+          pendingSave.current = false;
           setTimeout(() => setSaveStatus('idle'), 2000);
           safeStorage.setItem('ig_settings', JSON.stringify(settingsData));
         })
@@ -298,12 +328,15 @@ export default function App() {
           saveAbortRef.current = null;
         });
     }, 1000);
+
     return () => clearTimeout(timer);
   }, [settingsData, user, authFetch]);
 
   const onSettingsChange = (newSettings) => {
+    pendingSave.current = true;
     setSettingsData((prev) => ({ ...prev, ...newSettings }));
   };
+
 
   const handleVote = useCallback(
     async (g, status) => {
@@ -350,36 +383,25 @@ export default function App() {
   const handleSendDM = useCallback(
     async (g) => {
       let msgs = [];
-
-      // If profile has a donor, check for group-specific messages
       if (g.donor && settingsData.donorGroups?.length > 0) {
         const getUsername = (d) => {
           const url = typeof d === 'string' ? d : d.url;
           return url.replace('https://www.instagram.com/', '').replace(/[@/]/g, '').trim();
         };
-
         const targetDonor = g.donor.replace('@', '').trim();
         const specificGroup = settingsData.donorGroups.find((grp) =>
           (grp.donors || []).some(d => getUsername(d) === targetDonor)
         );
-
         if (specificGroup && specificGroup.messages?.length > 0) {
           msgs = specificGroup.messages;
         } else {
-          // Fallback to 'all' group if defined
           const allGroup = settingsData.donorGroups.find((grp) => grp.id === 'all');
-          if (allGroup && allGroup.messages?.length > 0) {
-            msgs = allGroup.messages;
-          }
+          if (allGroup && allGroup.messages?.length > 0) msgs = allGroup.messages;
         }
       } else {
-        // Fallback to 'all' group if no donor or no groups
         const allGroup = settingsData.donorGroups?.find((grp) => grp.id === 'all');
-        if (allGroup && allGroup.messages?.length > 0) {
-          msgs = allGroup.messages;
-        }
+        if (allGroup && allGroup.messages?.length > 0) msgs = allGroup.messages;
       }
-
       const m = msgs[Math.floor(Math.random() * msgs.length)] || 'Hello!';
       const newSent = [...sentDM, g.url];
       setSentDM(newSent);
@@ -402,10 +424,7 @@ export default function App() {
         nextTagged = tgTagged.filter((u) => u !== g.url);
       } else {
         nextTagged = [...tgTagged, g.url];
-        // If we are tagging TG, remove 'like' vote
-        if (votes[g.url] === 'like') {
-          handleVote(g, '');
-        }
+        if (votes[g.url] === 'like') handleVote(g, '');
       }
       setTgTagged(nextTagged);
       safeStorage.setItem('ig_tg_tagged', JSON.stringify(nextTagged));
@@ -541,6 +560,25 @@ export default function App() {
     }
   };
 
+  const handleMassMessaging = async () => {
+    if (massMessagingStatus.running) {
+      await authFetch('/api/mass-messages/stop', { method: 'POST' });
+      return;
+    }
+    const cityOnly = localStorage.getItem('ig_city_only') === 'true';
+    try {
+      const res = await authFetch('/api/mass-messages/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cityOnly })
+      });
+      if (res.ok) {
+        setMassMessagingStatus({ running: true, current: 0, total: 0, status: 'Starting...' });
+        toast.success(cityOnly ? 'Запущена рассылка (только город)' : 'Запущена массовая рассылка');
+      }
+    } catch (e) { toast.error('Ошибка запуска'); }
+  };
+
   useEffect(() => {
     if (!user || !token) return;
     const normalizedToken = token === 'null' ? null : token;
@@ -607,9 +645,10 @@ export default function App() {
       <nav className="tabs-nav">
         <div className="tab-btn-wrapper">
           {[
-            { id: 'main', label: tr('tab_profiles') },
+            { id: 'profiles', label: tr('tab_profiles') },
             { id: 'controls', label: tr('tab_execution') },
             { id: 'settings', label: tr('tab_configuration') },
+            { id: 'stats', label: tr('tab_stats') },
           ].map(({ id, label }) => (
             <button
               key={id}
@@ -621,8 +660,15 @@ export default function App() {
           ))}
         </div>
 
-        {activeTab === 'main' && (
+        {activeTab === 'profiles' && (
           <div className="nav-extra-actions">
+            <button
+              className={`btn-primary btn-sm btn-restore ${massMessagingStatus.running ? 'running' : ''}`}
+              style={{ backgroundColor: 'var(--color-primary-alt)' }}
+              onClick={handleMassMessaging}
+            >
+              {massMessagingStatus.running ? `Стоп ${massMessagingStatus.current}/${massMessagingStatus.total}` : tr('btn_mass_dm')}
+            </button>
             <button
               className="btn-primary btn-tg btn-sm"
               onClick={handleCheckAllTg}
@@ -655,7 +701,7 @@ export default function App() {
       </nav>
 
       <div className="main-content">
-        {activeTab === 'main' && (
+        {activeTab === 'profiles' && (
           <ProfilesTab
             girls={girls}
             votes={votes}
@@ -701,6 +747,10 @@ export default function App() {
             failedUrls={Array.from(failedImages)}
             scrapedDonors={Array.from(new Set(girls.map((g) => g.donor).filter(Boolean))).sort()}
           />
+        )}
+
+        {activeTab === 'stats' && (
+          <StatisticsTab authFetch={authFetch} tr={tr} />
         )}
       </div>
     </div>
