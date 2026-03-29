@@ -54,7 +54,14 @@ const SELECTORS = {
   HEADER: 'header',
   DIALOG: 'div[role="dialog"]',
   SEARCH_INPUT: 'div[role="dialog"] input',
-  FOLLOWERS_LINK: 'a[href$="/followers/"]',
+  // User provided stable selector for followers link
+  FOLLOWERS_LINK:
+    '#mount_0_0_TP > div > div > div.x9f619.x1n2onr6.x1ja2u2z > div > div > div.x78zum5.xdt5ytf.x1t2pt76.x1n2onr6.x1ja2u2z.x10cihs4 > div.html-div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x9f619.x16ye13r.xvbhtw8.x78zum5.x15mokao.x1ga7v0g.x16uus16.xbiv7yw.x1uhb9sk.x1plvlek.xryxfnj.x1c4vz4f.x2lah0s.x1q0g3np.xqjyukv.x1qjc9v5.x1oa3qoh.x1qughib > div.x10o80wk.x14k21rp.xh8yej3 > section > main > div > div > header > div > section.x98rzlu.xeuugli > div.x7a106z.x972fbf.x10w94by.x1qhh985.x14e42zd.x9f619.x78zum5.xdt5ytf.x1yztbdb.xw7yly9.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x1n2onr6.x1r0jzty.x11njtxf.x1fkh5qu.x1ddbhtg.x1dlrdel > div.html-div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x9f619.xjbqb8w.x40hh3e.x78zum5.x15mokao.x1ga7v0g.x16uus16.xbiv7yw.x1uhb9sk.x1plvlek.xryxfnj.x1c4vz4f.x2lah0s.x1q0g3np.xqjyukv.x6s0dn4.x1oa3qoh.x1nhvcw1 > div:nth-child(2) > a > span',
+  // Fallback for followers link
+  FOLLOWERS_LINK_FALLBACK: 'a[href$="/followers/"]',
+  // User provided stable selector for scrollable modal body
+  DIALOG_SCROLLABLE:
+    'body > div.x1n2onr6.xzkaem6 > div:nth-child(2) > div > div > div.x9f619.x1n2onr6.x1ja2u2z > div > div.x1uvtmcs.x4k7w5x.x1h91t0o.x1beo9mf.xaigb6o.x12ejxvf.x3igimt.xarpa2k.xedcshv.x1lytzrv.x1t2pt76.x7ja8zs.x1n2onr6.x1qrby5j.x1jfb8zj > div > div > div > div > div.x7r02ix.x15fl9t6.x1yw9sn2.x1evh3fb.x4giqqa.xb88tzc.xw2csxc.x1odjw0f.x5fp0pe > div > div > div.x6nl9eh.x1a5l9x9.x7vuprf.x1mg3h75.x1lliihq.x1iyjqo2.xs83m0k.xz65tgg.x1rife3k.x1n2onr6',
   LOADER:
     'div[role="dialog"] [role="progressbar"], div[role="dialog"] svg[aria-label="Loading..."], div[role="dialog"] svg[aria-label="Загрузка..."]',
 };
@@ -95,102 +102,121 @@ const extractVisibleCandidates = () => {
   });
   return results;
 };
-const scrollAndCollectUrls = async (page, config, contextState) => {
+const scrollAndCollectUrls = async (page, config, contextState, searchQuery = '') => {
   const collectedUrls = new Set();
-  let previousHeight = 0;
-  let sameHeightCount = 0;
   const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
+  let hasMore = true;
+  let lastResponseTime = Date.now();
+  let resolveResponse;
+  let responseCount = 0;
 
-  logger.info(`      🔽 Начинаем скролл списка...`);
-  for (let i = 0; i < config.scroll.maxAttempts; i++) {
-    if (checkSkipSignal(contextState)) return [];
-    const visible = await page.evaluate(extractVisibleCandidates);
-    visible.forEach((url) => collectedUrls.add(url));
+  logger.info(`      🔽 Начинаем сбор списка через перехват сети...`);
 
-    const scrollInfo = await page.evaluate(() => {
-      const dialog = document.querySelector('div[role="dialog"]');
-      if (!dialog) return { found: false };
-
-      const scrollable = Array.from(dialog.querySelectorAll('div')).find((el) => {
-        const s = window.getComputedStyle(el);
-        return s.overflowY === 'auto' || s.overflowY === 'scroll';
-      });
-
-      if (!scrollable) return { found: false };
-
-      // Add a temporary ID to the scrollable element to target it safely in humanScroll
-      const id = 'ig-scrollable-' + Math.random().toString(36).substr(2, 9);
-      scrollable.setAttribute('data-scroll-id', id);
-
-      return {
-        found: true,
-        selector: `div[data-scroll-id="${id}"]`,
-        scrollHeight: scrollable.scrollHeight,
-        clientHeight: scrollable.clientHeight,
-      };
-    });
-
-    if (humanEmulation) {
-      if (scrollInfo.found) {
-        await (0, utils_1.humanScroll)(
-          page,
-          scrollInfo.selector,
-          'down',
-          400 + Math.random() * 200
-        );
-        if (Math.random() < 0.2) {
-          await (0, utils_1.wait)(300 + Math.random() * 500);
-          await (0, utils_1.humanScroll)(
-            page,
-            scrollInfo.selector,
-            'up',
-            100 + Math.random() * 100
-          );
-          await (0, utils_1.wait)(500);
+  // Handler for friendships API (ONLY for hasMore tracking)
+  const onResponse = async (response) => {
+    const url = response.url();
+    if (url.includes('/api/v1/friendships/') && (url.includes('/followers') || url.includes('friendships_type=followers'))) {
+      if (searchQuery) {
+        try {
+          const urlObj = new URL(url);
+          const q = urlObj.searchParams.get('query') || '';
+          if (q && decodeURIComponent(q).toLowerCase() !== searchQuery.toLowerCase()) return;
+        } catch (e) { }
+      }
+      try {
+        const text = await response.text();
+        const json = JSON.parse(text);
+        if (json.status === 'ok') {
+          responseCount++;
+          hasMore = json.has_more === true || json.has_next_page === true || !!json.next_max_id;
+          lastResponseTime = Date.now();
+          if (resolveResponse) resolveResponse();
         }
-      } else {
-        // Fallback to window scroll if no dialog found
-        await (0, utils_1.humanScroll)(page, null, 'down', 600);
-      }
-    } else {
-      if (scrollInfo.found) {
-        await page.evaluate((sel) => {
-          const el = document.querySelector(sel);
-          if (el) el.scrollTop = el.scrollHeight;
-        }, scrollInfo.selector);
-      } else {
-        await page.mouse.wheel(0, 600);
-      }
-      await utils_1.wait(50);
+      } catch (e) { }
+    }
+  };
+
+  page.on('response', onResponse);
+
+  try {
+    const modal = page.locator('div[role="dialog"]').first();
+    const modalBox = await modal.boundingBox().catch(() => null);
+    if (modalBox) {
+      await (0, utils_1.humanMouseMove)(page, modalBox.x + modalBox.width / 2, modalBox.y + modalBox.height / 2);
     }
 
-    try {
-      await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 });
-    } catch (e) { }
-    await utils_1.wait(50);
-    const newHeight = scrollInfo.found
-      ? await page.evaluate((sel) => {
-        const el = document.querySelector(sel);
-        return el ? el.scrollHeight : false;
-      }, scrollInfo.selector)
-      : false;
-    if (newHeight === previousHeight) {
-      sameHeightCount++;
-      if (sameHeightCount >= config.scroll.maxRetries) {
-        logger.info(`      🛑 Достигнут конец списка (или лимит подгрузки).`);
+    // 0. Initial wait: Catch results triggered by typing/filling without scrolling
+    await Promise.race([
+      new Promise(resolve => { resolveResponse = resolve; }),
+      (0, utils_1.wait)(1500)
+    ]);
+    resolveResponse = null;
+
+    // Scan initial results for stories
+    (await page.evaluate(extractVisibleCandidates)).forEach(url => collectedUrls.add(url));
+
+    // If first response already said hasMore=false, exit immediately
+    if (!hasMore) {
+      logger.info(`      🛑 Конец списка (сразу из первого ответа). Собрано: ${collectedUrls.size}`);
+      return Array.from(collectedUrls);
+    }
+
+    let noChangeCount = 0;
+    let lastCollectedSize = collectedUrls.size;
+
+    for (let i = 0; i < config.scroll.maxAttempts; i++) {
+      if (checkSkipSignal(contextState)) break;
+
+      if (!hasMore) {
+        logger.info(`      🛑 Достигнут конец списка (hasMore=false).`);
         break;
       }
-      await (0, utils_1.wait)(250);
-    } else {
-      sameHeightCount = 0;
+
+      // Check if loader is present - if not and still no results, maybe we are at the end
+      const loaderVisible = await page.locator(SELECTORS.LOADER).first().isVisible().catch(() => false);
+      if (i > 0 && !loaderVisible && responseCount > 0 && !hasMore) break;
+
+      // 1. Smooth scroll emulation (wheel)
+      await (0, utils_1.humanScroll)(page, null, 'down', 600 + Math.random() * 400).catch(() => { });
+
+      // 2. Wait for next batch
+      const timeout = humanEmulation ? 2500 : 1500;
+      await Promise.race([
+        new Promise(resolve => { resolveResponse = resolve; }),
+        (0, utils_1.wait)(timeout)
+      ]);
+      resolveResponse = null;
+
+      // 3. Scan DOM for new stories at each step
+      const visibleStories = await page.evaluate(extractVisibleCandidates);
+      visibleStories.forEach(url => collectedUrls.add(url));
+
+      if (collectedUrls.size > lastCollectedSize) {
+        logger.info(`      📥 Собрано со сторис: ${collectedUrls.size}`);
+        lastCollectedSize = collectedUrls.size;
+        noChangeCount = 0;
+      } else {
+        noChangeCount++;
+      }
+
+      // Exit if 3 scrolls didn't find anything new AND no loader
+      if (noChangeCount >= 3) {
+        const isStillLoading = await page.locator(SELECTORS.LOADER).first().isVisible().catch(() => false);
+        if (!isStillLoading) {
+          logger.info(`      🛑 Список не меняется, завершаем.`);
+          break;
+        }
+      }
+
+      if (Date.now() - lastResponseTime > 30000) {
+        logger.warn(`      ⚠️ Сбор прерван по таймауту ожидания сети.`);
+        break;
+      }
     }
-    previousHeight = newHeight || 0;
-    if ((i + 1) % 3 === 0) {
-      logger.info(
-        `      🔄 Скролл ${i + 1}/${config.scroll.maxAttempts} | Собрано профилей: ${collectedUrls.size}`
-      );
-    }
+  } finally {
+    page.off('response', onResponse);
   }
+
   return Array.from(collectedUrls);
 };
 const analyzeProfile = async (context, url, config, donor = '') => {
@@ -473,8 +499,15 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       throw new RotateAccountError('Action Blocked / Shadowban detected', config.target.names);
     }
     logger.info(`   ✅ Страница донора загружена. Ищем кнопку подписчиков...`);
-    const followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK);
-    await followersBtn.waitFor({ state: 'visible', timeout: 10000 }).catch(() => null);
+    let followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK);
+    await followersBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
+
+    if (!(await followersBtn.isVisible())) {
+      logger.info(`   🔄 Первый селектор не сработал, пробуем запасной...`);
+      followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK_FALLBACK);
+      await followersBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
+    }
+
     if (!(await followersBtn.isVisible())) {
       logger.warn(`   ⚠️ Кнопка подписчиков не найдена (возможно, аккаунт пуст или скрыт).`);
       return;
@@ -627,7 +660,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       } catch (e) { }
       await (0, browser_1.takeLiveScreenshot)(page);
       await (0, utils_1.wait)(50);
-      const candidates = await scrollAndCollectUrls(page, config, contextState);
+      const candidates = await scrollAndCollectUrls(page, config, contextState, name);
       const newCandidates = candidates.filter((url) => !state_1.StateManager.has(url));
       const skippedCount = candidates.length - newCandidates.length;
       logger.info(`      📊 ИТОГИ СБОРА ССЫЛОК:`);

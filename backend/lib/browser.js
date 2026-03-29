@@ -28,9 +28,12 @@ async function createBrowserContext(config, headless = false) {
   const contextOptions = {
     viewport,
     userAgent,
-    locale,
+    locale: 'en-US',
+    timezoneId: 'America/New_York',
     colorScheme: config.colorScheme || 'dark',
-    extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
+    extraHTTPHeaders: {
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
   };
 
   const geoMap = {
@@ -43,7 +46,7 @@ async function createBrowserContext(config, headless = false) {
   };
 
   if (config.countryCode && geoMap[config.countryCode]) {
-    contextOptions.timezoneId = geoMap[config.countryCode].tz;
+    // contextOptions.timezoneId = geoMap[config.countryCode].tz;
     contextOptions.geolocation = geoMap[config.countryCode].loc;
     contextOptions.permissions = ['geolocation'];
   }
@@ -172,6 +175,11 @@ async function createBrowserContext(config, headless = false) {
 
   await applyFingerprint(context, config.fingerprint);
   if (config.cookies) await context.addCookies(config.cookies).catch(() => { });
+
+  // Force English via cookies
+  await context.addCookies([
+    { name: 'ig_lang', value: 'en', domain: '.instagram.com', path: '/' }
+  ]).catch(() => { });
   if (config.local_storage) {
     await context.addInitScript((ls) => {
       try {

@@ -259,9 +259,10 @@ app.use((req, res, next) => {
 app.use(express_1.json({ limit: '10mb' }));
 // --- Static frontend (production build from frontend/) ---
 const baseDir = (0, utils_1.getRootPath)();
-const publicDir = path_1.join(baseDir, 'public');
 const legacyHtml = path_1.join(baseDir, 'index.html');
-console.log('[DEBUG] baseDir:', baseDir);
+const publicDir = process['pkg']
+  ? path_1.join(path_1.dirname(process.execPath), 'public')
+  : path_1.join(__dirname, 'public');
 console.log('[DEBUG] publicDir:', publicDir);
 console.log('[DEBUG] publicDir exists:', fs_1.existsSync(publicDir));
 if (fs_1.existsSync(publicDir)) {
