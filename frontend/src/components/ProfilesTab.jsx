@@ -148,8 +148,19 @@ const ProfileCard = memo(function ProfileCard({
           {isLiked && <div className="badge likedTag">{tr('badge_like')}</div>}
           {isDisliked && <div className="badge dislikedTag">{tr('badge_skip')}</div>}
           {g.viewed && <div className="badge viewedTag">{tr('badge_viewed')}</div>}
-          {g.dmSent && <div className="badge dmTag">{tr('badge_sent_dm')}</div>}
-          {g.tgTagged && <div className="badge tgTag">{tr('badge_tg_tagged')}</div>}
+          {g.dmSent && !g.dm_status && <div className="badge dmTag">{tr('badge_sent_dm')}</div>}
+          {g.dm_status === 'replied' && <div className="badge dmTag" style={{ background: 'hsl(var(--success))' }}>✨ {tr('badge_replied')}</div>}
+          {g.dm_status === 'liked' && <div className="badge likedTag">❤️ {tr('badge_liked')}</div>}
+          {g.tg_status === 'valid' && <div className="badge tgTag">{tr('badge_tg_tagged')}</div>}
+          {g.tgTagged === 2 && (
+            <div
+              className="badge tgNotSentTag"
+              title={tr(`reason_${g.dmError === 'chat_exists' ? 'history' : (g.dmError || 'error')}`)}
+            >
+              ⚠️ {tr('badge_tg_not_sent')}
+            </div>
+          )}
+
         </div>
         <div className="linksStack">
           {g.tg_status !== 'invalid' && (
@@ -307,6 +318,8 @@ export default function ProfilesTab({
   isLoading,
   authFetch,
   token,
+  cityOnly,
+  setCityOnly,
 }) {
   const [filterText, setFilterText] = useState(() => localStorage.getItem('ig_filter_text') || '');
   const [filterStatus, setFilterStatus] = useState(() => localStorage.getItem('ig_filter_status') || 'all');
@@ -314,7 +327,6 @@ export default function ProfilesTab({
   const [sortOption, setSortOption] = useState(() => localStorage.getItem('ig_sort_option') || 'newest');
   const [hideNoImage, setHideNoImage] = useState(() => localStorage.getItem('ig_hide_no_img') === 'true');
   const [hideViewed, setHideViewed] = useState(() => localStorage.getItem('ig_hide_viewed') === 'true');
-  const [cityOnly, setCityOnly] = useState(() => localStorage.getItem('ig_city_only') === 'true');
   const [filterDonor, setFilterDonor] = useState(() => localStorage.getItem('ig_filter_donor') || 'all');
   const [currentPage, setCurrentPage] = useState(1);
   const [checkingAllTg, setCheckingAllTg] = useState(false);
@@ -326,9 +338,8 @@ export default function ProfilesTab({
     localStorage.setItem('ig_sort_option', sortOption);
     localStorage.setItem('ig_hide_no_img', String(hideNoImage));
     localStorage.setItem('ig_hide_viewed', String(hideViewed));
-    localStorage.setItem('ig_city_only', String(cityOnly));
     localStorage.setItem('ig_filter_donor', filterDonor);
-  }, [filterText, filterStatus, filterTgStatus, sortOption, hideNoImage, hideViewed, cityOnly, filterDonor]);
+  }, [filterText, filterStatus, filterTgStatus, sortOption, hideNoImage, hideViewed, filterDonor]);
   const ITEMS_PER_PAGE = 60;
   const handleCheckAllTg = async () => {
     const toCheck = girls.filter((g) => !g.tg_status).map((g) => g.name);
@@ -368,6 +379,8 @@ export default function ProfilesTab({
       else if (filterStatus === 'no_status') matchesStatus = !votes[g.url];
       else if (filterStatus === 'active') matchesStatus = votes[g.url] !== 'dislike';
       else if (filterStatus === 'dm_sent') matchesStatus = g.dmSent;
+      else if (filterStatus === 'replied') matchesStatus = g.dm_status === 'replied';
+      else if (filterStatus === 'liked') matchesStatus = g.dm_status === 'liked' || votes[g.url] === 'like';
       let matchesTg = true;
       if (filterTgStatus === 'yes') matchesTg = g.tg_status === 'valid';
       else if (filterTgStatus === 'none') matchesTg = !g.tg_status;
@@ -425,6 +438,7 @@ export default function ProfilesTab({
           <option value="like_no_dm">{tr('filter_like_no_dm')}</option>
           <option value="dislike">{tr('filter_dislike')}</option>
           <option value="dm_sent">{tr('filter_dm_sent')}</option>
+          <option value="replied">{tr('filter_replied')}</option>
           <option value="unopened">{tr('filter_unopened')}</option>
         </select>
         <select

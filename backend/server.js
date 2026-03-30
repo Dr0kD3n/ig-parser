@@ -220,19 +220,19 @@ async function getSettings() {
   const activeCheckerIds = rows
     .filter((r) => r.active_checker)
     .sort((a, b) => a.active_checker - b.active_checker)
-    .map((r) => r.id);
   const showBrowserStr = await db.get(`SELECT value FROM settings WHERE key = 'showBrowser'`);
   const showBrowser = showBrowserStr ? showBrowserStr.value === 'true' : false;
-  const concurrentProfilesStr = await db.get(
-    `SELECT value FROM settings WHERE key = 'concurrentProfiles'`
-  );
+  const concurrentProfilesStr = await db.get(`SELECT value FROM settings WHERE key = 'concurrentProfiles'`);
   const concurrentProfiles = concurrentProfilesStr ? parseInt(concurrentProfilesStr.value) : 3;
+  const dmLimitStr = await db.get(`SELECT value FROM settings WHERE key = 'dmLimit'`);
+  const dmLimit = dmLimitStr ? parseInt(dmLimitStr.value) : 20;
   const humanEmulationStr = await db.get(`SELECT value FROM settings WHERE key = 'humanEmulation'`);
   const humanEmulation = humanEmulationStr ? humanEmulationStr.value === 'true' : false;
   const dolphinTokenStr = await db.get(`SELECT value FROM settings WHERE key = 'dolphinToken'`);
   const dolphinToken = dolphinTokenStr ? dolphinTokenStr.value : '';
   const donorGroupsStr = await db.get(`SELECT value FROM settings WHERE key = 'donorGroups'`);
   const donorGroups = donorGroupsStr ? JSON.parse(donorGroupsStr.value) : [];
+
   return {
     accounts,
     activeParserAccountIds: activeParserIds,
@@ -242,6 +242,7 @@ async function getSettings() {
     activeCheckerAccountIds: activeCheckerIds,
     showBrowser,
     concurrentProfiles,
+    dmLimit,
     humanEmulation,
     dolphinToken,
     donorGroups,
@@ -280,7 +281,7 @@ if (fs_1.existsSync(publicDir)) {
 // --- In-memory cache for profiles ---
 let girlsCache = null;
 let girlsCacheTime = 0;
-const CACHE_TTL = 5000; // 5 seconds
+const CACHE_TTL = 1000; // 1 second - ensure fresh data for reasons / statuses
 async function getGirlsCached() {
   const now = Date.now();
   if (girlsCache && now - girlsCacheTime < CACHE_TTL) return girlsCache;
@@ -364,6 +365,21 @@ app.post('/api/vote', async (req, res) => {
   } catch (e) {
     console.log(`[GOLOS ERROR] Ошибка при голосовании: ${e.message}`);
     res.status(500).json({ success: false, error: 'Ошибка сервера при сохранении' });
+  }
+});
+app.post('/api/profiles/tag-tg', async (req, res) => {
+  const { url, tagged } = req.body;
+  if (!url) {
+    return res.status(400).json({ success: false, error: 'Нет url' });
+  }
+  try {
+    const db = await (0, db_1.getDB)();
+    await db.run(`UPDATE profiles SET tgTagged = ? WHERE url = ?`, [tagged ? 1 : 0, url]);
+    invalidateGirlsCache();
+    res.json({ success: true });
+  } catch (e) {
+    console.log(`[TAG TG ERROR] ${e.message}`);
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 app.post('/api/profiles/delete', async (req, res) => {
@@ -624,6 +640,12 @@ app.post('/api/settings', async (req, res) => {
         await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'concurrentProfiles',
           req.body.concurrentProfiles.toString(),
+        ]);
+      }
+      if (req.body.hasOwnProperty('dmLimit')) {
+        await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          'dmLimit',
+          req.body.dmLimit.toString(),
         ]);
       }
       if (req.body.hasOwnProperty('humanEmulation')) {
@@ -1287,7 +1309,7 @@ app.post('/api/dm', async (req, res) => {
           `INSERT INTO messages_log (url, username, message_text, status, timestamp) VALUES (?, ?, ?, ?, ?)`,
           [url, username, message, 'sent', new Date().toISOString()]
         );
-        await db.run(`UPDATE profiles SET dmSent = 1 WHERE url = ?`, [url]);
+        await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 0 WHERE url = ?`, [url]);
       } catch (dbErr) {
         console.error('Ошибка сохранения в messages_log:', dbErr);
       }
@@ -1306,7 +1328,11 @@ app.get('/api/stats', async (req, res) => {
   try {
     const db = await (0, db_1.getDB)();
     const summary = await db.all(`
-      SELECT message_text, count(*) as total_sent 
+      SELECT 
+        message_text, 
+        count(*) as total_sent,
+        SUM(CASE WHEN status = 'replied' THEN 1 ELSE 0 END) as replied_count,
+        SUM(CASE WHEN status = 'liked' THEN 1 ELSE 0 END) as liked_count
       FROM messages_log 
       GROUP BY message_text
     `);

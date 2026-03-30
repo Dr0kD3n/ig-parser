@@ -21,6 +21,7 @@ async function sendMessageToProfile(context, url, message, config) {
         page = await context.newPage();
         logger.info(`🌐 Opening: ${url}`);
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await wait(2000); // Give it a moment to stabilize
 
         const isDirectChat = page.url().includes('/direct/t/');
 
@@ -96,7 +97,7 @@ async function sendMessageToProfile(context, url, message, config) {
         // Wait for chat stabilizing
         const inputSelector = 'div[role="textbox"][contenteditable="true"]';
         await page.waitForSelector(inputSelector, { state: 'visible', timeout: 15000 }).catch(() => { });
-        await wait(2500);
+        await wait(2000); // Standard stabilization wait
 
         // DISMISS "Not Now" if present
         const notNow = page.locator('button:has-text("Not Now"), button:has-text("Не сейчас")').first();
@@ -214,7 +215,8 @@ async function sendMessageToProfile(context, url, message, config) {
             await humanType(page, inputSelector, message, config.timeouts);
             await wait(1000);
             await page.keyboard.press('Enter');
-            await wait(3000);
+            await wait(200); // Micro-delay requested AFTER sending
+            await wait(3000); // Additional wait to ensure message is visually sent/logged by IG
             return { success: true };
         } else {
             logger.error(`❌ Textbox not found for ${url}`);
@@ -242,18 +244,26 @@ async function startMassMessaging(onProgress, options = {}) {
     const donorGroups = JSON.parse(settings.find(s => s.key === 'donorGroups')?.value || '[]');
     const concurrentProfiles = parseInt(settings.find(s => s.key === 'concurrentProfiles')?.value || '3');
     const humanEmulation = settings.find(s => s.key === 'humanEmulation')?.value === 'true';
+    const dmLimit = parseInt(settings.find(s => s.key === 'dmLimit')?.value || '20');
 
     // 1. Selection with options
     // Using COLLATE NOCASE for vote to be safe, although it's usually lowercase
-    let query = `SELECT * FROM profiles WHERE vote = 'like' COLLATE NOCASE AND (dmSent = 0 OR dmSent IS NULL)`;
+    // [TEMP] Send to everyone, ignoring 'like' status
+    let query = `SELECT * FROM profiles WHERE (dmSent = 0 OR dmSent IS NULL)`;
+    // let query = `SELECT * FROM profiles WHERE vote = 'like' COLLATE NOCASE AND (dmSent = 0 OR dmSent IS NULL)`;
 
     const params = [];
 
     if (options.cityOnly) {
         query += ` AND isInCity = 1`;
+    } else {
+        query += ` AND (isInCity = 0 OR isInCity IS NULL)`;
     }
 
     query += ` ORDER BY timestamp DESC`;
+    if (dmLimit && dmLimit > 0) {
+        query += ` LIMIT ${dmLimit}`;
+    }
 
     const profiles = await db.all(query, params);
     const profilesCount = profiles.length;
@@ -290,101 +300,142 @@ async function startMassMessaging(onProgress, options = {}) {
     updateStatus({ status: `Broadcasting with ${accounts.length} accounts...` });
 
     const queue = [...profiles];
-    const maxWorkers = Math.min(concurrentProfiles, accounts.length);
     let currentProcessed = 0;
     const results = [];
 
-    // Worker function to process profiles from the shared queue
-    const processWorker = async (account, workerId) => {
-        while (queue.length > 0 && !messengerStopRequested) {
-            const profile = queue.shift();
-            if (!profile) break;
+    // Account Runner: starts one browser per account and manages multiple workers (tabs)
+    const runAccount = async (account) => {
+        const browserConfig = {
+            id: account.id,
+            proxy: account.proxy,
+            cookies: account.cookies,
+            fingerprint: account.fingerprint,
+            timeouts: { pageLoad: 60000, typingDelayMin: 50, typingDelayMax: 150 }
+        };
 
-            // Double-check dmSent status before proceeding to prevent race conditions in parallel mode
-            const freshProfile = await db.get(`SELECT dmSent FROM profiles WHERE url = ?`, [profile.url]);
-            if (freshProfile?.dmSent === 1) {
-                currentProcessed++;
-                updateStatus({ current: currentProcessed });
-                continue;
+        let skipBrowser = await getSetting('showBrowser') !== true;
+        let browser, context, liveInterval;
+
+        try {
+            logger.info(`🚀 [ACCOUNT ${account.name}] Launching browser instance...`);
+            const browserResult = await createBrowserContext(browserConfig, skipBrowser);
+            browser = browserResult.browser;
+            context = browserResult.context;
+            liveInterval = startLiveView(context);
+
+            const workerPromises = [];
+            // Spawn concurrent workers (tabs) for THIS account
+            for (let i = 0; i < concurrentProfiles; i++) {
+                workerPromises.push((async (workerId) => {
+                    // Stagger the start of each tab to avoid overwhelming navigation
+                    await wait(workerId * 1000);
+
+                    try {
+                        while (queue.length > 0 && !messengerStopRequested) {
+                            const profile = queue.shift();
+                            if (!profile) break;
+
+                            // Double-check dmSent status before proceeding to prevent race conditions in parallel mode
+                            const freshProfile = await db.get(`SELECT dmSent FROM profiles WHERE url = ?`, [profile.url]);
+                            if (freshProfile?.dmSent === 1) {
+                                currentProcessed++;
+                                updateStatus({ current: currentProcessed });
+                                continue;
+                            }
+
+                            logger.info(`🧵 [ACC: ${account.name} | TAB: ${workerId}] Starting for ${profile.url}`);
+
+                            try {
+                                // Select message logic
+                                const donorName = profile.donor ? profile.donor.replace('@', '').trim() : '';
+                                const group = donorGroups.find(g => (g.donors || []).some(d => (typeof d === 'string' ? d : d.url).includes(donorName)));
+                                let msgs = (group && group.messages?.length > 0) ? group.messages : [];
+
+                                if (msgs.length === 0) {
+                                    const allGroup = donorGroups.find(g => g.id === 'all');
+                                    msgs = (allGroup && allGroup.messages?.length > 0) ? allGroup.messages : ['Hello!'];
+                                }
+
+                                // [SMART SELECTION] Сортируем сообщения по количеству отправок, чтобы статистика была ровной
+                                let message = msgs[0];
+                                if (msgs.length > 1) {
+                                    try {
+                                        const counts = await db.all(`
+                                            SELECT message_text, COUNT(*) as c 
+                                            FROM messages_log 
+                                            WHERE message_text IN (${msgs.map(() => '?').join(',')})
+                                            GROUP BY message_text
+                                        `, msgs);
+                                        const countMap = Object.fromEntries(counts.map(r => [r.message_text, r.c]));
+
+                                        // Находим минимальное количество отправок
+                                        const minCount = Math.min(...msgs.map(m => countMap[m] || 0));
+                                        // Выбираем все сообщения с минимальным количеством
+                                        const bestMsgs = msgs.filter(m => (countMap[m] || 0) === minCount);
+                                        // Рандом из лучших (чтобы не спамить одним и тем же в одну секунду)
+                                        message = bestMsgs[Math.floor(Math.random() * bestMsgs.length)];
+                                    } catch (e) {
+                                        logger.error(`Error in smart message selection: ${e.message}`);
+                                        message = msgs[Math.floor(Math.random() * msgs.length)];
+                                    }
+                                }
+
+                                // Process the profile using a new tab in the shared context
+                                const result = await sendMessageToProfile(context, profile.url, message, browserConfig);
+
+                                // IMPORTANT: Mark as sent if SUCCESS or skipped due to HISTORY/EXISTING CHAT
+                                if (result.success) {
+                                    await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 0, dmError = NULL WHERE url = ?`, [profile.url]);
+
+                                    await db.run(
+                                        `INSERT INTO messages_log (url, username, name, message_text, status, timestamp, account_id, sender_name) VALUES (?, ?, ?, ?, 'sent', ?, ?, ?)`,
+                                        [profile.url, profile.username || profile.name, profile.name, message, new Date().toISOString(), account.id, account.name]
+                                    );
+                                    logger.info(`🚀 [ACC: ${account.name} SENT] ${profile.url} (@${profile.username})`);
+                                } else {
+                                    // Mark as skipped/failed: tgTagged = 2 means "Не написал" (automatic error report)
+                                    if (result.reason === 'history' || result.reason === 'chat_exists' || result.reason === 'no_button') {
+                                        await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 2, dmError = ? WHERE url = ?`, [result.reason, profile.url]);
+                                    } else {
+                                        await db.run(`UPDATE profiles SET tgTagged = 2, dmError = ? WHERE url = ?`, [result.reason || 'error', profile.url]);
+                                    }
+                                }
+
+                                results.push({ url: profile.url, success: result.success });
+                            } catch (err) {
+                                logger.error(`Task error for ${profile.url} on ${account.name}: ${err.message}`);
+                                results.push({ url: profile.url, success: false, error: err.message });
+                            } finally {
+                                currentProcessed++;
+                                updateStatus({ current: currentProcessed });
+
+                                // Human-like pause between tasks for THIS tab
+                                if (queue.length > 0 && !messengerStopRequested) {
+                                    const delay = humanEmulation ? 15000 + Math.random() * 20000 : 3000;
+                                    await wait(delay);
+                                }
+                            }
+                        }
+                    } catch (workerErr) {
+                        logger.error(`Worker ${workerId} loop error on ${account.name}: ${workerErr.message}`);
+                    }
+                })(i));
             }
 
-            logger.info(`🧵 [WORKER ${workerId}] Starting for ${profile.url} using ${account.name} (ID: ${account.id})`);
+            await Promise.all(workerPromises);
 
-            const browserConfig = {
-                id: account.id,
-                proxy: account.proxy,
-                cookies: account.cookies,
-                fingerprint: account.fingerprint,
-                timeouts: { pageLoad: 60000, typingDelayMin: 50, typingDelayMax: 150 }
-            };
-
-            let skipBrowser = await getSetting('showBrowser') !== true;
-            let browser, context;
-
-            try {
-                const browserResult = await createBrowserContext(browserConfig, skipBrowser);
-                browser = browserResult.browser;
-                context = browserResult.context;
-
-                const liveInterval = startLiveView(context);
-
-                // Select message logic
-                const donorName = profile.donor ? profile.donor.replace('@', '').trim() : '';
-                const group = donorGroups.find(g => (g.donors || []).some(d => (typeof d === 'string' ? d : d.url).includes(donorName)));
-                let msgs = (group && group.messages?.length > 0) ? group.messages : [];
-
-                if (msgs.length === 0) {
-                    const allGroup = donorGroups.find(g => g.id === 'all');
-                    msgs = (allGroup && allGroup.messages?.length > 0) ? allGroup.messages : ['Hello!'];
-                }
-
-                const message = msgs[Math.floor(Math.random() * msgs.length)];
-
-                const result = await sendMessageToProfile(context, profile.url, message, browserConfig);
-
-                // IMPORTANT: Mark as sent if SUCCESS or skipped due to HISTORY/EXISTING CHAT
-                if (result.success || result.reason === 'history' || result.reason === 'chat_exists') {
-                    await db.run(`UPDATE profiles SET dmSent = 1 WHERE url = ?`, [profile.url]);
-                }
-
-
-                if (result.success) {
-                    await db.run(
-                        `INSERT INTO messages_log (url, username, name, message_text, status, timestamp) VALUES (?, ?, ?, ?, 'sent', ?)`,
-                        [profile.url, profile.username || profile.name, profile.name, message, new Date().toISOString()]
-                    );
-                    logger.info(`🚀 [WORKER ${workerId} SENT] ${profile.url} (@${profile.username})`);
-                }
-
-                results.push({ url: profile.url, success: result.success });
-                clearInterval(liveInterval);
-            } catch (err) {
-                logger.error(`Task error for ${profile.url} on worker ${workerId}: ${err.message}`);
-                results.push({ url: profile.url, success: false, error: err.message });
-            } finally {
-                if (context) await context.close().catch(() => { });
-                if (browser && !skipBrowser) await browser.close().catch(() => { });
-
-                currentProcessed++;
-                updateStatus({ current: currentProcessed });
-
-                // Human-like pause between tasks for THIS worker/account
-                if (queue.length > 0 && !messengerStopRequested) {
-                    const delay = humanEmulation ? 15000 + Math.random() * 20000 : 3000;
-                    logger.info(`⏳ [WORKER ${workerId}] Waiting ${Math.round(delay / 1000)}s before next profile...`);
-                    await wait(delay);
-                }
-            }
+        } catch (err) {
+            logger.error(`Account runner error for ${account.name}: ${err.message}`);
+        } finally {
+            if (liveInterval) clearInterval(liveInterval);
+            if (context) await context.close().catch(() => { });
+            if (browser && !skipBrowser) await browser.close().catch(() => { });
         }
     };
 
-    // Launch workers in parallel
-    const workerPromises = [];
-    for (let i = 0; i < maxWorkers; i++) {
-        workerPromises.push(processWorker(accounts[i % accounts.length], i));
-    }
-
-    await Promise.all(workerPromises);
+    // Parallel execution across all accounts
+    const accountPromises = accounts.map(acc => runAccount(acc));
+    await Promise.all(accountPromises);
 
     const successfulTotal = results.filter(r => r.success).length;
     logger.info(`✅ Mass messaging session complete. Sent: ${successfulTotal}/${results.length}`);
