@@ -72,8 +72,10 @@ const DonorGroupCard = ({ group, allDonors, onUpdate, onDelete, isAll, tr, Trash
           <div className="flex-wrap gap-6 max-h-120 scroll-y p-8 bg-black-20 rounded-8">
             {(allDonors || []).map((d) => {
               const url = typeof d === 'string' ? d : d.url;
+              const normalize = (u) => u.toLowerCase().replace(/https?:\/\/(www\.)?instagram\.com\//, '').replace(/[@/]/g, '').trim();
               const isSelected = (group.donors || []).some(gd => (typeof gd === 'string' ? gd : gd.url) === url);
-              const isProcessed = (settingsData?.checkedDonors || []).includes(url);
+              const target = normalize(url);
+              const isProcessed = (settingsData?.checkedDonors || []).some(cd => normalize(cd) === target);
               const niche = d.niche;
               const city = d.city;
 
@@ -399,6 +401,22 @@ export default function SettingsTab({
               }
             />
           </label>
+          <label className="checkbox-label">
+            {tr('dm_limit')}
+            <input
+              type="number"
+              min="1"
+              value={settingsData.dmLimit || 200}
+              className="num-input-sm"
+              style={{ width: '60px' }}
+              onChange={(e) =>
+                onSettingsChange({
+                  ...settingsData,
+                  dmLimit: parseInt(e.target.value) || 1,
+                })
+              }
+            />
+          </label>
           {updateInfo?.hasUpdate && (
             <button
               className={`btn-primary btn-sm ${isUpdating ? 'loading' : ''}`}
@@ -414,364 +432,377 @@ export default function SettingsTab({
         </div>
       </div>
 
-      {settingsTab === 'accounts' && (
-        <div className="settings-grid">
-          <div className="tasks-columns">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-              {renderTaskSection('activeParserAccountIds', tr('task_parser'))}
-              {renderTaskSection('activeIndexAccountIds', tr('task_scraper'))}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-              {renderTaskSection('activeServerAccountIds', tr('task_sender'))}
-              {renderTaskSection('activeProfilesAccountIds', tr('task_profiles'))}
-            </div>
-            <div className="add-acc-card">
-              <h4 className="mb-20 fs-18">{tr('add_account')}</h4>
-              <div className="flex gap-16 mb-16">
-                <input
-                  type="text"
-                  id="new-acc-name"
-                  placeholder={tr('name_placeholder')}
-                  className="search-input w-full"
+      {
+        settingsTab === 'accounts' && (
+          <div className="settings-grid">
+            <div className="tasks-columns">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                {renderTaskSection('activeParserAccountIds', tr('task_parser'))}
+                {renderTaskSection('activeIndexAccountIds', tr('task_scraper'))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                {renderTaskSection('activeServerAccountIds', tr('task_sender'))}
+                {renderTaskSection('activeProfilesAccountIds', tr('task_profiles'))}
+              </div>
+              <div className="add-acc-card">
+                <h4 className="mb-20 fs-18">{tr('add_account')}</h4>
+                <div className="flex gap-16 mb-16">
+                  <input
+                    type="text"
+                    id="new-acc-name"
+                    placeholder={tr('name_placeholder')}
+                    className="search-input w-full"
+                  />
+                  <input
+                    type="text"
+                    id="new-acc-proxy"
+                    placeholder={tr('proxy_placeholder')}
+                    className="search-input w-full"
+                  />
+                </div>
+                <textarea
+                  id="new-acc-cookies"
+                  placeholder={tr('cookies_placeholder')}
+                  className="msg-textarea cookies h-100 mb-20"
                 />
-                <input
-                  type="text"
-                  id="new-acc-proxy"
-                  placeholder={tr('proxy_placeholder')}
-                  className="search-input w-full"
+                <button className="btn-primary w-full" onClick={handleAdd}>
+                  {tr('btn_add')}
+                </button>
+              </div>
+            </div>
+
+            <div className="all-accounts-column">
+              <h4 style={{ marginBottom: '20px', fontSize: '18px' }}>{tr('all_accounts')}</h4>
+              <div className="flex-v gap-12">
+                {settingsData.accounts.map((acc) => (
+                  <div key={acc.id} className="account-card">
+                    {editingAccount === acc.id ? (
+                      <div className="flex-v gap-10">
+                        <input
+                          type="text"
+                          className="search-input"
+                          placeholder={tr('edit_name')}
+                          value={editForm.name}
+                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        />
+                        <input
+                          type="text"
+                          className="search-input fs-13 font-mono"
+                          placeholder={tr('edit_proxy')}
+                          value={editForm.proxy}
+                          onChange={(e) => setEditForm({ ...editForm, proxy: e.target.value })}
+                        />
+                        <input
+                          type="text"
+                          className="search-input fs-12 font-mono"
+                          placeholder="User-Agent"
+                          value={editForm.userAgent}
+                          onChange={(e) => setEditForm({ ...editForm, userAgent: e.target.value })}
+                        />
+                        <textarea
+                          className="msg-textarea cookies h-80 fs-11 font-mono"
+                          placeholder="System Data (Fingerprint JSON)"
+                          value={editForm.fingerprint}
+                          onChange={(e) => setEditForm({ ...editForm, fingerprint: e.target.value })}
+                        />
+                        <textarea
+                          className="msg-textarea cookies h-60 fs-12 font-mono"
+                          placeholder={tr('edit_cookies')}
+                          value={editForm.cookies}
+                          onChange={(e) => setEditForm({ ...editForm, cookies: e.target.value })}
+                        />
+                        <div className="flex gap-8">
+                          <button
+                            className="btn-primary btn-outline btn-sm flex-1 fs-11"
+                            onClick={async () => {
+                              if (window.confirm('Regenerate System Data?')) {
+                                try {
+                                  const res = await authFetch(`/api/accounts/${acc.id}`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ regenerateFingerprint: true }),
+                                  });
+                                  const data = await res.json();
+                                  if (data.success && data.fingerprint) {
+                                    toast.success(tr('regenerate_success'));
+                                    let fp = {};
+                                    try {
+                                      fp = JSON.parse(data.fingerprint);
+                                    } catch (e) { }
+                                    setEditForm((prev) => ({
+                                      ...prev,
+                                      fingerprint: data.fingerprint,
+                                      userAgent: fp.userAgent || prev.userAgent,
+                                    }));
+                                    // Sync global state
+                                    const updatedAccs = settingsData.accounts.map((a) =>
+                                      a.id === acc.id ? { ...a, fingerprint: data.fingerprint } : a
+                                    );
+                                    onSettingsChange({ ...settingsData, accounts: updatedAccs });
+                                  }
+                                } catch (e) {
+                                  toast.error(e.message);
+                                }
+                              }
+                            }}
+                          >
+                            🔄 {tr('regenerate_system_data') || 'Regenerate System Data'}
+                          </button>
+                        </div>
+                        <div className="flex gap-8">
+                          <button
+                            className="btn-primary btn-success btn-sm flex-1"
+                            onClick={() => handleSaveEdit(acc.id)}
+                          >
+                            {tr('save_changes')}
+                          </button>
+                          <button
+                            className="btn-primary btn-outline btn-sm btn-ghost flex-1 color-muted"
+                            onClick={() => setEditingAccount(null)}
+                          >
+                            {tr('cancel')}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex-between mb-4">
+                          <div className="flex-1 flex-baseline gap-8">
+                            <div className="font-bold fs-15">{acc.name}</div>
+                            {acc.warmup_running && (
+                              <div className="acc-card-score running">
+                                {acc.warmup_progress || 0}%
+                              </div>
+                            ) || (acc.warmup_score > 0 && (
+                              <div className="acc-card-score">{acc.warmup_score}%</div>
+                            ))}
+                          </div>
+
+                          <button
+                            className="editBtn"
+                            onClick={() => handleStartEdit(acc)}
+                            title={tr('edit_title')}
+                          >
+                            <EditIcon />
+                          </button>
+                          <button
+                            className="deleteBtn"
+                            onClick={() => handleDelete(acc.id)}
+                            title={tr('delete_title')}
+                          >
+                            <TrashIcon />
+                          </button>
+                        </div>
+                        <div className="acc-proxy-text">{acc.proxy || tr('direct_connection')}</div>
+                        <div className="flex-between align-end">
+                          <div className="flex-wrap gap-6 flex-1">
+                            {[
+                              { field: 'activeParserAccountIds', label: tr('task_parser') },
+                              { field: 'activeIndexAccountIds', label: tr('task_scraper') },
+                              { field: 'activeServerAccountIds', label: tr('task_sender') },
+                              { field: 'activeProfilesAccountIds', label: tr('task_profiles') },
+                              { field: 'activeCheckerAccountIds', label: tr('task_checker') },
+                            ].map((t) => {
+                              const isActive = (settingsData[t.field] || []).includes(acc.id);
+                              return (
+                                <button
+                                  key={t.field}
+                                  onClick={() => toggleAccountForTask(t.field, acc.id)}
+                                  className={`acc-task-tag ${isActive ? 'active' : 'inactive'}`}
+                                >
+                                  {t.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="acc-action-bar">
+                          <button
+                            onClick={() => handleLogin(acc.id)}
+                            className="btn-acc-action btn-acc-login"
+                          >
+                            {tr('btn_login')}
+                          </button>
+                          <button
+                            onClick={() => handleOpenBrowser(acc.id, true)}
+                            className="btn-acc-action btn-acc-browser"
+                          >
+                            {tr('btn_open_browser')}
+                          </button>
+                          <button
+                            onClick={() => handleWarmup(acc.id)}
+                            className="btn-acc-action btn-acc-warmup"
+                          >
+                            {tr('btn_warmup')}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {
+        settingsTab === 'names' && (
+          <textarea
+            className="msg-textarea"
+            style={{ height: 500 }}
+            value={(settingsData.names || []).join('\n')}
+            onChange={(e) => onSettingsChange({ ...settingsData, names: e.target.value.split('\n') })}
+          />
+        )
+      }
+      {
+        settingsTab === 'cities' && (
+          <textarea
+            className="msg-textarea"
+            style={{ height: 500 }}
+            value={(settingsData.cities || []).join('\n')}
+            onChange={(e) =>
+              onSettingsChange({ ...settingsData, cities: e.target.value.split('\n') })
+            }
+          />
+        )
+      }
+      {
+        settingsTab === 'niches' && (
+          <textarea
+            className="msg-textarea"
+            style={{ height: 500 }}
+            value={(settingsData.niches || []).join('\n')}
+            onChange={(e) =>
+              onSettingsChange({ ...settingsData, niches: e.target.value.split('\n') })
+            }
+          />
+        )
+      }
+      {
+        settingsTab === 'donors' && (
+          <div className="donor-groups-manager">
+            <div className="donors-raw-list mb-24">
+              <h4 className="mb-12 fs-16 color-accent">📋 {tr('tab_donors')} (Общий список)</h4>
+              <div className="donors-editor-container">
+                <div
+                  id="donors-visual"
+                  className="donors-visual-layer"
+                  style={{ height: 180 }}
+                >
+                  {(settingsData.donors || []).map((d, i) => {
+                    const url = typeof d === 'string' ? d : d.url;
+                    const normalize = (u) => u.toLowerCase().replace(/https?:\/\/(www\.)?instagram\.com\//, '').replace(/[@/]/g, '').trim();
+                    const target = normalize(url);
+                    const isProcessed = (settingsData.checkedDonors || []).some(cd => normalize(cd) === target);
+
+                    return (
+                      <div key={i} className="donor-line">
+                        <span className={isProcessed ? 'donor-processed' : ''}>{url}</span>
+                        {d && typeof d === 'object' && (d.niche || d.city) && (
+                          <span className="donor-keyword">({[d.niche, d.city].filter(Boolean).join(', ')})</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <textarea
+                  className="donors-input-layer"
+                  style={{ height: 180 }}
+                  value={(settingsData.donors || []).map(d => typeof d === 'string' ? d : d.url).join('\n')}
+                  onScroll={(e) => {
+                    const visual = document.getElementById('donors-visual');
+                    if (visual) visual.scrollTop = e.target.scrollTop;
+                  }}
+                  onChange={(e) => {
+                    const lines = e.target.value.split('\n');
+                    const updatedDonors = lines.map(line => {
+                      const trimmed = line.trim();
+                      if (!trimmed) return line;
+                      const existing = (settingsData.donors || []).find(ed => (typeof ed === 'string' ? ed : ed.url) === trimmed);
+                      return existing || line;
+                    });
+                    onSettingsChange({ ...settingsData, donors: updatedDonors });
+                  }}
+                  placeholder="@username1\n@username2..."
                 />
               </div>
-              <textarea
-                id="new-acc-cookies"
-                placeholder={tr('cookies_placeholder')}
-                className="msg-textarea cookies h-100 mb-20"
-              />
-              <button className="btn-primary w-full" onClick={handleAdd}>
-                {tr('btn_add')}
+            </div>
+
+            <div className="groups-header flex-between mb-20">
+              <h4 className="fs-18 font-bold">🧩 {tr('donor_groups')}</h4>
+              <button
+                className="btn-primary btn-sm"
+                onClick={() => {
+                  const name = prompt(tr('add_group') + ':');
+                  if (!name) return;
+                  const newGroups = [
+                    ...(settingsData.donorGroups || []),
+                    { id: Date.now().toString(), name, donors: [], messages: [] },
+                  ];
+                  onSettingsChange({ ...settingsData, donorGroups: newGroups });
+                }}
+              >
+                + {tr('add_group')}
               </button>
             </div>
-          </div>
 
-          <div className="all-accounts-column">
-            <h4 style={{ marginBottom: '20px', fontSize: '18px' }}>{tr('all_accounts')}</h4>
-            <div className="flex-v gap-12">
-              {settingsData.accounts.map((acc) => (
-                <div key={acc.id} className="account-card">
-                  {editingAccount === acc.id ? (
-                    <div className="flex-v gap-10">
-                      <input
-                        type="text"
-                        className="search-input"
-                        placeholder={tr('edit_name')}
-                        value={editForm.name}
-                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                      />
-                      <input
-                        type="text"
-                        className="search-input fs-13 font-mono"
-                        placeholder={tr('edit_proxy')}
-                        value={editForm.proxy}
-                        onChange={(e) => setEditForm({ ...editForm, proxy: e.target.value })}
-                      />
-                      <input
-                        type="text"
-                        className="search-input fs-12 font-mono"
-                        placeholder="User-Agent"
-                        value={editForm.userAgent}
-                        onChange={(e) => setEditForm({ ...editForm, userAgent: e.target.value })}
-                      />
-                      <textarea
-                        className="msg-textarea cookies h-80 fs-11 font-mono"
-                        placeholder="System Data (Fingerprint JSON)"
-                        value={editForm.fingerprint}
-                        onChange={(e) => setEditForm({ ...editForm, fingerprint: e.target.value })}
-                      />
-                      <textarea
-                        className="msg-textarea cookies h-60 fs-12 font-mono"
-                        placeholder={tr('edit_cookies')}
-                        value={editForm.cookies}
-                        onChange={(e) => setEditForm({ ...editForm, cookies: e.target.value })}
-                      />
-                      <div className="flex gap-8">
-                        <button
-                          className="btn-primary btn-outline btn-sm flex-1 fs-11"
-                          onClick={async () => {
-                            if (window.confirm('Regenerate System Data?')) {
-                              try {
-                                const res = await authFetch(`/api/accounts/${acc.id}`, {
-                                  method: 'PUT',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ regenerateFingerprint: true }),
-                                });
-                                const data = await res.json();
-                                if (data.success && data.fingerprint) {
-                                  toast.success(tr('regenerate_success'));
-                                  let fp = {};
-                                  try {
-                                    fp = JSON.parse(data.fingerprint);
-                                  } catch (e) { }
-                                  setEditForm((prev) => ({
-                                    ...prev,
-                                    fingerprint: data.fingerprint,
-                                    userAgent: fp.userAgent || prev.userAgent,
-                                  }));
-                                  // Sync global state
-                                  const updatedAccs = settingsData.accounts.map((a) =>
-                                    a.id === acc.id ? { ...a, fingerprint: data.fingerprint } : a
-                                  );
-                                  onSettingsChange({ ...settingsData, accounts: updatedAccs });
-                                }
-                              } catch (e) {
-                                toast.error(e.message);
-                              }
-                            }
-                          }}
-                        >
-                          🔄 {tr('regenerate_system_data') || 'Regenerate System Data'}
-                        </button>
-                      </div>
-                      <div className="flex gap-8">
-                        <button
-                          className="btn-primary btn-success btn-sm flex-1"
-                          onClick={() => handleSaveEdit(acc.id)}
-                        >
-                          {tr('save_changes')}
-                        </button>
-                        <button
-                          className="btn-primary btn-outline btn-sm btn-ghost flex-1 color-muted"
-                          onClick={() => setEditingAccount(null)}
-                        >
-                          {tr('cancel')}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex-between mb-4">
-                        <div className="flex-1 flex-baseline gap-8">
-                          <div className="font-bold fs-15">{acc.name}</div>
-                          {acc.warmup_running && (
-                            <div className="acc-card-score running">
-                              {acc.warmup_progress || 0}%
-                            </div>
-                          ) || (acc.warmup_score > 0 && (
-                            <div className="acc-card-score">{acc.warmup_score}%</div>
-                          ))}
-                        </div>
-
-                        <button
-                          className="editBtn"
-                          onClick={() => handleStartEdit(acc)}
-                          title={tr('edit_title')}
-                        >
-                          <EditIcon />
-                        </button>
-                        <button
-                          className="deleteBtn"
-                          onClick={() => handleDelete(acc.id)}
-                          title={tr('delete_title')}
-                        >
-                          <TrashIcon />
-                        </button>
-                      </div>
-                      <div className="acc-proxy-text">{acc.proxy || tr('direct_connection')}</div>
-                      <div className="flex-between align-end">
-                        <div className="flex-wrap gap-6 flex-1">
-                          {[
-                            { field: 'activeParserAccountIds', label: tr('task_parser') },
-                            { field: 'activeIndexAccountIds', label: tr('task_scraper') },
-                            { field: 'activeServerAccountIds', label: tr('task_sender') },
-                            { field: 'activeProfilesAccountIds', label: tr('task_profiles') },
-                            { field: 'activeCheckerAccountIds', label: tr('task_checker') },
-                          ].map((t) => {
-                            const isActive = (settingsData[t.field] || []).includes(acc.id);
-                            return (
-                              <button
-                                key={t.field}
-                                onClick={() => toggleAccountForTask(t.field, acc.id)}
-                                className={`acc-task-tag ${isActive ? 'active' : 'inactive'}`}
-                              >
-                                {t.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="acc-action-bar">
-                        <button
-                          onClick={() => handleLogin(acc.id)}
-                          className="btn-acc-action btn-acc-login"
-                        >
-                          {tr('btn_login')}
-                        </button>
-                        <button
-                          onClick={() => handleOpenBrowser(acc.id, true)}
-                          className="btn-acc-action btn-acc-browser"
-                        >
-                          {tr('btn_open_browser')}
-                        </button>
-                        <button
-                          onClick={() => handleWarmup(acc.id)}
-                          className="btn-acc-action btn-acc-warmup"
-                        >
-                          {tr('btn_warmup')}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {settingsTab === 'names' && (
-        <textarea
-          className="msg-textarea"
-          style={{ height: 500 }}
-          value={(settingsData.names || []).join('\n')}
-          onChange={(e) => onSettingsChange({ ...settingsData, names: e.target.value.split('\n') })}
-        />
-      )}
-      {settingsTab === 'cities' && (
-        <textarea
-          className="msg-textarea"
-          style={{ height: 500 }}
-          value={(settingsData.cities || []).join('\n')}
-          onChange={(e) =>
-            onSettingsChange({ ...settingsData, cities: e.target.value.split('\n') })
-          }
-        />
-      )}
-      {settingsTab === 'niches' && (
-        <textarea
-          className="msg-textarea"
-          style={{ height: 500 }}
-          value={(settingsData.niches || []).join('\n')}
-          onChange={(e) =>
-            onSettingsChange({ ...settingsData, niches: e.target.value.split('\n') })
-          }
-        />
-      )}
-      {settingsTab === 'donors' && (
-        <div className="donor-groups-manager">
-          <div className="donors-raw-list mb-24">
-            <h4 className="mb-12 fs-16 color-accent">📋 {tr('tab_donors')} (Общий список)</h4>
-            <div className="donors-editor-container">
-              <div
-                id="donors-visual"
-                className="donors-visual-layer"
-                style={{ height: 180 }}
-              >
-                {(settingsData.donors || []).map((d, i) => {
-                  const url = typeof d === 'string' ? d : d.url;
-                  const isProcessed = (settingsData.checkedDonors || []).includes(url);
-                  return (
-                    <div key={i} className="donor-line">
-                      <span className={isProcessed ? 'donor-processed' : ''}>{url}</span>
-                      {(d.niche || d.city) && (
-                        <span className="donor-keyword">({[d.niche, d.city].filter(Boolean).join(', ')})</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <textarea
-                className="donors-input-layer"
-                style={{ height: 180 }}
-                value={(settingsData.donors || []).map(d => typeof d === 'string' ? d : d.url).join('\n')}
-                onScroll={(e) => {
-                  const visual = document.getElementById('donors-visual');
-                  if (visual) visual.scrollTop = e.target.scrollTop;
-                }}
-                onChange={(e) => {
-                  const lines = e.target.value.split('\n');
-                  const updatedDonors = lines.map(line => {
-                    const trimmed = line.trim();
-                    if (!trimmed) return line; // Keep empty lines or spaces while typing
-                    const existing = (settingsData.donors || []).find(ed => (typeof ed === 'string' ? ed : ed.url) === trimmed);
-                    return existing || line;
-                  });
-                  onSettingsChange({ ...settingsData, donors: updatedDonors });
-                }}
-                placeholder="@username1\n@username2..."
-              />
-            </div>
-          </div>
-
-          <div className="groups-header flex-between mb-20">
-            <h4 className="fs-18 font-bold">🧩 {tr('donor_groups')}</h4>
-            <button
-              className="btn-primary btn-sm"
-              onClick={() => {
-                const name = prompt(tr('add_group') + ':');
-                if (!name) return;
-                const newGroups = [
-                  ...(settingsData.donorGroups || []),
-                  { id: Date.now().toString(), name, donors: [], messages: [] },
-                ];
-                onSettingsChange({ ...settingsData, donorGroups: newGroups });
-              }}
-            >
-              + {tr('add_group')}
-            </button>
-          </div>
-
-          <div className="donor-groups-list flex-v gap-24">
-            {/* Special 'all' group */}
-            <DonorGroupCard
-              group={
-                (settingsData.donorGroups || []).find((g) => g.id === 'all') || {
-                  id: 'all',
-                  name: tr('all_other_donors'),
-                  donors: [],
-                  messages: [],
+            <div className="donor-groups-list flex-v gap-24">
+              {/* Special 'all' group */}
+              <DonorGroupCard
+                group={
+                  (settingsData.donorGroups || []).find((g) => g.id === 'all') || {
+                    id: 'all',
+                    name: tr('all_other_donors'),
+                    donors: [],
+                    messages: [],
+                  }
                 }
-              }
-              allDonors={(scrapedDonors || []).map(u => `https://www.instagram.com/${u}/`)}
-              onUpdate={(updated) => {
-                const groups = settingsData.donorGroups || [];
-                const exists = groups.some((g) => g.id === 'all');
-                const newGroups = exists
-                  ? groups.map((g) => (g.id === 'all' ? updated : g))
-                  : [updated, ...groups];
-                onSettingsChange({ ...settingsData, donorGroups: newGroups });
-              }}
-              onDelete={() => { }}
-              isAll={true}
-              tr={tr}
-              TrashIcon={TrashIcon}
-              settingsData={settingsData}
-            />
+                allDonors={(scrapedDonors || []).map(u => `https://www.instagram.com/${u}/`)}
+                onUpdate={(updated) => {
+                  const groups = settingsData.donorGroups || [];
+                  const exists = groups.some((g) => g.id === 'all');
+                  const newGroups = exists
+                    ? groups.map((g) => (g.id === 'all' ? updated : g))
+                    : [updated, ...groups];
+                  onSettingsChange({ ...settingsData, donorGroups: newGroups });
+                }}
+                onDelete={() => { }}
+                isAll={true}
+                tr={tr}
+                TrashIcon={TrashIcon}
+                settingsData={settingsData}
+              />
 
-            {/* Other groups */}
-            {(settingsData.donorGroups || [])
-              .filter((g) => g.id !== 'all')
-              .map((group) => (
-                <DonorGroupCard
-                  key={group.id}
-                  group={group}
-                  allDonors={(scrapedDonors || []).map(u => `https://www.instagram.com/${u}/`)}
-                  onUpdate={(updated) => {
-                    const newGroups = settingsData.donorGroups.map((g) =>
-                      g.id === group.id ? updated : g
-                    );
-                    onSettingsChange({ ...settingsData, donorGroups: newGroups });
-                  }}
-                  onDelete={() => {
-                    if (!confirm('Удалить эту группу?')) return;
-                    const newGroups = settingsData.donorGroups.filter((g) => g.id !== group.id);
-                    onSettingsChange({ ...settingsData, donorGroups: newGroups });
-                  }}
-                  tr={tr}
-                  TrashIcon={TrashIcon}
-                  settingsData={settingsData}
-                />
-              ))}
+              {/* Other groups */}
+              {(settingsData.donorGroups || [])
+                .filter((g) => g.id !== 'all')
+                .map((group) => (
+                  <DonorGroupCard
+                    key={group.id}
+                    group={group}
+                    allDonors={(scrapedDonors || []).map(u => `https://www.instagram.com/${u}/`)}
+                    onUpdate={(updated) => {
+                      const newGroups = settingsData.donorGroups.map((g) =>
+                        g.id === group.id ? updated : g
+                      );
+                      onSettingsChange({ ...settingsData, donorGroups: newGroups });
+                    }}
+                    onDelete={() => {
+                      if (!confirm('Удалить эту группу?')) return;
+                      const newGroups = settingsData.donorGroups.filter((g) => g.id !== group.id);
+                      onSettingsChange({ ...settingsData, donorGroups: newGroups });
+                    }}
+                    tr={tr}
+                    TrashIcon={TrashIcon}
+                    settingsData={settingsData}
+                  />
+                ))}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }

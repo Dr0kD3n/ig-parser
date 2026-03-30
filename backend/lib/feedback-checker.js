@@ -41,116 +41,111 @@ async function checkFeedback() {
     checkerStatus.total = targets.length;
     checkerStatus.status = 'Opening inbox...';
 
-    const showBrowser = await getSetting('showBrowser') === true;
-
     const accounts = await getAllAccounts('server');
-
     if (accounts.length === 0) {
         checkerStatus = { running: false, status: 'No accounts assigned', current: 0, total: 0 };
         return;
     }
 
-    const account = accounts[0]; // Use first sender account
-    const browserConfig = {
-        id: account.id,
-        proxy: account.proxy,
-        cookies: account.cookies,
-        fingerprint: account.fingerprint,
-        timeouts: { pageLoad: 60000 }
-    };
+    const showBrowser = await getSetting('showBrowser') === true;
 
-    let { browser, context } = await createBrowserContext(browserConfig, !showBrowser);
-    const liveInterval = startLiveView(context);
+    for (const account of accounts) {
+        if (checkerStopRequested) break;
 
-    const page = await context.newPage();
+        checkerStatus.status = `Checking inbox: ${account.name}...`;
 
-    try {
-        await page.goto('https://www.instagram.com/direct/inbox/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await wait(5000);
+        const browserConfig = {
+            id: account.id,
+            proxy: account.proxy,
+            cookies: account.cookies,
+            fingerprint: account.fingerprint,
+            timeouts: { pageLoad: 60000 }
+        };
 
-        // Close any "Notifications" or "App info" dialogs
-        const notNow = page.locator('button:has-text("Not Now"), button:has-text("Не сейчас")').first();
-        if (await notNow.isVisible()) {
-            await notNow.click();
-            await wait(1000);
-        }
+        let { browser, context } = await createBrowserContext(browserConfig, !showBrowser);
+        const liveInterval = startLiveView(context);
+        const page = await context.newPage();
 
-        // The chat list container
-        const scrollableSelector = 'div[role="navigation"] div.xb57i2i, div[role="main"] div.xb57i2i'; // Tentative based on user's deep path
+        try {
+            await page.goto('https://www.instagram.com/direct/inbox/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await wait(5000);
 
-        let checkedUrls = new Set();
-        let scrollAttempts = 0;
-        const maxScrollAttempts = 30; // Increased search depth but faster steps
-        let lastItemText = '';
-
-        while (scrollAttempts < maxScrollAttempts && !checkerStopRequested) {
-            if (checkedUrls.size >= targets.length) {
-                logger.info('✅ All targets checked, finishing early.');
-                break;
+            // Close dialogs
+            const notNow = page.locator('button:has-text("Not Now"), button:has-text("Не сейчас"), button:has-text("Save Info")').first();
+            if (await notNow.isVisible()) {
+                await notNow.click();
+                await wait(1000);
             }
 
-            const chatItems = await page.locator('div[role="listitem"], div[role="row"]').all();
-            if (chatItems.length === 0) break;
+            let checkedUrls = new Set();
+            let scrollAttempts = 0;
+            const maxScrollAttempts = 20;
+            let lastItemText = '';
 
-            const currentLastItemText = await chatItems[chatItems.length - 1].innerText();
+            // Filter targets that were sent from THIS account, or targets where sender is unknown
+            const accountTargets = targets.filter(t => !t.account_id || t.account_id === account.id);
 
-            for (const item of chatItems) {
-                if (checkerStopRequested) break;
+            while (scrollAttempts < maxScrollAttempts && !checkerStopRequested) {
+                if (page.isClosed()) break;
 
-                const innerText = await item.innerText();
+                const chatItems = await page.locator('[role="listitem"], [role="row"]').all();
+                if (chatItems.length === 0) break;
 
-                // STRICT matching by Name (as per user request)
-                const matchedProfile = targets.find(t => {
-                    if (checkedUrls.has(t.url)) return false;
-                    const cleanName = (t.name || '').trim();
-                    return cleanName && innerText.includes(cleanName);
-                });
+                const currentLastItemText = await chatItems[chatItems.length - 1].innerText().catch(() => '');
 
-                if (matchedProfile) {
-                    let newStatus = null;
-                    const blueDot = item.locator('div[style*="rgb(var(--ig-outgoing-message-bubble))"], div[style*="rgb(0, 149, 246)"]').first();
+                for (const item of chatItems) {
+                    if (checkerStopRequested || page.isClosed()) break;
 
-                    if (await blueDot.isVisible()) {
-                        newStatus = 'replied';
-                        logger.info(`✨ Found reply: ${matchedProfile.name}`);
-                    } else if (innerText.toLowerCase().includes('liked a message') || innerText.toLowerCase().includes('отметил(а) «нравится»')) {
-                        newStatus = 'liked';
-                        logger.info(`❤️ Found like: ${matchedProfile.name}`);
+                    const innerText = (await item.innerText().catch(() => '')).trim();
+                    if (!innerText) continue;
+
+                    const matchedProfile = accountTargets.find(t => {
+                        if (checkedUrls.has(t.url)) return false;
+                        const cleanName = (t.name || '').trim();
+                        const cleanUser = (t.username || '').trim();
+                        return (cleanName && innerText.includes(cleanName.slice(0, 15))) ||
+                            (cleanUser && innerText.includes(cleanUser));
+                    });
+
+                    if (matchedProfile) {
+                        let newStatus = null;
+                        const blueDot = item.locator('div[style*="rgb(0, 149, 246)"], div[style*="rgb(var(--ig-primary-button))"]').first();
+
+                        if (await blueDot.isVisible().catch(() => false)) {
+                            newStatus = 'replied';
+                            logger.info(`✨ [${account.name}] Found reply from: ${matchedProfile.name}`);
+                        } else if (innerText.toLowerCase().includes('liked') || innerText.toLowerCase().includes('нравится')) {
+                            newStatus = 'liked';
+                            logger.info(`❤️ [${account.name}] Found like from: ${matchedProfile.name}`);
+                        }
+
+                        if (newStatus) {
+                            await db.run(`UPDATE messages_log SET status = ? WHERE id = ?`, [newStatus, matchedProfile.id]);
+                            await db.run(`UPDATE profiles SET dm_status = ? WHERE url = ?`, [newStatus, matchedProfile.url]);
+                            checkerStatus.current++;
+                        }
+                        checkedUrls.add(matchedProfile.url);
                     }
-
-                    if (newStatus) {
-                        await db.run(`UPDATE messages_log SET status = ? WHERE id = ?`, [newStatus, matchedProfile.id]);
-                        checkerStatus.current++;
-                    }
-                    checkedUrls.add(matchedProfile.url);
                 }
+
+                if (currentLastItemText === lastItemText && scrollAttempts > 3) break;
+                lastItemText = currentLastItemText;
+                await page.mouse.wheel(0, 1200);
+                await wait(1500);
+                scrollAttempts++;
+                checkerStatus.status = `Scanning: ${account.name} (${checkedUrls.size}/${accountTargets.length})...`;
             }
-
-
-            if (currentLastItemText === lastItemText && scrollAttempts > 5) {
-                logger.info('Reached end of inbox list.');
-                break;
-            }
-            lastItemText = currentLastItemText;
-
-            // Faster scroll and shorter wait
-            await page.mouse.wheel(0, 1500);
-            await wait(1000);
-            scrollAttempts++;
-            checkerStatus.status = `Scanning inbox (${checkedUrls.size}/${targets.length})...`;
+        } catch (e) {
+            logger.error(`Error checking ${account.name}: ${e.message}`);
+        } finally {
+            clearInterval(liveInterval);
+            if (context) await context.close().catch(() => { });
+            if (browser) await browser.close().catch(() => { });
         }
-
-
-        checkerStatus.status = 'Finished';
-    } catch (e) {
-        logger.error(`Feedback checker error: ${e.message}`);
-        checkerStatus.status = `Error: ${e.message}`;
-    } finally {
-        clearInterval(liveInterval);
-        await context.close();
-        if (browser) await browser.close();
-        checkerStatus.running = false;
     }
+
+    checkerStatus.status = 'Finished';
+    checkerStatus.running = false;
 }
 
 function getCheckerStatus() {

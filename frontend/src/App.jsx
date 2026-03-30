@@ -62,7 +62,6 @@ export default function App() {
   const [votes, setVotes] = useState({});
   const [viewed, setViewed] = useState(() => safeStorage.parse('ig_viewed_profiles', []));
   const [sentDM, setSentDM] = useState(() => safeStorage.parse('ig_sent_dm', []));
-  const [tgTagged, setTgTagged] = useState(() => safeStorage.parse('ig_tg_tagged', []));
   const [failedImages, setFailedImages] = useState(new Set());
 
   const [settingsData, setSettingsData] = useState(() => {
@@ -79,6 +78,7 @@ export default function App() {
       showBrowser: false,
       humanEmulation: false,
       concurrentProfiles: 3,
+      dmLimit: 20,
       donorGroups: [],
     };
     return { ...defaultState, ...safeStorage.parse('ig_settings', {}) };
@@ -98,9 +98,15 @@ export default function App() {
   const [restoreStatus, setRestoreStatus] = useState({ running: false, current: 0, total: 0 });
   const [massMessagingStatus, setMassMessagingStatus] = useState({ running: false, current: 0, total: 0 });
 
+  const [cityOnly, setCityOnly] = useState(() => safeStorage.getItem('ig_city_only', 'false') === 'true');
+
   useEffect(() => {
     safeStorage.setItem('ig_active_tab', activeTab);
   }, [activeTab]);
+
+  useEffect(() => {
+    safeStorage.setItem('ig_city_only', String(cityOnly));
+  }, [cityOnly]);
 
   const handleLoginSuccess = (newToken, newUser) => {
     setToken(newToken);
@@ -168,12 +174,11 @@ export default function App() {
 
       const viewedArr = safeStorage.parse('ig_viewed_profiles', []);
       const sentArr = safeStorage.parse('ig_sent_dm', []);
-      const taggedArr = safeStorage.parse('ig_tg_tagged', []);
 
       girlsData.forEach((g) => {
         g.viewed = g.viewed || viewedArr.includes(g.url);
         g.dmSent = g.dmSent || sentArr.includes(g.url);
-        g.tgTagged = g.tgTagged || taggedArr.includes(g.url);
+        // tgTagged is now handled by backend
       });
       setGirls(girlsData);
       setVotes(votesData || {});
@@ -200,6 +205,7 @@ export default function App() {
           showBrowser: data.showBrowser || false,
           humanEmulation: data.humanEmulation || false,
           concurrentProfiles: data.concurrentProfiles || 3,
+          dmLimit: data.dmLimit || 20,
           donorGroups: Array.isArray(data.donorGroups) ? data.donorGroups : [],
         }));
         pendingSave.current = false; // Reset dirty flag after polling
@@ -340,17 +346,17 @@ export default function App() {
 
   const handleVote = useCallback(
     async (g, status) => {
-      if (status === 'like') {
-        setTgTagged((prev) => {
-          const next = prev.filter((u) => u !== g.url);
-          safeStorage.setItem('ig_tg_tagged', JSON.stringify(next));
-          return next;
+      if (status === 'like' && g.tgTagged) {
+        authFetch('/api/profiles/tag-tg', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: g.url, tagged: false }),
         });
       }
       setVotes((prev) => ({ ...prev, [g.url]: status || '' }));
       setGirls((prev) =>
         prev.map((p) =>
-          p.url === g.url ? { ...p, status, tgTagged: status === 'like' ? false : p.tgTagged } : p
+          p.url === g.url ? { ...p, status } : p
         )
       );
       authFetch('/api/vote', {
@@ -418,29 +424,29 @@ export default function App() {
 
   const handleTagTg = useCallback(
     async (g) => {
-      const isCurrentlyTagged = tgTagged.includes(g.url);
-      let nextTagged;
-      if (isCurrentlyTagged) {
-        nextTagged = tgTagged.filter((u) => u !== g.url);
-      } else {
-        nextTagged = [...tgTagged, g.url];
-        if (votes[g.url] === 'like') handleVote(g, '');
-      }
-      setTgTagged(nextTagged);
-      safeStorage.setItem('ig_tg_tagged', JSON.stringify(nextTagged));
+      // If currently 1 or 2, toggle to 0. If currently 0, toggle to 1.
+      const nextStatus = (g.tgTagged === 1 || g.tgTagged === 2) ? 0 : 1;
+
       setGirls((prev) =>
         prev.map((p) =>
           p.url === g.url
             ? {
               ...p,
-              tgTagged: !isCurrentlyTagged,
-              status: !isCurrentlyTagged && p.status === 'like' ? '' : p.status,
+              tgTagged: nextStatus,
             }
             : p
         )
       );
+
+      authFetch('/api/profiles/tag-tg', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: g.url, tagged: nextStatus === 1 }),
+      });
+
+      // No longer automatically clearing vote/status when tagging
     },
-    [tgTagged, votes, handleVote]
+    [authFetch]
   );
 
   const handleDeleteProfile = async (url) => {
@@ -603,6 +609,7 @@ export default function App() {
 
   const unopenedCount = girls.filter((g) => !g.viewed).length;
   const likesCount = Object.values(votes).filter((v) => v === 'like').length;
+  const massMsgCount = girls.filter(g => !g.dmSent && (cityOnly ? g.isInCity : (!g.isInCity || g.isInCity === 0))).length;
 
   return (
     <div className="app">
@@ -617,7 +624,7 @@ export default function App() {
               {tr('viewed')} <b>{viewed.length}</b>
             </span>
             <span>
-              {tr('dm_sent')} <b className="color-accent">{sentDM.length}</b>
+              {tr('dm_sent')} <b className="color-accent">{girls.filter(g => g.dmSent).length}</b>
             </span>
             <div className="stats-divider" />
             <span>
@@ -648,7 +655,7 @@ export default function App() {
             { id: 'profiles', label: tr('tab_profiles') },
             { id: 'controls', label: tr('tab_execution') },
             { id: 'settings', label: tr('tab_configuration') },
-            { id: 'stats', label: tr('tab_stats') },
+            { id: 'stats', label: tr('tab_messages') },
           ].map(({ id, label }) => (
             <button
               key={id}
@@ -667,7 +674,7 @@ export default function App() {
               style={{ backgroundColor: 'var(--color-primary-alt)' }}
               onClick={handleMassMessaging}
             >
-              {massMessagingStatus.running ? `Стоп ${massMessagingStatus.current}/${massMessagingStatus.total}` : tr('btn_mass_dm')}
+              {massMessagingStatus.running ? `Стоп ${massMessagingStatus.current}/${massMessagingStatus.total}` : `${tr('btn_mass_dm')} (${massMsgCount})`}
             </button>
             <button
               className="btn-primary btn-tg btn-sm"
@@ -722,6 +729,8 @@ export default function App() {
             isLoading={isLoading}
             authFetch={authFetch}
             token={token}
+            cityOnly={cityOnly}
+            setCityOnly={setCityOnly}
           />
         )}
 

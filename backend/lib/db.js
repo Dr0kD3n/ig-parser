@@ -83,6 +83,7 @@ async function getDB() {
             vote TEXT, -- 'like', 'dislike'
             tg_status TEXT, -- 'valid', 'invalid', NULL
             dmSent INTEGER DEFAULT 0,
+            tgTagged INTEGER DEFAULT 0,
             isInCity INTEGER DEFAULT 0,
             timestamp TEXT
         );
@@ -266,10 +267,41 @@ async function getDB() {
   }
 
   try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN tgTagged INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN dmError TEXT`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
     await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN username TEXT`);
   } catch (e) {
     // Ignore
   }
+
+  try {
+    await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN account_id TEXT`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
+    await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN sender_name TEXT`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
+    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN dm_status TEXT`);
+  } catch (e) {
+    // Ignore
+  }
+
 
   // Seeding removed for security.
   /*
