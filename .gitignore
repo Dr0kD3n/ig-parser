@@ -3,7 +3,10 @@ node_modules
 data/
 dist/
 tmp/
-*.sqlite
 *.sqlite-shm
 *.sqlite-wal
 .env
+# Allowing the main config data as per user's "save these data" request
+!config/database.sqlite
+!backend/config/database.sqlite
+!backups/database_2026*.sqlite
