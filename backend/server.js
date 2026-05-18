@@ -42,8 +42,6 @@ try {
 const { handleError, expressErrorHandler, setupProcessHandlers } = require('./lib/error-handler');
 const { verifyToken, isAdmin } = require('./lib/auth-middleware');
 const { rateLimit } = require('express-rate-limit');
-const updater = require('./lib/updater');
-const pkg = JSON.parse(fs_1.readFileSync(path_1.join(__dirname, 'package.json'), 'utf8'));
 const { encrypt, decrypt } = require('./lib/encryption');
 
 // Rate limiters
@@ -182,7 +180,7 @@ const CONFIG = {
       'div[role="dialog"] button:has-text("Написать")',
       'div[role="dialog"] button:has-text("Send message")',
     ],
-    chatInput: 'div[role="textbox"][contenteditable="true"]',
+    chatInput: 'div[role="textbox"][contenteditable="true"], div[aria-label="Message"], div[aria-label="Напишите сообщение..."], [aria-label="Message"], [aria-label="Напишите сообщение..."]',
     notNowBtn: ['button:has-text("Не сейчас")', 'button:has-text("Not Now")'],
     messageRow: 'div[role="row"], div[role="listitem"]',
   },
@@ -1079,6 +1077,14 @@ app.post('/api/donors', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Missing url' });
   }
   try {
+    const normUrl = (0, config_1.normalizeUrl)(url);
+    const existingDonors = await state_1.StateManager.loadDonors();
+    const collectedUrls = new Set(existingDonors.map(d => (0, config_1.normalizeUrl)(d.url)));
+
+    if (collectedUrls.has(normUrl) || state_1.StateManager.has(normUrl)) {
+      return res.json({ success: false, error: 'Donor already exists or was processed' });
+    }
+
     await state_1.StateManager.saveDonor(url);
     res.json({ success: true });
   } catch (e) {
@@ -1355,34 +1361,6 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// Update Routes
-app.get('/api/update/check', async (req, res) => {
-  try {
-    const latest = await updater.getLatestRelease();
-    const hasUpdate = latest.tag_name !== `v${pkg.version}`;
-    res.json({
-      currentVersion: pkg.version,
-      latestVersion: latest.tag_name.replace('v', ''),
-      hasUpdate,
-      releaseNotes: latest.body,
-    });
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to check for updates' });
-  }
-});
-
-app.post('/api/update/install', isAdmin, async (req, res) => {
-  try {
-    const latest = await updater.getLatestRelease();
-    res.json({ success: true, message: 'Update started. The application will restart.' });
-    // Run update in next tick so response can be sent
-    setImmediate(async () => {
-      await updater.performUpdate(latest);
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, async () => {
     await state_1.StateManager.init();
@@ -1451,18 +1429,25 @@ const sendMessageToProfile = async (context, url, message) => {
     await accessButton.click();
     await browser_1.takeLiveScreenshot(page);
     try {
+      // 1. Wait for ANY of the possible gates to the chat
       await Promise.race([
-        page.waitForSelector(CONFIG.selectors.chatInput, { state: 'visible', timeout: 15000 }),
-        page.waitForSelector(getSelectorString('notNowBtn'), { state: 'visible', timeout: 15000 }),
+        page.waitForSelector(CONFIG.selectors.chatInput, { state: 'visible', timeout: 30000 }),
+        page.waitForSelector(getSelectorString('notNowBtn'), { state: 'visible', timeout: 30000 }),
+        page.waitForSelector('text="Send message", text="Отправить сообщение", text="Сообщение"', { state: 'visible', timeout: 30000 })
       ]);
+
+      // 2. Handle "Not Now" if it appears
+      const notNowBtn = page.locator(getSelectorString('notNowBtn')).first();
+      if (await notNowBtn.isVisible()) {
+        await notNowBtn.click();
+        await (0, utils_1.wait)(2000);
+      }
+
+      // 3. Final wait for the actual input textbox
+      await page.waitForSelector(CONFIG.selectors.chatInput, { state: 'visible', timeout: 15000 });
     } catch (e) {
-      console.log('❌ Тайм-аут: чат не открылся.');
+      console.log('❌ Тайм-аут: чат не открылся или поле ввода не найдено.');
       return false;
-    }
-    const notNowBtn = page.locator(getSelectorString('notNowBtn')).first();
-    if (await notNowBtn.isVisible()) {
-      await notNowBtn.click();
-      await (0, utils_1.wait)(1500);
     }
     const chatInput = page.locator(CONFIG.selectors.chatInput).first();
     if (!(await chatInput.isVisible())) {

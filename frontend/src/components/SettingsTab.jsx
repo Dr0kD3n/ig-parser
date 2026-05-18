@@ -141,38 +141,7 @@ export default function SettingsTab({
     userAgent: '',
     fingerprint: '',
   });
-  const [updateInfo, setUpdateInfo] = useState(null);
-  const [isUpdating, setIsUpdating] = useState(false);
 
-
-  React.useEffect(() => {
-    const checkUpdates = async () => {
-      try {
-        const res = await authFetch('/api/update/check');
-        const data = await res.json();
-        setUpdateInfo(data);
-      } catch (e) {
-        console.error('Update check failed', e);
-      }
-    };
-    checkUpdates();
-  }, [authFetch]);
-
-  const handleInstallUpdate = async () => {
-    if (!window.confirm(tr('btn_install_update') + '?')) return;
-    setIsUpdating(true);
-    try {
-      const res = await authFetch('/api/update/install', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        toast.success(data.message);
-        // The backend will exit, so we should probably show a "Reconnecting..." state
-      }
-    } catch (e) {
-      toast.error('Update failed: ' + e.message);
-      setIsUpdating(false);
-    }
-  };
   const setAccounts = (accounts) => onSettingsChange({ ...settingsData, accounts });
   const handleAdd = () => {
     const nameEl = document.getElementById('new-acc-name');
@@ -417,18 +386,6 @@ export default function SettingsTab({
               }
             />
           </label>
-          {updateInfo?.hasUpdate && (
-            <button
-              className={`btn-primary btn-sm ${isUpdating ? 'loading' : ''}`}
-              onClick={handleInstallUpdate}
-              disabled={isUpdating}
-              style={{ backgroundColor: 'var(--accent-color)', marginLeft: '10px' }}
-            >
-              {isUpdating
-                ? tr('checking_updates')
-                : tr('update_available').replace('{version}', updateInfo.latestVersion)}
-            </button>
-          )}
         </div>
       </div>
 

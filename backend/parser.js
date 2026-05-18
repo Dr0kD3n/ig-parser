@@ -158,87 +158,59 @@ const run = async () => {
           const { keyword, city, niche } = kwObj;
           try {
             console.log(`\n🔎 Ищем профили по запросу: "${keyword}"`);
-            await (0, utils_1.humanClick)(page, searchInputLocator, { clickCount: 3 });
-            await page.keyboard.press('Backspace');
-            await (0, utils_1.wait)(500);
-            await searchInputLocator.pressSequentially(keyword, {
-              delay: Math.floor(Math.random() * (120 - 50 + 1) + 50),
-            });
-            info(`⏳ Ждем результаты поиска от Instagram...`);
-            await (0, browser_1.takeLiveScreenshot)(page);
-            await (0, utils_1.wait)(4000);
-            await (0, browser_1.takeLiveScreenshot)(page);
+            await (0, utils_1.wait)(1000);
 
-            // ... eval search results ...
-            const searchResultsData = await page.evaluate(() => {
-              const results = [];
-              const searchInput = document.querySelector(
-                'input[aria-label*="Search"], input[aria-label*="Поиск"], input[aria-label*="Recherche"], input[aria-label*="Buscar"], input[placeholder*="Search"], input[placeholder*="Поиск"], input[placeholder*="Recherche"], input[placeholder*="Buscar"]'
-              );
-              if (!searchInput) return { links: [], container: 'NOT_FOUND' };
+            // More aggressive API fetch using multiple endpoints to ensure >5 results
+            info(`📡 [API] Глубокий поиск профилей для: "${keyword}"`);
+            const apiLinks = await page.evaluate(async (kw) => {
+              try {
+                const results = [];
+                // 1. Topsearch (Blended)
+                const topSearchUrl = `https://www.instagram.com/api/v1/web/search/topsearch/?context=blended&query=${encodeURIComponent(kw)}&rank_token=${Math.random()}`;
+                // 2. Specialized User Search
+                const userSearchUrl = `https://www.instagram.com/api/v1/users/search/?q=${encodeURIComponent(kw)}&count=50`;
 
-              const containerSelectors = [
-                'div[role="none"] div[role="none"]',
-                'div.x1iyjqo2',
-                'div.x1n2onr6.x1ja2u2z',
-                'div[role="dialog"]',
-                'div[style*="position: absolute"]',
-              ];
-              let resultsContainer = null;
-              let foundSelector = 'NONE';
-
-              for (const sel of containerSelectors) {
-                const el = document.querySelector(sel);
-                if (el && el.querySelectorAll('a[href]').length > 0) {
-                  resultsContainer = el;
-                  foundSelector = sel;
-                  break;
-                }
-              }
-
-              const searchLinks = resultsContainer
-                ? resultsContainer.querySelectorAll('a[href]')
-                : document.querySelectorAll(
-                  'div[role="dialog"] a[href], div[style*="position: absolute"] a[href]'
-                );
-              searchLinks.forEach((a) => {
-                const href = a.getAttribute('href');
-                if (href && href.startsWith('/') && href.split('/').length === 3) {
-                  if (
-                    !href.includes('/explore/') &&
-                    !href.includes('/p/') &&
-                    !href.includes('/tags/')
-                  ) {
-                    const isSuggested =
-                      a.closest('aside') || a.closest('div[aria-label="Suggested"]');
-                    const hasSuggestedClasses =
-                      a.closest('div.x9f619.x1n2onr6.x1ja2u2z') && !resultsContainer;
-                    if (!isSuggested && !hasSuggestedClasses) {
-                      results.push(`https://www.instagram.com${href}`);
+                const fetchResults = async (url) => {
+                  try {
+                    const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                    const json = await res.json();
+                    if (json.users && Array.isArray(json.users)) {
+                      return json.users.map(u => {
+                        const user = u.user || u;
+                        return user.username ? `https://www.instagram.com/${user.username}/` : null;
+                      }).filter(Boolean);
                     }
-                  }
-                }
-              });
-              return { links: results, container: foundSelector };
-            });
+                  } catch (e) { }
+                  return [];
+                };
 
-            const { links, container } = searchResultsData;
-            info(
-              `📡 [DEBUG] Контейнер результатов: ${container} | Найдено ссылок: ${links.length}`
-            );
+                const [topResults, userResults] = await Promise.all([
+                  fetchResults(topSearchUrl),
+                  fetchResults(userSearchUrl)
+                ]);
 
-            const uniqueLinks = [...new Set(links)];
-            const finalLinks = uniqueLinks.slice(0, 5);
+                return [...topResults, ...userResults];
+              } catch (e) {
+                return [];
+              }
+            }, keyword).catch(() => []);
+
+            await (0, browser_1.takeLiveScreenshot)(page);
+            await (0, utils_1.wait)(1000);
+
+            const uniqueLinks = [...new Set(apiLinks)];
+            const finalLinks = uniqueLinks.slice(0, 30); // Target up to 30
             let addedCount = 0;
             for (const link of finalLinks) {
               const normLink = (0, config_1.normalizeUrl)(link);
-              if (!collectedUrls.has(normLink)) {
+              // Check both current donors and history
+              if (!collectedUrls.has(normLink) && !state_1.StateManager.has(normLink)) {
                 collectedUrls.add(normLink);
                 await state_1.StateManager.saveDonor(normLink, niche, city);
                 addedCount++;
               }
             }
-            info(`✅ Найдено профилей: ${finalLinks.length} | Из них новых: ${addedCount}`);
+            info(`✅ Всего найдено: ${uniqueLinks.length} | Взято: ${finalLinks.length} | Новых: ${addedCount}`);
             await (0, utils_1.wait)(2000 + Math.random() * 3000);
           } catch (itemErr) {
             handleError(

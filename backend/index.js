@@ -59,6 +59,8 @@ const SELECTORS = {
     '#mount_0_0_TP > div > div > div.x9f619.x1n2onr6.x1ja2u2z > div > div > div.x78zum5.xdt5ytf.x1t2pt76.x1n2onr6.x1ja2u2z.x10cihs4 > div.html-div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x9f619.x16ye13r.xvbhtw8.x78zum5.x15mokao.x1ga7v0g.x16uus16.xbiv7yw.x1uhb9sk.x1plvlek.xryxfnj.x1c4vz4f.x2lah0s.x1q0g3np.xqjyukv.x1qjc9v5.x1oa3qoh.x1qughib > div.x10o80wk.x14k21rp.xh8yej3 > section > main > div > div > header > div > section.x98rzlu.xeuugli > div.x7a106z.x972fbf.x10w94by.x1qhh985.x14e42zd.x9f619.x78zum5.xdt5ytf.x1yztbdb.xw7yly9.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x1n2onr6.x1r0jzty.x11njtxf.x1fkh5qu.x1ddbhtg.x1dlrdel > div.html-div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x9f619.xjbqb8w.x40hh3e.x78zum5.x15mokao.x1ga7v0g.x16uus16.xbiv7yw.x1uhb9sk.x1plvlek.xryxfnj.x1c4vz4f.x2lah0s.x1q0g3np.xqjyukv.x6s0dn4.x1oa3qoh.x1nhvcw1 > div:nth-child(2) > a > span',
   // Fallback for followers link
   FOLLOWERS_LINK_FALLBACK: 'a[href$="/followers/"]',
+  // Strict Full XPath as per user request
+  FOLLOWERS_LINK_STRICT: 'xpath=/html/body/div[1]/div/div/div[2]/div/div/div[1]/div[2]/div[2]/section/main/div/div/header/div/section[2]/div[1]/div[3]/div[2]/a',
   // User provided stable selector for scrollable modal body
   DIALOG_SCROLLABLE:
     'body > div.x1n2onr6.xzkaem6 > div:nth-child(2) > div > div > div.x9f619.x1n2onr6.x1ja2u2z > div > div.x1uvtmcs.x4k7w5x.x1h91t0o.x1beo9mf.xaigb6o.x12ejxvf.x3igimt.xarpa2k.xedcshv.x1lytzrv.x1t2pt76.x7ja8zs.x1n2onr6.x1qrby5j.x1jfb8zj > div > div > div > div > div.x7r02ix.x15fl9t6.x1yw9sn2.x1evh3fb.x4giqqa.xb88tzc.xw2csxc.x1odjw0f.x5fp0pe > div > div > div.x6nl9eh.x1a5l9x9.x7vuprf.x1mg3h75.x1lliihq.x1iyjqo2.xs83m0k.xz65tgg.x1rife3k.x1n2onr6',
@@ -498,20 +500,15 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     if (isBlocked) {
       throw new RotateAccountError('Action Blocked / Shadowban detected', config.target.names);
     }
-    logger.info(`   ✅ Страница донора загружена. Ищем кнопку подписчиков...`);
-    let followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK);
-    await followersBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
+    logger.info(`   ✅ Страница донора загружена. Ищем кнопку подписчиков (strict mode)...`);
+    const followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK_STRICT);
+    await followersBtn.waitFor({ state: 'visible', timeout: 8000 }).catch(() => null);
 
     if (!(await followersBtn.isVisible())) {
-      logger.info(`   🔄 Первый селектор не сработал, пробуем запасной...`);
-      followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK_FALLBACK);
-      await followersBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
-    }
-
-    if (!(await followersBtn.isVisible())) {
-      logger.warn(`   ⚠️ Кнопка подписчиков не найдена (возможно, аккаунт пуст или скрыт).`);
+      logger.warn(`   ⚠️ Кнопка подписчиков не найдена по строгому XPath.`);
       return;
     }
+
     // 4. Проверка количества подписчиков и сбор инфо о доноре
     const donorInfo = await page
       .evaluate(async (uname) => {

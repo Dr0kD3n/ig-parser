@@ -35,8 +35,8 @@ echo [3/4] Patching Playwright for portability...
 node scripts/patch-playwright-mcp.js
 echo.
 :: 4. Install Playwright Browsers
-echo [4/4] Installing Playwright browsers (Chrome Beta)...
-call npx playwright install chrome-beta --with-deps
+echo [4/4] Installing Playwright browsers (Nightly Chromium)...
+call npx playwright install chromium --with-deps
 if %errorlevel% neq 0 (
     echo.
     echo ERROR: Playwright browser installation failed.

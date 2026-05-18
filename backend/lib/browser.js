@@ -137,7 +137,6 @@ async function createBrowserContext(config, headless = false) {
         context = await playwright_extra_1.chromium.launchPersistentContext(userDataDir, {
           headless,
           ...contextOptions,
-          channel: 'chrome-beta',
           args: [
             '--lang=en-US',
             '--disable-blink-features=AutomationControlled',
@@ -157,7 +156,6 @@ async function createBrowserContext(config, headless = false) {
       } else {
         browser = await playwright_extra_1.chromium.launch({
           headless,
-          channel: 'chrome-beta',
           args: [
             '--disable-blink-features=AutomationControlled',
             '--mute-audio',

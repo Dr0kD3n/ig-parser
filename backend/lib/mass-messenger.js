@@ -95,9 +95,27 @@ async function sendMessageToProfile(context, url, message, config) {
         }
 
         // Wait for chat stabilizing
-        const inputSelector = 'div[role="textbox"][contenteditable="true"]';
-        await page.waitForSelector(inputSelector, { state: 'visible', timeout: 15000 }).catch(() => { });
-        await wait(2000); // Standard stabilization wait
+        const inputSelector = 'div[role="textbox"][contenteditable="true"], div[aria-label="Message"], div[aria-label="Напишите сообщение..."], [aria-label="Message"], [aria-label="Напишите сообщение..."]';
+        const notNowSelector = 'button:has-text("Not Now"), button:has-text("Не сейчас")';
+
+        try {
+            await Promise.race([
+                page.waitForSelector(inputSelector, { state: 'visible', timeout: 30000 }),
+                page.waitForSelector(notNowSelector, { state: 'visible', timeout: 30000 })
+            ]);
+
+            const notNow = page.locator(notNowSelector).first();
+            if (await notNow.isVisible()) {
+                await notNow.click();
+                await wait(2000);
+            }
+
+            // Final wait for input
+            await page.waitForSelector(inputSelector, { state: 'visible', timeout: 15000 });
+        } catch (e) {
+            logger.warn(`⚠️ Timeout waiting for chat input for ${url}`);
+        }
+        await wait(1000); // Stabilization wait
 
         // DISMISS "Not Now" if present
         const notNow = page.locator('button:has-text("Not Now"), button:has-text("Не сейчас")').first();

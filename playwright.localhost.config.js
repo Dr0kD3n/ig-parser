@@ -12,6 +12,11 @@ module.exports = defineConfig({
         trace: 'off',
         viewport: { width: 1280, height: 720 },
         headless: false,
+        locale: 'en-US',
+        timezoneId: 'America/New_York',
+        extraHTTPHeaders: {
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
     },
     projects: [
         {
