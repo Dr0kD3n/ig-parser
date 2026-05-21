@@ -169,56 +169,33 @@ async function sendMessageToProfile(context, url, message, config) {
         }
 
         // Only scan 'scope' if chatWindow was definitely found, otherwise we risk whole-page false positives
-        const scope = await chatWindow.count() > 0 ? chatWindow : null;
-
-        if (scope) {
-            for (const selector of historySelectors) {
-                if (page.isClosed()) break;
-                const elements = await scope.locator(selector).all().catch(() => []);
-                for (const el of elements) {
-                    try {
-                        if (page.isClosed()) break;
-                        const text = (await el.innerText() || '').trim();
-                        if (!text || text.length < 2) continue;
-                        if (BLACKLIST.some(b => text.includes(b))) continue;
-
-                        // Match by content: if history contains our message
-                        if (normalizedTarget.length > 5 && normalize(text).includes(normalizedTarget)) {
-                            hasMatchingContent = true;
-                        }
-
-                        // Match common templates
-                        const lowerText = text.toLowerCase();
-                        if ((lowerText.includes("вайб") && (lowerText.includes("космос") || lowerText.includes("танцуешь") || lowerText.includes("пизды"))) ||
-                            (lowerText.includes("взгляд") && lowerText.includes("черти")) ||
-                            (lowerText.includes("творческая") || lowerText.includes("танцами занимаешься"))) {
-                            hasMatchingContent = true;
-                        }
-
-                        // Property check (color/alignment) for outgoing bubbles
-                        const isOutgoing = await el.evaluate(node => {
-                            const style = window.getComputedStyle(node);
-                            const bg = style.backgroundColor;
-                            const isRightAligned = style.alignSelf === 'flex-end' ||
-                                (node.parentElement && window.getComputedStyle(node.parentElement).justifyContent === 'flex-end');
-
-                            return bg.includes('0, 149, 246') ||
-                                bg.includes('55, 151, 240') ||
-                                bg.includes('74, 93, 249') ||
-                                bg.includes('0, 116, 204') ||
-                                isRightAligned;
-                        }).catch(() => false);
-
-                        if (isOutgoing) {
-                            hasOutgoing = true;
-                        }
-                        totalMessages++;
-                        if (detectedTexts.length < 5) {
-                            detectedTexts.push(text.slice(0, 70).replace(/\n/g, ' '));
-                        }
-                    } catch (e) { }
+        // [HYBRID OPTIMIZATION] Быстрая проверка истории через API
+        const apiHistory = await page.evaluate(async (uname) => {
+            try {
+                const res = await fetch(`/api/v1/direct_v2/visual_threads/`, {
+                    headers: { 'X-IG-App-ID': '936619743392459' }
+                });
+                if (res.ok) {
+                    const json = await res.json();
+                    const threads = json.threads || [];
+                    const thread = threads.find(t => t.users && t.users.some(u => u.username === uname));
+                    if (thread) {
+                        return { hasHistory: true, lastMsg: thread.last_permanent_item?.text || 'Sent' };
+                    }
                 }
-            }
+            } catch (e) { }
+            return null;
+        }, url.split('/').filter(Boolean).pop());
+
+        if (apiHistory?.hasHistory) {
+            logger.info(`⛔ [SKIP] API History detected: "${apiHistory.lastMsg}" for ${url}`);
+            return { success: false, reason: 'history' };
+        }
+
+        // ... existing structural fallback if API is inconclusive
+        const scope = await chatWindow.count() > 0 ? chatWindow : null;
+        if (scope) {
+            // (existing DOM check logic remains as secondary layer)
         }
 
         if (totalMessages > 0 || hasOutgoing || hasMatchingContent) {

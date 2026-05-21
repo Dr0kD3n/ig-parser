@@ -55,10 +55,9 @@ function generateFingerprint() {
   // or just return them as separate fields for the UI and injector
 
   const screen = getScreenResolution();
-  // Randomize viewport to be 60-80% of screen size, accounting for taskbar/UI
-  const safeHeight = Math.max(600, screen.height - 120);
-  const width = Math.floor(screen.width * (0.6 + Math.random() * 0.2));
-  const height = Math.floor(safeHeight * (0.6 + Math.random() * 0.2));
+  // Ensure the viewport is at least a standard desktop resolution to prevent mobile mode
+  const width = Math.max(1280, Math.floor(screen.width * (0.7 + Math.random() * 0.2)));
+  const height = Math.max(800, Math.floor(screen.height * (0.7 + Math.random() * 0.2)));
 
   return {
     ...baseFP,

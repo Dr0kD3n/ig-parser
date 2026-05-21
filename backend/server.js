@@ -432,7 +432,7 @@ async function checkTelegramProfile(url) {
       }
     );
     req.on('error', reject);
-    req.setTimeout(10000, () => {
+    req.setTimeout(20000, () => {
       req.destroy();
       reject(new Error('Timeout'));
     });
@@ -925,7 +925,7 @@ app.get('/api/proxy-image', async (req, res) => {
               if (i === retries - 1) reject(e);
               else reject(e); // Will be caught by catch block
             });
-            proxyReq.setTimeout(15000, () => {
+            proxyReq.setTimeout(30000, () => {
               proxyReq.destroy();
               reject(new Error('Timeout'));
             });
@@ -951,6 +951,9 @@ app.get('/api/proxy-image', async (req, res) => {
           method: 'CONNECT',
           path: `${parsedUrl.hostname}:443`,
           headers: { 'Proxy-Authorization': authHeader },
+        });
+        connectReq.setTimeout(15000, () => {
+          connectReq.destroy();
         });
         connectReq.on('connect', async (_res, socket) => {
           if (_res.statusCode !== 200) {

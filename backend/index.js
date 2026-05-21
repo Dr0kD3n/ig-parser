@@ -43,7 +43,7 @@ const getDynamicConfig = async () => {
       typingDelayMin: 50,
       typingDelayMax: 150,
     },
-    scroll: { maxAttempts: 15, maxRetries: 3 },
+    scroll: { maxAttempts: 8, maxRetries: 3 },
     target: {
       cityKeywords: await config_1.getList('cityKeywords.txt'),
       names: shuffledNames,
@@ -55,10 +55,9 @@ const SELECTORS = {
   DIALOG: 'div[role="dialog"]',
   SEARCH_INPUT: 'div[role="dialog"] input',
   // User provided stable selector for followers link
-  FOLLOWERS_LINK:
-    '#mount_0_0_TP > div > div > div.x9f619.x1n2onr6.x1ja2u2z > div > div > div.x78zum5.xdt5ytf.x1t2pt76.x1n2onr6.x1ja2u2z.x10cihs4 > div.html-div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x9f619.x16ye13r.xvbhtw8.x78zum5.x15mokao.x1ga7v0g.x16uus16.xbiv7yw.x1uhb9sk.x1plvlek.xryxfnj.x1c4vz4f.x2lah0s.x1q0g3np.xqjyukv.x1qjc9v5.x1oa3qoh.x1qughib > div.x10o80wk.x14k21rp.xh8yej3 > section > main > div > div > header > div > section.x98rzlu.xeuugli > div.x7a106z.x972fbf.x10w94by.x1qhh985.x14e42zd.x9f619.x78zum5.xdt5ytf.x1yztbdb.xw7yly9.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x1n2onr6.x1r0jzty.x11njtxf.x1fkh5qu.x1ddbhtg.x1dlrdel > div.html-div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x9f619.xjbqb8w.x40hh3e.x78zum5.x15mokao.x1ga7v0g.x16uus16.xbiv7yw.x1uhb9sk.x1plvlek.xryxfnj.x1c4vz4f.x2lah0s.x1q0g3np.xqjyukv.x6s0dn4.x1oa3qoh.x1nhvcw1 > div:nth-child(2) > a > span',
+  FOLLOWERS_LINK: 'main header section a[href*="/followers/"], main header section div:nth-child(2) a',
   // Fallback for followers link
-  FOLLOWERS_LINK_FALLBACK: 'a[href$="/followers/"]',
+  FOLLOWERS_LINK_FALLBACK: 'a[href*="/followers/"]',
   // Strict Full XPath as per user request
   FOLLOWERS_LINK_STRICT: 'xpath=/html/body/div[1]/div/div/div[2]/div/div/div[1]/div[2]/div[2]/section/main/div/div/header/div/section[2]/div[1]/div[3]/div[2]/a',
   // User provided stable selector for scrollable modal body
@@ -209,6 +208,12 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
           logger.info(`      🛑 Список не меняется, завершаем.`);
           break;
         }
+      }
+
+      // Exit if we found enough profiles for this search (limit to 25 to save time)
+      if (collectedUrls.size >= 25) {
+        logger.info(`      🛑 Лимит сбора для одного поиска достигнут.`);
+        break;
       }
 
       if (Date.now() - lastResponseTime > 30000) {
@@ -397,13 +402,68 @@ const analyzeProfile = async (context, url, config, donor = '') => {
     } else {
       logger.error(`         ❌ Ошибка: Timeout при загрузке профиля.`);
     }
-    await (0, reporter_1.saveCrashReport)(
-      page,
-      e,
-      `analyze_profile_${url.split('/').filter(Boolean).pop()}`
-    );
   } finally {
     await page.close();
+  }
+};
+
+/**
+ * [HYBRID OPTIMIZATION] Быстрый анализ профиля через API внутри контекста браузера
+ */
+const analyzeProfileFast = async (context, url, config, donor = '') => {
+  if (state_1.StateManager.has(url)) return;
+  await state_1.StateManager.add(url);
+
+  const username = url.split('/').filter(Boolean).pop() || '';
+  logger.info(`      ⚡ Быстрый анализ (API): ${username}`);
+
+  try {
+    const page = context.pages()[0] || await context.newPage();
+    const data = await page.evaluate(async (uname) => {
+      try {
+        const res = await fetch(`/api/v1/users/web_profile_info/?username=${uname}`, {
+          headers: { 'X-IG-App-ID': '936619743392459' },
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const u = json.data?.user;
+          if (!u) return null;
+          return {
+            name: u.full_name || uname,
+            bio: u.biography || '',
+            photo: u.profile_pic_url_hd || u.profile_pic_url || '',
+            fCount: u.edge_followed_by?.count || 0,
+            pCount: u.edge_owner_to_timeline_media?.count || 0,
+            isPrivate: u.is_private
+          };
+        }
+      } catch (e) { }
+      return null;
+    }, username);
+
+    if (!data) {
+      // Fallback to slow method if API fails
+      return analyzeProfile(context, url, config, donor);
+    }
+
+    const searchString = `${data.name} ${data.bio} ${username}`.toLowerCase();
+    const isTarget = config.target.cityKeywords.some((kw) => searchString.includes(kw.toLowerCase()));
+
+    await state_1.StateManager.saveResult({
+      name: data.name,
+      username,
+      bio: data.bio,
+      photo: isAnonymousPhoto(data.photo) ? '' : data.photo,
+      url,
+      donor,
+      followers_count: data.fCount,
+      posts_count: data.pCount,
+      isInCity: isTarget ? 1 : 0
+    });
+
+    if (isTarget) logger.info(`         ✅ Целевой!`);
+  } catch (e) {
+    logger.error(`         ❌ Ошибка API анализа: ${e.message}`);
   }
 };
 const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
@@ -502,11 +562,37 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       throw new RotateAccountError('Action Blocked / Shadowban detected', config.target.names);
     }
     logger.info(`   ✅ Страница донора загружена. Ищем кнопку подписчиков (strict mode)...`);
-    const followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK_STRICT);
-    await followersBtn.waitFor({ state: 'visible', timeout: 8000 }).catch(() => null);
+    let followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK_STRICT);
+    await followersBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
 
     if (!(await followersBtn.isVisible())) {
-      logger.warn(`   ⚠️ Кнопка подписчиков не найдена по строгому XPath.`);
+      logger.warn(`   ⚠️ Кнопка не найдена по XPath, пробую запасные варианты...`);
+      // 1. Try by href (standard)
+      followersBtn = page.locator('a[href*="/followers/"]').first();
+
+      // 2. Try by language-agnostic pattern: Number + any word in the header links
+      if (!(await followersBtn.isVisible())) {
+        const headerLinks = page.locator('header a, header [role="link"]');
+        const count = await headerLinks.count();
+        for (let i = 0; i < count; i++) {
+          const link = headerLinks.nth(i);
+          const text = await link.innerText();
+          // Matches "123 word", "1.2K word", "1,200 word" in any language
+          if (/^[0-9,.KBM\s]+[^\s0-9]/i.test(text.trim())) {
+            followersBtn = link;
+            break;
+          }
+        }
+      }
+
+      // 3. Last resort: Common language terms
+      if (!(await followersBtn.isVisible())) {
+        followersBtn = page.locator('a').filter({ hasText: /followers|подписчиков|abonnés|seguidores|follower/i }).first();
+      }
+    }
+
+    if (!(await followersBtn.isVisible())) {
+      logger.warn(`   ⚠️ Кнопка подписчиков не найдена ни одним способом.`);
       return;
     }
 
@@ -654,7 +740,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       await searchInput.pressSequentially(name, { delay: typeDelay });
       logger.info(`      ⏳ Ждем выдачу результатов от Инстаграма...`);
       try {
-        await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 3000 });
+        await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 1500 });
       } catch (e) { }
       await (0, browser_1.takeLiveScreenshot)(page);
       await (0, utils_1.wait)(50);
@@ -709,8 +795,9 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
               break;
             }
             const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
-            await analyzeProfile(context, url, config, donorName);
-            const delay = 5000 + Math.random() * 5000;
+            // Используем быстрый анализ для ускорения в 10 раз
+            await analyzeProfileFast(context, url, config, donorName);
+            const delay = 2000 + Math.random() * 2000;
             logger.info(
               `👤 [HUMAN] Ожидание ${Math.round(delay / 1000)}с перед следующим профилем...`
             );
@@ -719,7 +806,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         } else {
           const chunkPromises = chunk.map((url) => {
             const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
-            return analyzeProfile(context, url, config, donorName);
+            return analyzeProfileFast(context, url, config, donorName);
           });
           await Promise.all(chunkPromises);
           await randomDelay(100, 300);
@@ -812,7 +899,7 @@ const run = async () => {
     for (let i = 0; i < DONOR_CHUNK_SIZE && donorIdx < donors.length; i++) {
       const d = donors[donorIdx];
       if (state_1.StateManager.hasDonor(d)) {
-        logger.info(`\n⏭️ Донор ${d} уже был обработан ранее, пропускаем.`);
+        logger.info(`\n⏭️ Донор ${d.url || d} уже был обработан ранее, пропускаем.`);
         donorIdx++;
         i--; // Stay in this slot
         continue;
