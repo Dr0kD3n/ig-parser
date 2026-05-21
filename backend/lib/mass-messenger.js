@@ -1,7 +1,7 @@
 'use strict';
 const { getDB } = require('./db');
 const { getAllAccounts, getSetting } = require('./config');
-const { createBrowserContext, startLiveView } = require('./browser');
+const { createBrowserContext, startLiveView, takeLiveScreenshot } = require('./browser');
 const { wait, humanType } = require('./utils');
 const logger = require('./logger');
 
@@ -20,8 +20,10 @@ async function sendMessageToProfile(context, url, message, config) {
     try {
         page = await context.newPage();
         logger.info(`🌐 Opening: ${url}`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await wait(2000); // Give it a moment to stabilize
+        // Используем 'commit' для мгновенного начала работы с DOM
+        await page.goto(url, { waitUntil: 'commit', timeout: 60000 });
+        await wait(1000);
+        await takeLiveScreenshot(page);
 
         const isDirectChat = page.url().includes('/direct/t/');
 
@@ -115,7 +117,7 @@ async function sendMessageToProfile(context, url, message, config) {
         } catch (e) {
             logger.warn(`⚠️ Timeout waiting for chat input for ${url}`);
         }
-        await wait(1000); // Stabilization wait
+        await wait(500); // Reduced stabilization wait
 
         // DISMISS "Not Now" if present
         const notNow = page.locator('button:has-text("Not Now"), button:has-text("Не сейчас")').first();

@@ -18,11 +18,10 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 node -v
-echo.
 :: 2. Install Project Dependencies
 echo [2/4] Installing production dependencies...
 set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-call npm install --omit=dev
+call npm install --omit=dev --legacy-peer-deps
 if %errorlevel% neq 0 (
     echo.
     echo ERROR: npm install failed.
@@ -35,8 +34,13 @@ echo [3/4] Patching Playwright for portability...
 node scripts/patch-playwright-mcp.js
 echo.
 :: 4. Install Playwright Browsers
-echo [4/4] Installing Playwright browsers (Nightly Chromium)...
-call npx playwright install chromium --with-deps
+echo [4/4] Cleaning old browsers and installing current version...
+for /f "tokens=*" %%v in ('node -e "console.log(require('./package.json').dependencies.playwright || require('./package.json').devDependencies.playwright)"') do set PW_VER=%%v
+if "%PW_VER%"=="undefined" set PW_VER=latest
+echo Cleaning old Playwright versions...
+call npx playwright@%PW_VER% uninstall --all
+echo Installing current Playwright browsers...
+call npx playwright@%PW_VER% install chromium --with-deps
 if %errorlevel% neq 0 (
     echo.
     echo ERROR: Playwright browser installation failed.

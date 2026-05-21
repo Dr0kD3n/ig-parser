@@ -41,8 +41,13 @@ if !errorlevel! neq 0 (
 
 :: 3. Install Playwright Browsers and System Dependencies
 echo.
-echo [3/4] Installing Playwright browsers and system dependencies...
-call npx playwright install --with-deps
+echo [3/4] Cleaning up old browsers and installing system dependencies...
+for /f "tokens=*" %%v in ('node -e "console.log(require('./package.json').dependencies.playwright || require('./package.json').devDependencies.playwright)"') do set PW_VER=%%v
+if "%PW_VER%"=="undefined" set PW_VER=latest
+echo Cleaning old Playwright versions...
+call npx playwright@%PW_VER% uninstall --all
+echo Installing current Playwright browsers...
+call npx playwright@%PW_VER% install --with-deps
 if !errorlevel! neq 0 (
     echo.
     echo ERROR: Playwright installation failed.

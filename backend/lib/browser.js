@@ -142,6 +142,7 @@ async function createBrowserContext(config, headless = false) {
             '--disable-blink-features=AutomationControlled',
             '--no-sandbox',
             '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
             '--disable-infobars',
             '--window-position=0,0',
             '--ignore-certificate-errors',
@@ -158,6 +159,8 @@ async function createBrowserContext(config, headless = false) {
           headless,
           args: [
             '--disable-blink-features=AutomationControlled',
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
             '--mute-audio',
             `--window-size=${viewport.width},${viewport.height}`,
           ],
@@ -168,10 +171,18 @@ async function createBrowserContext(config, headless = false) {
       }
     }
   } catch (e) {
-    throw new BrowserError(`Failed to launch browser: ${e.message}`, { configId: config.id });
+    let msg = e.message;
+    if (msg.includes('Executable doesn\'t exist')) {
+      msg = `Browser not found. Please run 'npx playwright install chromium' to fix. Original error: ${msg}`;
+    } else if (msg.includes('shared libraries')) {
+      msg = `Missing system dependencies. If on Linux, run 'npx playwright install-deps' as root. Original error: ${msg}`;
+    }
+    throw new BrowserError(`Failed to launch browser: ${msg}`, { configId: config.id });
   }
 
-  await applyFingerprint(context, config.fingerprint);
+  await applyFingerprint(context, config.fingerprint).catch(e => {
+    warn(`⚠️ Failed to apply fingerprint: ${e.message}`);
+  });
   if (config.cookies) await context.addCookies(config.cookies).catch(() => { });
 
   // Force English via cookies
@@ -316,8 +327,19 @@ async function applyFingerprint(context, fingerprint) {
 
 function optimizeContextForScraping(context) {
   return context.route('**/*', (route) => {
-    if (['image', 'media'].includes(route.request().resourceType())) route.abort();
-    else route.continue();
+    const type = route.request().resourceType();
+    if (['image', 'media', 'font', 'stylesheet'].includes(type) && !route.request().url().includes('instagram.com/static/')) {
+      // Allow critical stylesheets but block the rest
+      if (type === 'stylesheet') {
+        route.continue();
+      } else {
+        route.abort();
+      }
+    } else if (['image', 'media', 'font'].includes(type)) {
+      route.abort();
+    } else {
+      route.continue();
+    }
   });
 }
 

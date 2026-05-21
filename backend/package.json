@@ -22,7 +22,7 @@
     "google-auth-library": "^10.6.1",
     "google-spreadsheet": "^5.2.0",
     "jsonwebtoken": "^9.0.3",
-    "playwright": "^1.58.1",
+    "playwright": "1.61.0-alpha-2026-05-18",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "sqlite": "^5.1.1",

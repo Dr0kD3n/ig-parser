@@ -181,10 +181,11 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
       // 1. Smooth scroll emulation (wheel)
       await (0, utils_1.humanScroll)(page, null, 'down', 600 + Math.random() * 400).catch(() => { });
 
-      // 2. Wait for next batch
-      const timeout = humanEmulation ? 2500 : 1500;
+      // 2. Wait for next batch efficiently
+      const timeout = humanEmulation ? 2000 : 800;
       await Promise.race([
         new Promise(resolve => { resolveResponse = resolve; }),
+        page.waitForResponse(r => r.url().includes('/friendships/') && r.status() === 200, { timeout: timeout }).catch(() => { }),
         (0, utils_1.wait)(timeout)
       ]);
       resolveResponse = null;

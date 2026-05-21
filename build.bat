@@ -72,7 +72,7 @@ echo [4/6] Copying Support Files
 echo ===================================
 copy "backend\package.json" "dist\package.json" >nul
 copy "backend\scripts\patch-playwright-mcp.js" "dist\scripts\" >nul
-
+copy "install.sh" "dist\" >nul
 echo.
 echo ===================================
 echo [5/6] Creating Deployment Scripts
@@ -99,11 +99,10 @@ echo ===================================
 >> "dist\install.bat" echo     exit /b 1
 >> "dist\install.bat" echo )
 >> "dist\install.bat" echo node -v
->> "dist\install.bat" echo echo.
 >> "dist\install.bat" echo :: 2. Install Project Dependencies
 >> "dist\install.bat" echo echo [2/4] Installing production dependencies...
 >> "dist\install.bat" echo set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
->> "dist\install.bat" echo call npm install --omit=dev
+>> "dist\install.bat" echo call npm install --omit=dev --legacy-peer-deps
 >> "dist\install.bat" echo if %%errorlevel%% neq 0 (
 >> "dist\install.bat" echo     echo.
 >> "dist\install.bat" echo     echo ERROR: npm install failed.
@@ -116,8 +115,14 @@ echo ===================================
 >> "dist\install.bat" echo node scripts/patch-playwright-mcp.js
 >> "dist\install.bat" echo echo.
 >> "dist\install.bat" echo :: 4. Install Playwright Browsers
->> "dist\install.bat" echo echo [4/4] Installing Playwright browsers (Chrome Beta)...
->> "dist\install.bat" echo call npx playwright install chrome-beta --with-deps
+>> "dist\install.bat" echo echo [4/4] Cleaning old browsers and installing current version...
+>> "dist\install.bat" echo for /f "tokens=*" %%%%v in ('node -e "console.log(require('./package.json').dependencies.playwright || require('./package.json').devDependencies.playwright)"') do set PW_VER=%%%%v
+>> "dist\install.bat" echo if "%%PW_VER%%"=="undefined" set PW_VER=latest
+>> "dist\install.bat" echo echo Cleaning old Playwright versions...
+>> "dist\install.bat" echo call npx playwright@%%PW_VER%% uninstall --all
+>> "dist\install.bat" echo echo Installing current Playwright browsers...
+>> "dist\install.bat" echo call npx playwright@%%PW_VER%% install chromium --with-deps
+
 >> "dist\install.bat" echo if %%errorlevel%% neq 0 (
 >> "dist\install.bat" echo     echo.
 >> "dist\install.bat" echo     echo ERROR: Playwright browser installation failed.
