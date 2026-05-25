@@ -79,16 +79,8 @@ const ProfileCard = memo(function ProfileCard({
   const isLiked = votes[g.url] === 'like';
   const isDisliked = votes[g.url] === 'dislike';
   const [checkingTg, setCheckingTg] = useState(false);
-  const photoSrc = g.photo
-    ? useProxyImages
-      ? `/api/proxy-image?url=${encodeURIComponent(g.photo)}&token=${token}`
-      : `https://images.weserv.nl/?url=${encodeURIComponent(g.photo)}`
-    : null;
-  const donorPhotoSrc = g.donor_photo
-    ? useProxyImages
-      ? `/api/proxy-image?url=${encodeURIComponent(g.donor_photo)}&token=${token}`
-      : `https://images.weserv.nl/?url=${encodeURIComponent(g.donor_photo)}`
-    : null;
+  const photoSrc = `https://images.weserv.nl/?url=${encodeURIComponent(g.photo)}`;
+  const donorPhotoSrc = `https://images.weserv.nl/?url=${encodeURIComponent(g.donor_photo)}`;
   const handleTgClick = async (e) => {
     e.stopPropagation();
     const tgUrl = `https://t.me/${g.name}`;

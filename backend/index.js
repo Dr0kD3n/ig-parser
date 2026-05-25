@@ -181,7 +181,7 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
       await (0, utils_1.humanScroll)(page, null, 'down', 600 + Math.random() * 400).catch(() => { });
 
       // 2. Wait for next batch efficiently
-      const timeout = humanEmulation ? 2000 : 800;
+      const timeout = humanEmulation ? 5000 : 3000;
       await Promise.race([
         new Promise(resolve => { resolveResponse = resolve; }),
         page.waitForResponse(r => r.url().includes('/friendships/') && r.status() === 200, { timeout: timeout }).catch(() => { }),
@@ -568,19 +568,24 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     if (!(await followersBtn.isVisible())) {
       logger.warn(`   ⚠️ Кнопка не найдена по XPath, пробую запасные варианты...`);
       // 1. Try by href (standard)
-      followersBtn = page.locator('a[href*="/followers/"]').first();
+      followersBtn = page.locator('header a:has([title])').first();
 
       // 2. Try by language-agnostic pattern: Number + any word in the header links
       if (!(await followersBtn.isVisible())) {
         const headerLinks = page.locator('header a, header [role="link"]');
         const count = await headerLinks.count();
+        let matchCount = 0;
+
         for (let i = 0; i < count; i++) {
           const link = headerLinks.nth(i);
           const text = await link.innerText();
           // Matches "123 word", "1.2K word", "1,200 word" in any language
           if (/^[0-9,.KBM\s]+[^\s0-9]/i.test(text.trim())) {
-            followersBtn = link;
-            break;
+            matchCount++;
+            if (matchCount === 2) { // Нам нужно второе совпадение
+              followersBtn = link;
+              break;
+            }
           }
         }
       }
@@ -722,7 +727,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     await page.waitForSelector('div[role="dialog"]', { timeout: 10000 });
     logger.info(`   ✅ Список подписчиков открыт.`);
     const searchInput = page.locator(SELECTORS.SEARCH_INPUT).first();
-    await searchInput.waitFor({ state: 'visible', timeout: config.timeouts.inputWait });
+    await searchInput.waitFor({ state: 'visible', timeout: config.timeouts.inputWait }).catch(e => `    ❌ КРИТИЧЕСКАЯ ОШИБКА В ИНПУТЕ ПОИСКА: ${e.message}`);
     let emptyResultsCount = 0;
     let namesToSearch = config.target.names;
     for (let nameIdx = 0; nameIdx < namesToSearch.length; nameIdx++) {
@@ -734,13 +739,13 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       await searchInput.click({ clickCount: 3 });
       await page.keyboard.press('Backspace');
       try {
-        await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 2000 });
+        await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 5000 });
       } catch (e) { }
       const typeDelay = Math.floor(Math.random() * (60 - 20 + 1) + 20);
       await searchInput.pressSequentially(name, { delay: typeDelay });
       logger.info(`      ⏳ Ждем выдачу результатов от Инстаграма...`);
       try {
-        await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 1500 });
+        await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 5000 });
       } catch (e) { }
       await (0, browser_1.takeLiveScreenshot)(page);
       await (0, utils_1.wait)(50);
@@ -796,7 +801,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
             }
             const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
             // Используем быстрый анализ для ускорения в 10 раз
-            await analyzeProfileFast(context, url, config, donorName);
+            await analyzeProfile(context, url, config, donorName);
             const delay = 2000 + Math.random() * 2000;
             logger.info(
               `👤 [HUMAN] Ожидание ${Math.round(delay / 1000)}с перед следующим профилем...`
@@ -806,7 +811,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         } else {
           const chunkPromises = chunk.map((url) => {
             const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
-            return analyzeProfileFast(context, url, config, donorName);
+            return analyzeProfile(context, url, config, donorName);
           });
           await Promise.all(chunkPromises);
           await randomDelay(100, 300);
