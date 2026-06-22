@@ -15,7 +15,7 @@ const config_1 = require('./lib/config');
 const warmup_1 = require('./lib/warmup');
 const { restorePhotos, stopRestorePhotos } = require('./lib/photo-restorer');
 const { startMassMessaging, stopMassMessaging, getMassMessengerStatus } = require('./lib/mass-messenger');
-const { checkFeedback, getCheckerStatus, stopChecker } = require('./lib/feedback-checker');
+const { checkFeedback, getCheckerStatus, stopChecker } = require('./lib/feedback-handler');
 const logger = require('./lib/logger');
 
 

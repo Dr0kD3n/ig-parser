@@ -7,4 +7,8 @@ export default defineConfig({
     include: ['tests/**/*.test.js'],
     silent: false,
   },
+  server: {
+    port: 5000,
+    strictPort: true // если занят — сразу выдаст ошибку, а не будет бесконечно думать
+  }
 });

@@ -11,3 +11,4 @@ tmp/
 !backend/config/database.sqlite
 !backups/database_2026*.sqlite
 export-data
+exports/
