@@ -256,6 +256,10 @@ async function startMassMessaging(onProgress, options = {}) {
     } else {
         query += ` AND (isInCity = 0 OR isInCity IS NULL)`;
     }
+    if (options.likedOnly) {
+        query += `  AND vote = 'like'`;
+    }
+
 
     query += ` ORDER BY timestamp DESC`;
     if (dmLimit && dmLimit > 0) {

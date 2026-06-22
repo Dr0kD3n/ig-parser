@@ -32,6 +32,7 @@ const getDynamicConfig = async () => {
       timeouts: { pageLoad: 25000, element: 10000, inputWait: 5000 },
       account: activeAccount,
       cities: await (0, config_1.getList)('cityKeywords.txt'),
+      citiesBlacklist: await (0, config_1.getList)('cityBlacklist.txt'),
       niches: await (0, config_1.getList)('nicheKeywords.txt'),
     };
   } catch (e) {
@@ -82,6 +83,10 @@ const run = async () => {
   const savedProfiles = await state_1.StateManager.loadDonors();
   const collectedUrls = new Set(savedProfiles.map(config_1.normalizeUrl));
   info(`📂 В базе уже сохранено доноров: ${collectedUrls.size}`);
+  info(`📍 Ключевых слов города: ${CONFIG.cities.length}`);
+  if (CONFIG.citiesBlacklist.length > 0) {
+    info(`🚫 В черном списке городов: ${CONFIG.citiesBlacklist.length}`);
+  }
 
   info(`🌐 Запуск браузера для аккаунта: ${account.name || account.id}...`);
   info(`📡 Прокси: ${account.proxy ? account.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
@@ -203,7 +208,23 @@ const run = async () => {
             let addedCount = 0;
             for (const link of finalLinks) {
               const normLink = (0, config_1.normalizeUrl)(link);
-              // Check both current donors and history
+              // Check city blacklist if donor is already known to contain city in its handle/placeholder
+              // For parser, we usually assume it's okay because we searched for it,
+              // but we can add a check if we were to fetch its bio here.
+              // However, parser saves donor with nices/cities passed into saveDonor.
+              // We'll filter the "city" being passed in if it's in blacklist (though unlikely as it came from whitelist).
+              // A better place is during the profile analysis in scraper, but let's be safe.
+
+              const isBlacklisted = CONFIG.citiesBlacklist.length > 0 && CONFIG.citiesBlacklist.some(bl =>
+                normLink.toLowerCase().includes(bl.toLowerCase()) ||
+                city.toLowerCase().includes(bl.toLowerCase())
+              );
+
+              if (isBlacklisted) {
+                warn(`🚫 Профиль ${normLink} пропущен (черный список городов: ${city})`);
+                continue;
+              }
+
               if (!collectedUrls.has(normLink) && !state_1.StateManager.has(normLink)) {
                 collectedUrls.add(normLink);
                 await state_1.StateManager.saveDonor(normLink, niche, city);

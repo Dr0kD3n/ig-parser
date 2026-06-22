@@ -149,6 +149,13 @@ async function getDB() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS checked_searches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            donor_url TEXT NOT NULL,
+            search_term TEXT NOT NULL,
+            UNIQUE(donor_url, search_term)
+        );
+
     `);
   try {
     await dbInstance.exec(`ALTER TABLE urls ADD COLUMN niche TEXT`);
@@ -332,6 +339,7 @@ async function importLegacyData(db) {
 
   const imports = [
     { file: 'cityKeywords.txt', type: 'city', table: 'keywords' },
+    { file: 'cityBlacklist.txt', type: 'city_blacklist', table: 'keywords' },
     { file: 'names.txt', type: 'name', table: 'keywords' },
     { file: 'nicheKeywords.txt', type: 'niche', table: 'keywords' },
     { file: 'profiles.txt', type: 'donor', table: 'urls' },

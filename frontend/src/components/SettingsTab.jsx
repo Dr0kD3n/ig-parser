@@ -36,10 +36,38 @@ const plural = (n, one, two, many) => {
   return many;
 };
 
+const CITIES_PRESETS = [
+  { name: 'Москва', value: 'Москва\nMoscow\nМСК\nMsk' },
+  { name: 'Санкт-Петербург', value: 'Санкт-Петербург\nСанкт\nSaint\nСПб\nSpb' },
+  { name: 'Новосибирск', value: 'Новосибирск\nNovosibirsk\nНск\nNsk' },
+  { name: 'Екатеринбург', value: 'Екатеринбург\nYekaterinburg\nЕкб\nEkb' },
+  { name: 'Казань', value: 'Казань\nKazan\nКЗН\nKzn' },
+  { name: 'Нижний Новгород', value: 'Нижний Новгород\nNizhny Novgorod' },
+  { name: 'Челябинск', value: 'Челябинск\nChelyabinsk' },
+  { name: 'Красноярск', value: 'Красноярск\nKrasnoyarsk' },
+  { name: 'Самара', value: 'Самара\nSamara' },
+  { name: 'Уфа', value: 'Уфа\nUfa' },
+  { name: 'Ростов-на-Дону', value: 'Ростов-на-Дону\nRostov-on-Don\nРостов\nRostov' },
+  { name: 'Омск', value: 'Омск\nOmsk' },
+  { name: 'Краснодар', value: 'Краснодар\nKrasnodar' },
+  { name: 'Воронеж', value: 'Воронеж\nVoronezh' },
+  { name: 'Таганрог', value: 'Таганрог\nНиколаевка' },
+  { name: 'Пермь', value: 'Пермь' },
+  { name: 'Волгоград', value: 'Волгоград\nVolgograd' },
+  { name: 'Саратов', value: 'Саратов\nSaratov' },
+  { name: 'Тюмень', value: 'Тюмень\nTyumen' },
+  { name: 'Тольятти', value: 'Тольятти\nTolyatti' },
+  { name: 'Ижевск', value: 'Ижевск\nIzhevsk' },
+  { name: 'Барнаул', value: 'Барнаул\nBarnaul' },
+  { name: 'Иркутск', value: 'Иркутск\nIrkutsk' },
+  { name: 'Хабаровск', value: 'Хабаровск\nKhabarovsk' },
+  { name: 'Владивосток', value: 'Владивосток\nVladivostok' }
+];
+
 const DonorGroupCard = ({ group, allDonors, onUpdate, onDelete, isAll, tr, TrashIcon, settingsData }) => {
   return (
     <div className={`donor-group-card ${isAll ? 'all-group' : ''}`}>
-      <div className="flex-between mb-12">
+      <div className="flex-between mb-12">nБрн
         <div className="flex align-center gap-10 m-0">
           {isAll ? (
             <h5 className="fs-16 font-bold m-0">
@@ -615,14 +643,65 @@ export default function SettingsTab({
       }
       {
         settingsTab === 'cities' && (
-          <textarea
-            className="msg-textarea"
-            style={{ height: 500 }}
-            value={(settingsData.cities || []).join('\n')}
-            onChange={(e) =>
-              onSettingsChange({ ...settingsData, cities: e.target.value.split('\n') })
-            }
-          />
+          <div className="settings-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <div className="flex-v gap-8">
+              <div className="flex-between align-center">
+                <label className="fs-14 font-bold">{tr('city_whitelist')}</label>
+                <select
+                  className="search-input py-4 px-8 fs-12 w-auto"
+                  value=""
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) return;
+                    onSettingsChange({ ...settingsData, cities: val.split('\n') });
+                  }}
+                >
+                  <option value="" selected disabled>Выбрать город</option>
+                  {CITIES_PRESETS.map(c => <option key={c.name} value={c.value}>{c.name}</option>)}
+                </select>
+              </div>
+              <textarea
+                className="msg-textarea"
+                style={{ height: 500 }}
+                value={(settingsData.cities || []).join('\n')}
+                onChange={(e) =>
+                  onSettingsChange({ ...settingsData, cities: e.target.value.split('\n') })
+                }
+                placeholder="Москва\nПитер..."
+              />
+            </div>
+            <div className="flex-v gap-8">
+              <div className="flex-between align-center">
+                <label className="fs-14 font-bold">{tr('city_blacklist')}</label>
+                <select
+                  className="search-input py-4 px-8 fs-12 w-auto"
+                  value=""
+                  onChange={(e) => {
+                    const selectedVal = e.target.value;
+                    if (!selectedVal) return;
+                    const allOthers = CITIES_PRESETS
+                      .filter(c => c.value !== selectedVal)
+                      .map(c => c.value)
+                      .join('\n')
+                      .split('\n');
+                    onSettingsChange({ ...settingsData, citiesBlacklist: allOthers });
+                  }}
+                >
+                  <option value="" selected disabled>Выбрать город</option>
+                  {CITIES_PRESETS.map(c => <option key={c.name} value={c.value}>{c.name}</option>)}
+                </select>
+              </div>
+              <textarea
+                className="msg-textarea"
+                style={{ height: 500 }}
+                value={(settingsData.citiesBlacklist || []).join('\n')}
+                onChange={(e) =>
+                  onSettingsChange({ ...settingsData, citiesBlacklist: e.target.value.split('\n') })
+                }
+                placeholder="Лондон\nПариж..."
+              />
+            </div>
+          </div>
         )
       }
       {

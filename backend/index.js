@@ -46,6 +46,7 @@ const getDynamicConfig = async () => {
     scroll: { maxAttempts: 8, maxRetries: 3 },
     target: {
       cityKeywords: await config_1.getList('cityKeywords.txt'),
+      cityBlacklist: await config_1.getList('cityBlacklist.txt'),
       names: shuffledNames,
     },
   };
@@ -110,8 +111,6 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
   let lastResponseTime = Date.now();
   let resolveResponse;
   let responseCount = 0;
-
-  logger.info(`      🔽 Начинаем сбор списка через перехват сети...`);
 
   // Handler for friendships API (ONLY for hasMore tracking)
   const onResponse = async (response) => {
@@ -280,9 +279,17 @@ const analyzeProfile = async (context, url, config, donor = '') => {
       };
     });
     const searchString = `${extracted.fullSearchText} ${username}`.toLowerCase();
-    const isTarget = config.target.cityKeywords.some((kw) =>
+    const cityKeywords = config.target.cityKeywords || [];
+    const cityBlacklist = config.target.cityBlacklist || [];
+
+    const matchesWhitelist = cityKeywords.length === 0 || cityKeywords.some((kw) =>
       searchString.includes(kw.toLowerCase())
     );
+    const matchesBlacklist = cityBlacklist.length > 0 && cityBlacklist.some((kw) =>
+      searchString.includes(kw.toLowerCase())
+    );
+
+    const isTarget = matchesWhitelist && !matchesBlacklist;
 
     if (isTarget) {
       logger.info(`         ✅ Целевой профиль!`);
@@ -447,7 +454,17 @@ const analyzeProfileFast = async (context, url, config, donor = '') => {
     }
 
     const searchString = `${data.name} ${data.bio} ${username}`.toLowerCase();
-    const isTarget = config.target.cityKeywords.some((kw) => searchString.includes(kw.toLowerCase()));
+    const cityKeywords = config.target.cityKeywords || [];
+    const cityBlacklist = config.target.cityBlacklist || [];
+
+    const matchesWhitelist = cityKeywords.length === 0 || cityKeywords.some((kw) =>
+      searchString.includes(kw.toLowerCase())
+    );
+    const matchesBlacklist = cityBlacklist.length > 0 && cityBlacklist.some((kw) =>
+      searchString.includes(kw.toLowerCase())
+    );
+
+    const isTarget = matchesWhitelist && !matchesBlacklist;
 
     await state_1.StateManager.saveResult({
       name: data.name,
@@ -714,6 +731,29 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       followers_count: donorInfo.followers_count,
       posts_count: donorInfo.publications_count,
     });
+
+    // [NEW] Проверка донора на соответствие городам (WhiteList и BlackList)
+    const cityKeywords = config.target.cityKeywords || [];
+    const cityBlacklist = config.target.cityBlacklist || [];
+
+    const donorSearchString = `${donorInfo.name} ${donorInfo.bio} ${donorInfo.username}`.toLowerCase();
+
+    const matchesWhitelist = cityKeywords.length === 0 || cityKeywords.some(kw => donorSearchString.includes(kw.toLowerCase()));
+    const matchesBlacklist = cityBlacklist.length > 0 && cityBlacklist.some(kw => {
+      if (donorSearchString.includes(`${kw.toLowerCase()} `)) console.log(kw)
+      return donorSearchString.includes(`${kw.toLowerCase()} `)
+    });
+
+    if (!matchesWhitelist || matchesBlacklist) {
+      if (!matchesWhitelist) {
+        logger.info(`   📍 Донор не содержит обязательных ключевых слов города (WhiteList). Пропускаем...`);
+      } else {
+        logger.info(`   📍 Донор содержит запрещенные ключевые слова города (${cityBlacklist}). Пропускаем...`);
+      }
+      await state_1.StateManager.addDonor(donorUrl);
+      return;
+    }
+
     const parsedCount = donorInfo.followers_count;
     if (parsedCount < 1000) {
       logger.info(
@@ -730,8 +770,15 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     await searchInput.waitFor({ state: 'visible', timeout: config.timeouts.inputWait }).catch(e => `    ❌ КРИТИЧЕСКАЯ ОШИБКА В ИНПУТЕ ПОИСКА: ${e.message}`);
     let emptyResultsCount = 0;
     let namesToSearch = config.target.names;
+    let checkedCount = 0;
     for (let nameIdx = 0; nameIdx < namesToSearch.length; nameIdx++) {
       const name = namesToSearch[nameIdx];
+
+      if (state_1.StateManager.isChecked(donorUrl, name)) {
+        checkedCount++;
+        continue;
+      }
+
       logger.info(`\n   🔎 ПОИСК ПО ИМЕНИ: "${name}"`);
       if (checkSkipSignal(contextState)) {
         break;
@@ -756,71 +803,71 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       logger.info(`         • Всего найдено (со сторис): ${candidates.length}`);
       logger.info(`         • Пропущено (уже в истории): ${skippedCount}`);
       logger.info(`         • Идем проверять: ${newCandidates.length}`);
-      if (newCandidates.length === 0) {
-        emptyResultsCount++;
-        logger.info(`      ⏭️ Новых профилей нет (${emptyResultsCount}/3 подряд).`);
-        if (emptyResultsCount >= 3) {
-          if (totalAccounts > 1) {
-            logger.warn(
-              `⚠️ 3 ПУСТЫХ РЕЗУЛЬТАТА ПОДРЯД. СКОРЕЕ ВСЕГО ШЕДОУБАН. ИНИЦИИРУЕМ СМЕНУ ПРОФИЛЯ...`
-            );
-            throw new RotateAccountError(
-              'Shadowban (3 empty results)',
-              namesToSearch.slice(nameIdx + 1)
-            );
-          } else {
-            logger.warn(
-              `⚠️ 3 ПУСТЫХ РЕЗУЛЬТАТА ПОДРЯД. ВОЗМОЖЕН ШЕДОУБАН. ПРОДОЛЖАЕМ (ТОЛЬКО 1 АККАУНТ ДЛЯ ЗАДАЧИ).`
-            );
-            emptyResultsCount = 0; // Reset to allow continuing
+
+      if (newCandidates.length > 0) {
+        logger.info(`      🚀 Обрабатываем новые профили пачками...`);
+        const concurrentProfiles = await (0, config_1.getSetting)('concurrentProfiles');
+        const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
+
+        // If human emulation is ON, we only process ONE profile at a time with large delays
+        const CHUNK_SIZE = humanEmulation ? 1 : concurrentProfiles ? parseInt(concurrentProfiles) : 3;
+
+        for (let i = 0; i < newCandidates.length; i += CHUNK_SIZE) {
+          if (checkSkipSignal(contextState)) {
+            shouldSkipDonor = true;
+            break;
           }
-        }
-        continue;
-      } else {
-        emptyResultsCount = 0;
-      }
-      logger.info(`      🚀 Обрабатываем новые профили пачками...`);
-      const concurrentProfiles = await (0, config_1.getSetting)('concurrentProfiles');
-      const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
+          const chunk = newCandidates.slice(i, i + CHUNK_SIZE);
 
-      // If human emulation is ON, we only process ONE profile at a time with large delays
-      const CHUNK_SIZE = humanEmulation ? 1 : concurrentProfiles ? parseInt(concurrentProfiles) : 3;
-
-      for (let i = 0; i < newCandidates.length; i += CHUNK_SIZE) {
-        if (checkSkipSignal(contextState)) {
-          shouldSkipDonor = true;
-          break;
-        }
-        const chunk = newCandidates.slice(i, i + CHUNK_SIZE);
-
-        if (humanEmulation) {
-          for (const url of chunk) {
-            if (checkSkipSignal(contextState)) {
-              shouldSkipDonor = true;
-              break;
+          if (humanEmulation) {
+            for (const url of chunk) {
+              if (checkSkipSignal(contextState)) {
+                shouldSkipDonor = true;
+                break;
+              }
+              const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
+              // Используем быстрый анализ для ускорения в 10 раз
+              await analyzeProfile(context, url, config, donorName);
+              const delay = 2000 + Math.random() * 2000;
+              logger.info(
+                `👤 [HUMAN] Ожидание ${Math.round(delay / 1000)}с перед следующим профилем...`
+              );
+              await (0, utils_1.wait)(delay);
             }
-            const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
-            // Используем быстрый анализ для ускорения в 10 раз
-            await analyzeProfile(context, url, config, donorName);
-            const delay = 2000 + Math.random() * 2000;
-            logger.info(
-              `👤 [HUMAN] Ожидание ${Math.round(delay / 1000)}с перед следующим профилем...`
-            );
-            await (0, utils_1.wait)(delay);
+          } else {
+            const chunkPromises = chunk.map((url) => {
+              const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
+              return analyzeProfile(context, url, config, donorName);
+            });
+            await Promise.all(chunkPromises);
+            await randomDelay(100, 300);
           }
-        } else {
-          const chunkPromises = chunk.map((url) => {
-            const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
-            return analyzeProfile(context, url, config, donorName);
-          });
-          await Promise.all(chunkPromises);
-          await randomDelay(100, 300);
-        }
 
-        if (shouldSkipDonor) break;
+          if (shouldSkipDonor) break;
+        }
       }
+
+      await state_1.StateManager.markChecked(donorUrl, name);
+      emptyResultsCount = newCandidates.length === 0 ? emptyResultsCount + 1 : 0;
+
+      if (newCandidates.length === 0 && emptyResultsCount >= 3) {
+        if (totalAccounts > 1) {
+          logger.warn(`⚠️ 3 ПУСТЫХ РЕЗУЛЬТАТА ПОДРЯД. СКОРЕЕ ВСЕГО ШЕДОУБАН. ИНИЦИИРУЕМ СМЕНУ ПРОФИЛЯ...`);
+          throw new RotateAccountError('Shadowban (3 empty results)', namesToSearch.slice(nameIdx + 1));
+        } else {
+          logger.warn(`⚠️ 3 ПУСТЫХ РЕЗУЛЬТАТА ПОДРЯД. ВОЗМОЖЕН ШЕДОУБАН. ПРОДОЛЖАЕМ (ТОЛЬКО 1 АККАУНТ ДЛЯ ЗАДАЧИ).`);
+          emptyResultsCount = 0;
+        }
+      }
+
       if (shouldSkipDonor) break;
     }
+
+    if (checkedCount === namesToSearch.length) {
+      logger.info(`   ⏭️ Все имена для донора ${donorUrl} уже были проверены ранее.`);
+      await state_1.StateManager.addDonor(donorUrl);
+    }
+
   } catch (e) {
     if (e.name === 'RotateAccountError') {
       throw e;
@@ -893,49 +940,66 @@ const run = async () => {
   let donorIdx = 0;
   while (donorIdx < donors.length) {
     const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
-    const concurrentProfiles = await (0, config_1.getSetting)('concurrentProfiles');
-    const DONOR_CHUNK_SIZE = humanEmulation
-      ? 1
-      : concurrentProfiles
-        ? parseInt(concurrentProfiles)
-        : 3;
+    const concurrentProfilesValue = await (0, config_1.getSetting)('concurrentProfiles');
+    const concurrentProfiles = parseInt(concurrentProfilesValue) || 3;
+    const searchNames = await (0, config_1.getList)('names.txt');
+    const unparsedDonors = donors.slice(donorIdx).filter(d => {
+      if (state_1.StateManager.hasDonor(d)) return false;
 
-    const currentDonors = [];
-    for (let i = 0; i < DONOR_CHUNK_SIZE && donorIdx < donors.length; i++) {
-      const d = donors[donorIdx];
-      if (state_1.StateManager.hasDonor(d)) {
-        logger.info(`\n⏭️ Донор ${d.url || d} уже был обработан ранее, пропускаем.`);
-        donorIdx++;
-        i--; // Stay in this slot
-        continue;
+      // Skip donor if all current search names are already checked for it
+      const donorUrl = typeof d === 'object' ? d.url : d;
+      const allChecked = searchNames.every(name => state_1.StateManager.isChecked(donorUrl, name));
+      if (allChecked) {
+        // Self-correct by adding to processed donors
+        state_1.StateManager.addDonor(donorUrl);
+        return false;
       }
-      currentDonors.push(d);
-      donorIdx++;
-    }
+      return true;
+    });
 
-    if (currentDonors.length === 0) {
-      if (donorIdx >= donors.length) break;
-      continue;
-    }
+    if (unparsedDonors.length === 0) break;
 
     try {
       if (humanEmulation) {
-        const donorUrl = typeof currentDonors[0] === 'object' ? currentDonors[0].url : currentDonors[0];
-        await processDonor(context, donorUrl, CONFIG, accounts.length);
-        await state_1.StateManager.addDonor(donorUrl);
-        // Reset to full names list for next donor
-        CONFIG.target.names = (0, utils_1.shuffleArray)(await (0, config_1.getList)('names.txt'));
+        // Sequential processing for human emulation
+        for (const donor of unparsedDonors) {
+          const donorUrl = typeof donor === 'object' ? donor.url : donor;
+          await processDonor(context, donorUrl, CONFIG, accounts.length);
+          await state_1.StateManager.addDonor(donorUrl);
+          donorIdx++;
+          // Reset to full names list for next donor
+          CONFIG.target.names = (0, utils_1.shuffleArray)(await (0, config_1.getList)('names.txt'));
+
+          if (donorIdx % 2 === 0) {
+            try {
+              logger.info(`👤 [HUMAN] Заходим в ленту новостей для "отдыха"...`);
+              const feedPage = await context.newPage();
+              await feedPage.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
+              await (0, utils_1.wait)(2000);
+              await (0, utils_1.humanScroll)(feedPage, null, 'down', 800 + Math.random() * 1000);
+              await (0, utils_1.wait)(3000 + Math.random() * 4000);
+              await feedPage.close();
+            } catch (e) { }
+          }
+        }
       } else {
-        logger.info(`🚀 Запускаем параллельную обработку ${currentDonors.length} доноров...`);
-        await Promise.all(
-          currentDonors.map(async (donor) => {
-            const donorUrl = typeof donor === 'object' ? donor.url : donor;
-            // Clone config for each donor to avoid shared naming lists
-            const donorConfig = JSON.parse(JSON.stringify(CONFIG));
+        logger.info(`🚀 Запускаем пул параллельной обработки доноров (concurrency: ${concurrentProfiles})...`);
+        await (0, utils_1.asyncPool)(unparsedDonors, concurrentProfiles, async (donor) => {
+          if (state_1.StateManager.hasDonor(donor)) return;
+          const donorUrl = typeof donor === 'object' ? donor.url : donor;
+          const donorConfig = JSON.parse(JSON.stringify(CONFIG));
+          try {
             await processDonor(context, donorUrl, donorConfig, accounts.length);
             await state_1.StateManager.addDonor(donorUrl);
-          })
-        );
+            donorIdx++;
+          } catch (err) {
+            if (err.name === 'RotateAccountError') throw err;
+            logger.error(`   ❌ Ошибка обработки донора ${donorUrl}: ${err.message}`);
+            donorIdx++;
+            await state_1.StateManager.addDonor(donorUrl); // Mark as processed to not repeat error
+          }
+        });
+        break; // Finished pool successfully
       }
     } catch (e) {
       if (e.name === 'RotateAccountError') {
@@ -949,9 +1013,7 @@ const run = async () => {
         await browser.close();
         if (isRotationNeeded) {
           currentAccountIndex = (currentAccountIndex + 1) % accounts.length;
-          logger.info(
-            `🔀 Переключились на аккаунт #${currentAccountIndex + 1} из ${accounts.length}`
-          );
+          logger.info(`🔀 Переключились на аккаунт #${currentAccountIndex + 1} из ${accounts.length}`);
         } else {
           logger.warn(`⚠️ Только один аккаунт доступен. Ждем 30 сек перед повторной попыткой...`);
           await (0, utils_1.wait)(30000);
@@ -961,28 +1023,11 @@ const run = async () => {
         context = setup.context;
         await (0, browser_1.optimizeContextForScraping)(context);
         liveViewInterval = (0, browser_1.startLiveView)(context);
-        // Update CONFIG names with remainings and don't increment donorIdx so it retries
-        CONFIG.target.names =
-          e.remainingNames.length > 0
-            ? e.remainingNames
-            : (0, utils_1.shuffleArray)(await (0, config_1.getList)('names.txt'));
+        CONFIG.target.names = e.remainingNames.length > 0 ? e.remainingNames : (0, utils_1.shuffleArray)(await (0, config_1.getList)('names.txt'));
       } else {
         logger.error(`❌ Непредвиденная ошибка: ${e.message}`);
-        donorIdx++; // Skip this donor on other errors
+        donorIdx++;
       }
-    }
-
-    // 👤 [HUMAN] Periodic context switching - visit home feed every ~2 donors
-    if (humanEmulation && donorIdx % 2 === 0) {
-      try {
-        logger.info(`👤 [HUMAN] Заходим в ленту новостей для "отдыха"...`);
-        const feedPage = await context.newPage();
-        await feedPage.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
-        await (0, utils_1.wait)(2000);
-        await (0, utils_1.humanScroll)(feedPage, null, 'down', 800 + Math.random() * 1000);
-        await (0, utils_1.wait)(3000 + Math.random() * 4000);
-        await feedPage.close();
-      } catch (e) { }
     }
   }
   clearInterval(liveViewInterval);

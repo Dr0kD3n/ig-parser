@@ -1003,7 +1003,6 @@ body::before {
 
 /* Animations & Polishing */
 .msg-textarea {
-  margin: 0 32px;
   background: hsl(var(--bg-elevated));
   border: 1px solid hsl(var(--border));
   border-radius: 12px;

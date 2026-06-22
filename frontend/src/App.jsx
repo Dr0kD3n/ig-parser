@@ -572,15 +572,16 @@ export default function App() {
       return;
     }
     const cityOnly = localStorage.getItem('ig_city_only') === 'true';
+    const likedOnly = localStorage.getItem('ig_filter_status') === 'like'
     try {
       const res = await authFetch('/api/mass-messages/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cityOnly })
+        body: JSON.stringify({ cityOnly, likedOnly })
       });
       if (res.ok) {
         setMassMessagingStatus({ running: true, current: 0, total: 0, status: 'Starting...' });
-        toast.success(cityOnly ? 'Запущена рассылка (только город)' : 'Запущена массовая рассылка');
+        toast.success(`Запущена рассылка ${cityOnly && '(только город)'} ${likedOnly && '(только лайки)'}`);
       }
     } catch (e) { toast.error('Ошибка запуска'); }
   };
@@ -609,13 +610,12 @@ export default function App() {
 
   const unopenedCount = girls.filter((g) => !g.viewed).length;
   const likesCount = Object.values(votes).filter((v) => v === 'like').length;
-  const massMsgCount = girls.filter(g => !g.dmSent && (cityOnly ? g.isInCity : (!g.isInCity || g.isInCity === 0))).length;
+  const massMsgCount = girls.filter(g => !g.dmSent && votes[g.url] === 'like' && (cityOnly ? g.isInCity : (!g.isInCity || g.isInCity === 0))).length;
 
   return (
     <div className="app">
       <header className="header">
         <div className="header-left">
-          <div className="logo">{tr('logo')}</div>
           <div className="stats">
             <span>
               {tr('unopened')} <b>{unopenedCount}</b>

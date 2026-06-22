@@ -2,10 +2,10 @@
   "name": "ig-bot",
   "version": "1.0.0",
   "scripts": {
-    "dev": "concurrently \"npx cross-env VITE_API_URL=http://localhost:5001 npm run dev --workspace=frontend\" \"npx cross-env PORT=5001 npm start --workspace=backend\" \"npm start --prefix ../ig-bot-backend\"",
-    "locale": "concurrently \"npx cross-env VITE_AUTH_URL=http://localhost:5000 VITE_API_URL=http://localhost:5001 npm run locale --workspace=frontend\" \"npx cross-env PORT=5001 AUTH_SERVER_URL=http://localhost:5000 npm start --workspace=backend\" \"npm start --prefix ../ig-bot-backend\"",
+    "dev": "concurrently \"npx cross-env VITE_API_URL=http://127.0.0.1:5001 npm run dev --workspace=frontend\" \"npx cross-env PORT=5001 npm start --workspace=backend\" \"npm start --prefix ../ig-bot-backend\"",
+    "locale": "concurrently \"npx cross-env VITE_AUTH_URL=http://127.0.0.1:5000 VITE_API_URL=http://127.0.0.1:5001 npm run locale --workspace=frontend\" \"npx cross-env PORT=5001 AUTH_SERVER_URL=http://127.0.0.1:5000 npm start --workspace=backend\" \"npm start --prefix ../ig-bot-backend\"",
     "dev:proxy": "set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend",
-    "dev:all": "concurrently \"npx cross-env VITE_API_URL=http://localhost:5001 npm run dev --workspace=frontend\" \"npx cross-env PORT=5001 npm start --workspace=backend\" \"npm start --prefix ../ig-bot-backend\"",
+    "dev:all": "concurrently \"npx cross-env VITE_API_URL=http://127.0.0.1:5001 npm run dev --workspace=frontend\" \"npx cross-env PORT=5001 npm start --workspace=backend\" \"npm start --prefix ../ig-bot-backend\"",
     "test": "set NODE_ENV=test&& vitest run",
     "test:e2e": "playwright test",
     "build": "build.bat",

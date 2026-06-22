@@ -6,6 +6,7 @@ const config_1 = require('./config');
 exports.StateManager = {
   processed: new Set(),
   processedDonors: new Set(),
+  checkedSearches: new Set(), // Map "donorUrl|searchTerm"
   resultsCache: [], // Used for fast memory lookups if needed elsewhere
   async init() {
     const db = await db_1.getDB();
@@ -18,8 +19,27 @@ exports.StateManager = {
     // processDonors tracks which donors have been fully scanned during the current session
     // or loaded from history (type='history').
     this.processedDonors = new Set(historyRows.map((r) => r.url));
+
+    // Load checked searches
+    const checkedRows = await db.all(`SELECT donor_url, search_term FROM checked_searches`);
+    this.checkedSearches = new Set(checkedRows.map(r => `${config_1.normalizeUrl(r.donor_url)}|${r.search_term}`));
+    console.log(`🗄️ [ИСТОРИЯ] Загружено проверенных имен у доноров: ${this.checkedSearches.size}`);
+
     const profiles = await db.all(`SELECT * FROM profiles`);
     this.resultsCache = profiles;
+  },
+  isChecked(donorUrl, searchTerm) {
+    return this.checkedSearches.has(`${config_1.normalizeUrl(donorUrl)}|${searchTerm}`);
+  },
+  async markChecked(donorUrl, searchTerm) {
+    const normUrl = config_1.normalizeUrl(donorUrl);
+    const key = `${normUrl}|${searchTerm}`;
+    if (this.checkedSearches.has(key)) return;
+    this.checkedSearches.add(key);
+    const db = await (0, db_1.getDB)();
+    try {
+      await db.run(`INSERT OR IGNORE INTO checked_searches (donor_url, search_term) VALUES (?, ?)`, [normUrl, searchTerm]);
+    } catch (e) { }
   },
   has(url) {
     return this.processed.has(config_1.normalizeUrl(url));
@@ -99,7 +119,7 @@ exports.StateManager = {
       );
     }
     console.log(
-      `   🏆 [НАЙДЕНА] ${profileData.name || profileData.url} (от ${profileData.donor || '?'}) -> сохранена в базу!`
+      `   ${profileData.isInCity ? "✅" : "🏆"} [НАЙДЕНА] ${profileData.name || profileData.url} (от ${profileData.donor || '?'}) -> сохранена в базу!`
     );
   },
   async loadDonors() {
