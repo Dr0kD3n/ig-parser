@@ -33,9 +33,9 @@ async function checkFeedback() {
     checkerStatus.current = 0;
     checkerStatus.total = 0;
     schedulerStopRequested = false;
-
+    console.log(process.cwd())
     const db = await getDB();
-    const inboxPath = path.join(__dirname, '../../data/inbox');
+    const inboxPath = path.join(process.cwd(), '/data/inbox');
     logger.info(`📂 Запуск сканирования папки: ${inboxPath}`);
 
     try {
