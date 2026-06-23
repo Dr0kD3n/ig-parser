@@ -1099,6 +1099,60 @@ app.post('/api/donors', async (req, res) => {
   }
 });
 
+app.post('/api/image-failed', async (req, res) => {
+  const { url } = req.body;
+  const db = await (0, db_1.getDB)();
+
+  console.log(JSON.stringify(url))
+
+  await db.run(`
+      CREATE TABLE IF NOT EXISTS failed_images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT UNIQUE,
+        created_at TEXT
+      )
+  `);
+
+  const existingRecord = await db.get(
+    `SELECT id FROM failed_images WHERE url = ?`,
+    [url]
+  );
+
+  if (existingRecord) {
+    // Если запись уже есть — возвращаем, что он уже в списке
+    return res.json({
+      success: true,
+      message: 'Image is already in the list',
+      alreadyExists: true,
+    });
+  }
+
+  const currentTimestamp = new Date().toISOString();
+  await db.run(
+    `INSERT INTO failed_images (url, created_at) VALUES (?, ?)`,
+    [url, currentTimestamp]
+  );
+
+  return res.json({
+    success: true,
+    message: 'Failed image successfully added to the list',
+    alreadyExists: false,
+  });
+})
+
+app.get('/api/image-failed/list', async (req, res) => {
+  const db = await (0, db_1.getDB)();
+  try {
+    const allFailedImages = await db.all(`SELECT * FROM failed_images ORDER BY id DESC`);
+
+    res.json({ success: true, data: allFailedImages });
+  } catch (e) {
+    res
+      .status(500)
+      .json({ success: false, error: 'Failed to parse failed profiles' });
+  }
+})
+
 app.post('/api/logs/clear', (req, res) => {
   historicalLogs = [];
   debouncedSaveLogs();

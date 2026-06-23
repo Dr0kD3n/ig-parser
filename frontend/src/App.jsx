@@ -485,12 +485,30 @@ export default function App() {
     }
   };
 
+  const handleReportFailedImage = async (url) => {
+    // Если массив пустой, нет смысла делать запрос
+    if (!url || url.length === 0) return;
+
+    try {
+      await authFetch('/api/image-failed', { // Укажите ваш эндпоинт для картинок
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }), // Передаем объект с массивом urls
+      });
+
+    } catch (e) {
+      toast.error('Network error');
+    }
+  };
+
   const handleTgCheck = useCallback((url, status) => {
     setGirls((prev) => prev.map((p) => (p.url === url ? { ...p, tg_status: status } : p)));
   }, []);
 
   const handleImageError = useCallback((url) => {
     setFailedImages((prev) => new Set([...prev, url]));
+    console.log(url)
+    handleReportFailedImage(url);
   }, []);
 
   const handleBotControl = useCallback(
@@ -531,6 +549,7 @@ export default function App() {
       });
       const data = await resp.json();
       if (data.success) {
+        console.log(data.profilesToCheck)
         setRestoreStatus({ running: true, current: 0, total: 0, status: 'Starting...' });
         toast.success('Запущено восстановление фото');
       } else {

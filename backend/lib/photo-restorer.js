@@ -30,81 +30,37 @@ async function activeWait(ms) {
 }
 
 async function restorePhotos(onProgress, options = {}) {
-  const { overrideConcurrency, accountId, existingContext, failedUrls } = options;
+  const { overrideConcurrency, accountId, existingContext } = options;
   stopRequested = false;
   console.log('🚀 ЗАПУСК ВОССТАНОВЛЕНИЯ ФОТО...');
   const db = await getDB();
 
-  // 1. Получаем активные профили (vote != 'dislike')
-  const femaleNames = await getList('names.txt');
-  const allProfiles = await db.all(
-    `SELECT url, username, name, photo, bio, vote FROM profiles WHERE vote != 'dislike'`
+  // 1. Берем только те профили, у которых картинки не загрузились
+  const failedRecords = await db.all(
+    `SELECT url FROM failed_images`
   );
 
-  // Получаем список доноров, у которых нет фото
-  const donorsWithoutPhoto = await db.all(
-    `SELECT username as name, photo, bio FROM donors WHERE photo IS NULL OR photo = '' OR photo LIKE '%placeholder%'`
-  );
-  const donorUsernames = donorsWithoutPhoto.map((d) => d.name);
-
-  const profiles = allProfiles.filter((p) => {
-    const isFailed = failedUrls && Array.isArray(failedUrls) && failedUrls.includes(p.url);
-    const hasNoPhoto =
-      !p.photo ||
-      p.photo === '' ||
-      (typeof p.photo === 'string' && p.photo.includes('placeholder'));
-    const hasNoBio = !p.bio || p.bio.trim() === '' || p.bio.trim() === '.';
-    const isLiked = p.vote === 'like';
-
-    const nameMatches =
-      femaleNames.length === 0 ||
-      femaleNames.some(
-        (name) =>
-          (p.name && p.name.toLowerCase().includes(name.toLowerCase())) ||
-          (p.username && p.username.toLowerCase().includes(name.toLowerCase()))
-      );
-
-    // Также проверяем, не является ли этот профиль донором без фото
-    const isDonorWithoutPhoto = p.username && donorUsernames.includes(p.username);
-
-    // We check a profile if:
-    // 1. It has no photo or the photo failed to load (primary objective)
-    // 2. OR it is a donor that needs data
-    // 3. OR it has no bio AND it matches our search criteria (name or isLiked)
-    return (
-      hasNoPhoto ||
-      isFailed ||
-      isDonorWithoutPhoto ||
-      (hasNoBio && (nameMatches || isLiked))
-    );
-  });
-
-  // Добавляем доноров, которых нет в списке profiles (по url)
-  for (const donor of donorsWithoutPhoto) {
-    const donorUrl = `https://www.instagram.com/${donor.name}/`;
-    if (!profiles.some((p) => p.url === donorUrl)) {
-      profiles.push({
-        url: donorUrl,
-        username: donor.name,
-        name: donor.name,
-        photo: donor.photo,
-        bio: donor.bio,
-        is_donor_only: true,
-      });
-    }
-  }
-
-  if (profiles.length === 0) {
-    console.log('⚠️ Нет подходящих профилей (девушек без фото) для восстановления.');
+  if (failedRecords.length === 0) {
+    console.log('⚠️ В таблице failed_images нет ссылок для восстановления.');
     return { success: true, count: 0 };
   }
 
-  console.log(`🎯 Найдено профилей для проверки: ${profiles.length}`);
+  // Превращаем в массив чистых объектов для пула воркеров
+  const profiles = failedRecords.map(rec => {
+    const username = rec.url.split('/').filter(Boolean).pop() || '';
+    return {
+      url: rec.url,
+      username: username,
+      name: username
+    };
+  });
+
+  console.log(`🎯 Найдено битых ссылок для проверки: ${profiles.length}`);
 
   // Get concurrency setting
   let concurrency = 3;
   if (existingContext) {
-    concurrency = 1; // Only one worker if using existing context
+    concurrency = 1;
   } else if (overrideConcurrency) {
     concurrency = Math.max(1, parseInt(overrideConcurrency) || 3);
   } else {
@@ -113,7 +69,7 @@ async function restorePhotos(onProgress, options = {}) {
   }
   console.log(`🧵 Использование потоков: ${concurrency}`);
 
-  // 2. Получаем аккаунты для работы
+  // 2. Получаем аккаунт для работы
   let account;
   if (accountId) {
     account = await db.get('SELECT * FROM accounts WHERE id = ?', [accountId]);
@@ -164,7 +120,6 @@ async function restorePhotos(onProgress, options = {}) {
   let currentIndex = 0;
   let isAborted = false;
 
-  // Функция для получения следующего профиля (потокобезопасно в рамках одного процесса Node.js)
   const getNextProfile = () => {
     if (stopRequested || isAborted || currentIndex >= profiles.length) return null;
     return { profile: profiles[currentIndex], index: currentIndex++ };
@@ -181,23 +136,22 @@ async function restorePhotos(onProgress, options = {}) {
 
         const { profile, index } = data;
         const url = profile.url;
-        const username = profile.username || url.split('/').filter(Boolean).pop() || '';
+        const username = profile.username;
         const displayCount = index + 1;
 
         if (onProgress) {
           onProgress({
             current: displayCount,
             total: profiles.length,
-            status: `[Поток ${workerId}] Обработка ${username}...`,
+            status: `[Поток ${workerId}] Перепарсинг ${username}...`,
           });
         }
 
         console.log(
-          `[${displayCount}/${profiles.length}] [Поток ${workerId}] Проверка: ${username}`
+          `[${displayCount}/${profiles.length}] [Поток ${workerId}] Перепроверка: ${username}`
         );
 
         try {
-          // Короткое ожидание перед переходом
           if (await activeWait(500)) break;
 
           await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -271,18 +225,20 @@ async function restorePhotos(onProgress, options = {}) {
             return result;
           }, username);
 
-          if (profileData.photo || profileData.bio) {
-            // Обновляем в таблице profiles
+          // Проверяем, удалось ли на этот раз найти фото (или хотя бы био)
+          if (profileData.photo && !profileData.photo.includes('placeholder')) {
+
+            // 1. Обновляем основную таблицу profiles
             await db.run(
               `UPDATE profiles SET 
-                                photo = COALESCE(NULLIF(?, ''), photo), 
-                                bio = COALESCE(NULLIF(?, ''), bio), 
-                                followers_count = CASE WHEN ? > 0 THEN ? ELSE followers_count END,
-                                following_count = CASE WHEN ? > 0 THEN ? ELSE following_count END,
-                                publications_count = CASE WHEN ? > 0 THEN ? ELSE publications_count END,
-                                name = COALESCE(NULLIF(?, ''), name),
-                                timestamp = ?
-                             WHERE url = ? OR username = ?`,
+                    photo = ?, 
+                    bio = COALESCE(NULLIF(?, ''), bio), 
+                    followers_count = CASE WHEN ? > 0 THEN ? ELSE followers_count END,
+                    following_count = CASE WHEN ? > 0 THEN ? ELSE following_count END,
+                    publications_count = CASE WHEN ? > 0 THEN ? ELSE publications_count END,
+                    name = COALESCE(NULLIF(?, ''), name),
+                    timestamp = ?
+                 WHERE url = ? OR username = ?`,
               [
                 profileData.photo,
                 profileData.bio,
@@ -299,16 +255,16 @@ async function restorePhotos(onProgress, options = {}) {
               ]
             );
 
-            // Также обновляем в таблице donors, если такой существует
+            // 2. Обновляем таблицу доноров
             await db.run(
               `UPDATE donors SET 
-                                photo = COALESCE(NULLIF(?, ''), photo), 
-                                bio = COALESCE(NULLIF(?, ''), bio), 
-                                followers_count = CASE WHEN ? > 0 THEN ? ELSE followers_count END,
-                                publications_count = CASE WHEN ? > 0 THEN ? ELSE publications_count END,
-                                name = COALESCE(NULLIF(?, ''), name),
-                                last_updated = ?
-                             WHERE username = ?`,
+                    photo = ?, 
+                    bio = COALESCE(NULLIF(?, ''), bio), 
+                    followers_count = CASE WHEN ? > 0 THEN ? ELSE followers_count END,
+                    publications_count = CASE WHEN ? > 0 THEN ? ELSE publications_count END,
+                    name = COALESCE(NULLIF(?, ''), name),
+                    last_updated = ?
+                 WHERE username = ?`,
               [
                 profileData.photo,
                 profileData.bio,
@@ -319,20 +275,20 @@ async function restorePhotos(onProgress, options = {}) {
                 username,
               ]
             );
+
+            // 3. УДАЛЯЕМ ИЗ СПИСКА ОШИБОК, так как фото успешно восстановлено
+            await db.run(`DELETE FROM failed_images WHERE url = ?`, [url]);
+
             updatedCount++;
-            console.log(
-              `   ✅ [Поток ${workerId}] Профиль и данные донора обновлены для ${username}`
-            );
+            console.log(`   ✅ [Поток ${workerId}] Фото восстановлено! Убрано из списка ошибок: ${username}`);
           } else {
-            console.log(`   ⚠️ [Поток ${workerId}] Данные не найдены для ${username}`);
+            console.log(`   ⚠️ [Поток ${workerId}] Фото всё еще не доступно для ${username}`);
           }
 
-          // Интервал между профилями
           if (await activeWait(2000 + Math.random() * 3000)) break;
         } catch (err) {
           console.error(`   ❌ [Поток ${workerId}] Ошибка ${username}: ${err.message}`);
           errorCount++;
-          // Небольшая пауза после ошибки
           if (await activeWait(2000)) break;
         }
       }
@@ -348,7 +304,6 @@ async function restorePhotos(onProgress, options = {}) {
     const workers = [];
     for (let i = 0; i < concurrency; i++) {
       workers.push(worker(i + 1));
-      // Небольшая задержка при запуске потоков для избежания коллизий в браузере
       await new Promise((r) => setTimeout(r, 1000));
       if (stopRequested) break;
     }
@@ -360,7 +315,7 @@ async function restorePhotos(onProgress, options = {}) {
     }
     const finalStatus = stopRequested ? 'ПРЕРВАНО' : 'ЗАВЕРШЕНО';
     console.log(
-      `🏁 ВОССТАНОВЛЕНИЕ ${finalStatus}. Обновлено: ${updatedCount}, Ошибок: ${errorCount}`
+      `🏁 ВОССТАНОВЛЕНИЕ ${finalStatus}. Восстановлено фоток: ${updatedCount}, Ошибок: ${errorCount}`
     );
   }
 
