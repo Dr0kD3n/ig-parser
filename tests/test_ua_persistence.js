@@ -11,7 +11,7 @@ async function testUAPersistence() {
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
   const testFingerprint = {
     userAgent: testUA,
-    viewport: { width: 1280, height: 720 },
+    viewport: { width: 1920, height: 1300 },
     locale: 'en-US',
     timezoneId: 'America/New_York',
     deviceScaleFactor: 1,

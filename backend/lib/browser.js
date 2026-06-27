@@ -19,11 +19,11 @@ const fingerprintInjector = new FingerprintInjector();
 playwright_extra_1.chromium.use(stealth);
 
 async function createBrowserContext(config, headless = false) {
-  const defaultViewport = { width: 1280, height: 800 };
+  const defaultViewport = { width: 1920, height: 800 };
   const rawViewport =
     (config.fingerprint && config.fingerprint.viewport) || config.viewport || defaultViewport;
   const viewport = {
-    width: Math.max(1280, rawViewport.width || 0),
+    width: Math.max(1920, rawViewport.width || 0),
     height: Math.max(800, rawViewport.height || 0),
   };
   const userAgent = (config.fingerprint && config.fingerprint.userAgent) || config.userAgent;

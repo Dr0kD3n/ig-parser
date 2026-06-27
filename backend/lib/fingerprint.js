@@ -56,7 +56,7 @@ function generateFingerprint() {
 
   const screen = getScreenResolution();
   // Ensure the viewport is at least a standard desktop resolution to prevent mobile mode
-  const width = Math.max(1280, Math.floor(screen.width * (0.7 + Math.random() * 0.2)));
+  const width = Math.max(1920, Math.floor(screen.width * (0.7 + Math.random() * 0.2)));
   const height = Math.max(800, Math.floor(screen.height * (0.7 + Math.random() * 0.2)));
 
   return {

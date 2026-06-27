@@ -13,7 +13,7 @@ const { getDB } = require('./lib/db');
 const getDynamicConfig = async () => {
   try {
     // Небольшая рандомизация размера окна
-    const width = 1280 + Math.floor(Math.random() * 150);
+    const width = 1920 + Math.floor(Math.random() * 150);
     const height = 900 + Math.floor(Math.random() * 100);
 
     const accounts = await (0, config_1.getAllAccounts)('parser');

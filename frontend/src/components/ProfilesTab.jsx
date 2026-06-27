@@ -390,16 +390,6 @@ export default function ProfilesTab({
         matchesDonor
       );
     })
-    .sort((a, b) => {
-      if (sortOption === 'oldest')
-        return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-      if (sortOption === 'match') {
-        const scoreA = a.matchScore !== undefined ? a.matchScore : 50;
-        const scoreB = b.matchScore !== undefined ? b.matchScore : 50;
-        if (scoreB !== scoreA) return scoreB - scoreA;
-      }
-      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-    });
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const page = Math.min(currentPage, totalPages);
   const pageData = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);

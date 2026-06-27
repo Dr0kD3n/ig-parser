@@ -507,7 +507,6 @@ export default function App() {
 
   const handleImageError = useCallback((url) => {
     setFailedImages((prev) => new Set([...prev, url]));
-    console.log(url)
     handleReportFailedImage(url);
   }, []);
 

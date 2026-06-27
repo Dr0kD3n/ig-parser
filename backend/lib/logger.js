@@ -8,8 +8,8 @@ const utils_1 = require('./utils');
 const logFile = path_1.join((0, utils_1.getRootPath)(), 'data', 'logs', 'app.log');
 exports.logFile = logFile;
 function log(message, level = 'INFO') {
-  const timestamp = new Date().toISOString();
-  const formattedMessage = `[${timestamp}] [${level}] ${message}`;
+  const timestamp = new Date().toLocaleDateString();
+  const formattedMessage = `[${timestamp}] ${message}`;
 
   // Console colors
   const colors = {

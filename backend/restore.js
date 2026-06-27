@@ -19,7 +19,7 @@ const isAnonymousPhoto = (url) => {
 };
 
 const getDynamicConfig = async () => {
-  const width = 1280 + Math.floor(Math.random() * 150);
+  const width = 1920 + Math.floor(Math.random() * 150);
   const height = 900 + Math.floor(Math.random() * 100);
   return {
     viewport: { width, height },

@@ -101,7 +101,7 @@ async function restorePhotos(onProgress, options = {}) {
         proxy: account.proxy,
         cookies: account.cookies,
         fingerprint: account.fingerprint,
-        viewport: { width: 1280, height: 800 },
+        viewport: { width: 1920, height: 800 },
         userAgent:
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       },
@@ -237,7 +237,6 @@ async function restorePhotos(onProgress, options = {}) {
                     following_count = CASE WHEN ? > 0 THEN ? ELSE following_count END,
                     publications_count = CASE WHEN ? > 0 THEN ? ELSE publications_count END,
                     name = COALESCE(NULLIF(?, ''), name),
-                    timestamp = ?
                  WHERE url = ? OR username = ?`,
               [
                 profileData.photo,
@@ -249,7 +248,6 @@ async function restorePhotos(onProgress, options = {}) {
                 profileData.publications,
                 profileData.publications,
                 profileData.name,
-                new Date().toISOString(),
                 url,
                 username,
               ]

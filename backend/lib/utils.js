@@ -175,7 +175,7 @@ const humanMove = async (page, targetX, targetY, options = {}) => {
     mouseTracker.set(page, { x: targetX, y: targetY });
   } catch (e) {
     // Fallback or ignore for movement
-    await page.mouse.move(targetX, targetY).catch(() => {});
+    await page.mouse.move(targetX, targetY).catch(() => { });
     mouseTracker.set(page, { x: targetX, y: targetY });
   }
 };
@@ -293,7 +293,7 @@ const humanOverscroll = async (page, direction = 'down', amount = 300) => {
     await humanScroll(page, null, direction, overshoot);
     await wait(200 + Math.random() * 500);
     await humanScroll(page, null, direction === 'down' ? 'up' : 'down', overshoot - amount);
-  } catch (e) {}
+  } catch (e) { }
 };
 exports.humanOverscroll = humanOverscroll;
 
@@ -313,7 +313,7 @@ const humanMouseLeave = async (page) => {
       x: Math.max(0, Math.min(targetX, viewport.width)),
       y: Math.max(0, Math.min(targetY, viewport.height)),
     });
-  } catch (e) {}
+  } catch (e) { }
 };
 exports.humanMouseLeave = humanMouseLeave;
 
@@ -350,7 +350,7 @@ const humanSelection = async (page) => {
         await wait(1000 + Math.random() * 3000);
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 };
 exports.humanSelection = humanSelection;
 const { execSync } = require('child_process');
@@ -370,8 +370,8 @@ const getScreenResolution = () => {
         }
       }
     }
-  } catch (e) {}
+  } catch (e) { }
   // Fallback to a common logical resolution
-  return { width: 1280, height: 720 };
+  return { width: 1920, height: 1300 };
 };
 exports.getScreenResolution = getScreenResolution;

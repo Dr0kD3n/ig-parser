@@ -579,11 +579,12 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       throw new RotateAccountError('Action Blocked / Shadowban detected', config.target.names);
     }
     logger.info(`   ✅ Страница донора загружена. Ищем кнопку подписчиков (strict mode)...`);
+    await (0, utils_1.humanMouseMove)(page, 100, 100);
+        
     let followersBtn = page.locator(SELECTORS.FOLLOWERS_LINK_STRICT);
     await followersBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
 
     if (!(await followersBtn.isVisible())) {
-      logger.warn(`   ⚠️ Кнопка не найдена по XPath, пробую запасные варианты...`);
       // 1. Try by href (standard)
       followersBtn = page.locator('header a:has([title])').first();
 
@@ -789,7 +790,9 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 5000 });
       } catch (e) { }
       const typeDelay = Math.floor(Math.random() * (60 - 20 + 1) + 20);
-      await searchInput.pressSequentially(name, { delay: typeDelay });
+      // await searchInput.pressSequentially(name, { delay: typeDelay });
+      await (0, utils_1.humanType)(page, searchInput, name, config.timeouts);
+
       logger.info(`      ⏳ Ждем выдачу результатов от Инстаграма...`);
       try {
         await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 5000 });

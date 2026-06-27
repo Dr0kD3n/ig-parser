@@ -10,7 +10,7 @@ module.exports = defineConfig({
     use: {
         baseURL: 'http://localhost:5000',
         trace: 'off',
-        viewport: { width: 1280, height: 720 },
+        viewport: { width: 1920, height: 1300 },
         headless: false,
         locale: 'en-US',
         timezoneId: 'America/New_York',
