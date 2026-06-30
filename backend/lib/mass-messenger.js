@@ -2,8 +2,19 @@
 const { getDB } = require('./db');
 const { getAllAccounts, getSetting } = require('./config');
 const { createBrowserContext, startLiveView, takeLiveScreenshot } = require('./browser');
-const { wait, humanType } = require('./utils');
+const { wait, humanType, humanClick } = require('./utils');
+const {
+    navigateViaSearch,
+    browseProfileBeforeDM,
+    swipeHomeFeed,
+    performMicroActions,
+    submitMessage,
+    verifyMessageDelivered,
+    createMessengerSession,
+    CLICK_OPTS,
+} = require('./anti-fraud');
 const logger = require('./logger');
+const IG = require('./ig-selectors');
 
 let massMessengerStatus = {
     running: false,
@@ -15,78 +26,53 @@ let massMessengerStatus = {
 
 let messengerStopRequested = false;
 
-async function sendMessageToProfile(context, url, message, config) {
-    let page;
+async function sendMessageToProfile(page, url, message, config, session) {
     try {
-        page = await context.newPage();
-        logger.info(`🌐 Opening: ${url}`);
-        // Используем 'commit' для мгновенного начала работы с DOM
-        await page.goto(url, { waitUntil: 'commit', timeout: 60000 });
-        await wait(1000);
+        logger.info(`🌐 [ANTIFRAUD] Сессия для: ${url}`);
+        session.profileCount++;
+
+        const navigated = await navigateViaSearch(page, url, config, session);
+        if (!navigated) {
+            return { success: false, reason: 'nav_failed' };
+        }
+
+        await wait(1000 + Math.random() * 1500);
         await takeLiveScreenshot(page);
 
         const isDirectChat = page.url().includes('/direct/t/');
 
         if (!isDirectChat) {
-            // Wait for profile buttons to load
             await page.waitForSelector('header section button, div[role="dialog"]', { timeout: 8000 }).catch(() => { });
-            await wait(1500);
+            await wait(1500 + Math.random() * 1000);
 
-            // Double check: if we are already in a DM modal after loading (sometimes IG auto-opens)
-            const chatLoaded = await page.locator('div[role="textbox"][contenteditable="true"]').count() > 0;
+            // Просмотр профиля: hover, случайный пост — до кнопки Message
+            await browseProfileBeforeDM(page);
+
+            const chatLoaded = (await page.locator(IG.CHAT_INPUT).count()) > 0;
 
             if (!chatLoaded) {
                 let foundDirect = false;
-                const messageButtonSelectors = [
-                    'header section button:has-text("Message")',
-                    'header section button:has-text("Сообщение")',
-                    'header section button:has-text("Send message")',
-                    'header section div[role="button"]:has-text("Message")',
-                    'header section div[role="button"]:has-text("Сообщение")',
-                    'header section button:has-text("Написать")',
-                    'header section a:has-text("Message")',
-                    'header section a:has-text("Сообщение")'
-                ];
-
-                for (const selector of messageButtonSelectors) {
-                    const btn = page.locator(selector).first();
-                    if (await btn.count() > 0 && await btn.isVisible()) {
-                        await btn.click();
-                        foundDirect = true;
-                        logger.info(`✅ Found "Message" button in header: ${selector}`);
-                        break;
-                    }
+                const msgBtn = await IG.findFirstVisible(page, IG.MESSAGE_BTN);
+                if (msgBtn) {
+                    await humanClick(page, msgBtn, CLICK_OPTS);
+                    foundDirect = true;
+                    logger.info(`✅ Found "Message" button in profile header`);
                 }
 
                 if (!foundDirect) {
-                    const optionsBtn = page.locator('header svg[aria-label*="Параметры"], header svg[aria-label*="Options"], header svg[aria-label*="More options"], header button:has(svg[aria-label*="Options"])').first();
-                    if (await optionsBtn.isVisible()) {
-                        await optionsBtn.click();
+                    const optionsEl = await IG.findFirstVisible(page, IG.OPTIONS_BTN);
+                    if (optionsEl) {
+                        const optionsTarget = await IG.resolveClickable(optionsEl);
+                        await humanClick(page, optionsTarget, CLICK_OPTS);
                         await wait(2000);
 
-                        const labels = ["Send message", "Отправить сообщение", "Написать", "Message", "Сообщение"];
-                        let targetBtn = null;
-                        for (const label of labels) {
-                            const btn = page.getByRole('button', { name: label, exact: false });
-                            if (await btn.count() > 0) {
-                                targetBtn = btn;
-                                break;
-                            }
-                        }
-
-                        if (targetBtn && await targetBtn.isVisible()) {
-                            await targetBtn.click();
-                            logger.info(`✅ Found message button in menu`);
+                        const menuBtn = await IG.findFirstVisible(page, IG.MENU_MESSAGE_BTN);
+                        if (menuBtn && (await menuBtn.isVisible())) {
+                            await humanClick(page, menuBtn, CLICK_OPTS);
+                            logger.info(`✅ Found message button in options menu`);
                         } else {
-                            // Last ditch loose text fallback
-                            const fallback = page.locator('div[role="dialog"] button:has-text("Message"), div[role="dialog"] [role="button"]:has-text("Message")').first();
-                            if (await fallback.count() > 0) {
-                                await fallback.click();
-                                logger.info(`⚠️ Using loose fallback in menu`);
-                            } else {
-                                logger.warn(`❌ No message button found for ${url}`);
-                                return { success: false, reason: 'no_button' };
-                            }
+                            logger.warn(`❌ No message button found for ${url}`);
+                            return { success: false, reason: 'no_button' };
                         }
                     } else {
                         logger.warn(`❌ No message button and no options for ${url}`);
@@ -97,8 +83,8 @@ async function sendMessageToProfile(context, url, message, config) {
         }
 
         // Wait for chat stabilizing
-        const inputSelector = 'div[role="textbox"][contenteditable="true"], div[aria-label="Message"], div[aria-label="Напишите сообщение..."], [aria-label="Message"], [aria-label="Напишите сообщение..."]';
-        const notNowSelector = 'button:has-text("Not Now"), button:has-text("Не сейчас")';
+        const inputSelector = IG.CHAT_INPUT;
+        const notNowSelector = IG.NOT_NOW_BTN;
 
         try {
             await Promise.race([
@@ -108,7 +94,7 @@ async function sendMessageToProfile(context, url, message, config) {
 
             const notNow = page.locator(notNowSelector).first();
             if (await notNow.isVisible()) {
-                await notNow.click();
+                await humanClick(page, notNow, CLICK_OPTS);
                 await wait(2000);
             }
 
@@ -120,9 +106,9 @@ async function sendMessageToProfile(context, url, message, config) {
         await wait(500); // Reduced stabilization wait
 
         // DISMISS "Not Now" if present
-        const notNow = page.locator('button:has-text("Not Now"), button:has-text("Не сейчас")').first();
+        const notNow = page.locator(IG.NOT_NOW_BTN).first();
         if (await notNow.isVisible()) {
-            await notNow.click();
+            await humanClick(page, notNow, CLICK_OPTS);
             await wait(1000);
         }
 
@@ -209,12 +195,21 @@ async function sendMessageToProfile(context, url, message, config) {
         // SENDING
         const textbox = page.locator(inputSelector).first();
         if (await textbox.count() > 0) {
-            await humanType(page, inputSelector, message, config.timeouts);
-            await wait(1000);
-            await page.keyboard.press('Enter');
-            await wait(200); // Micro-delay requested AFTER sending
-            await wait(3000); // Additional wait to ensure message is visually sent/logged by IG
-            return { success: true };
+            await humanClick(page, textbox, CLICK_OPTS);
+            await wait(300 + Math.random() * 500);
+            await humanType(page, inputSelector, message, config.timeouts, { skipFocus: true });
+            await wait(800 + Math.random() * 1200);
+            await submitMessage(page, inputSelector, session);
+            await wait(500);
+
+            const delivery = await verifyMessageDelivered(page, message);
+            if (!delivery.delivered) {
+                logger.warn(`⛔ [DELIVERY] Не доставлено @${url}: ${delivery.reason}`);
+                return { success: false, reason: delivery.reason || 'delivery_failed', delivered: false };
+            }
+
+            await wait(1500 + Math.random() * 1500);
+            return { success: true, delivered: true, confidence: delivery.confidence };
         } else {
             logger.error(`❌ Textbox not found for ${url}`);
             return { success: false, reason: 'no_textbox' };
@@ -225,7 +220,14 @@ async function sendMessageToProfile(context, url, message, config) {
         return { success: false, reason: 'error', error: e.message };
     } finally {
         if (page && !page.isClosed()) {
-            await page.close().catch(() => { });
+            try {
+                await swipeHomeFeed(page, session);
+                if (session.profileCount % 3 === 0) {
+                    await performMicroActions(page);
+                }
+            } catch (postErr) {
+                logger.warn(`⚠️ [ANTIFRAUD] post-profile: ${postErr.message}`);
+            }
         }
     }
 }
@@ -239,7 +241,6 @@ async function startMassMessaging(onProgress, options = {}) {
     const db = await getDB();
     const settings = await db.all(`SELECT * FROM settings`);
     const donorGroups = JSON.parse(settings.find(s => s.key === 'donorGroups')?.value || '[]');
-    const concurrentProfiles = parseInt(settings.find(s => s.key === 'concurrentProfiles')?.value || '3');
     const humanEmulation = settings.find(s => s.key === 'humanEmulation')?.value === 'true';
     const dmLimit = parseInt(settings.find(s => s.key === 'dmLimit')?.value || '20');
 
@@ -253,15 +254,14 @@ async function startMassMessaging(onProgress, options = {}) {
 
     if (options.cityOnly) {
         query += ` AND isInCity = 1`;
-    } else {
-        query += ` AND (isInCity = 0 OR isInCity IS NULL)`;
     }
     if (options.likedOnly) {
         query += `  AND vote = 'like'`;
     }
 
 
-    query += ` ORDER BY timestamp DESC`;
+    // Порядок как в таблице на главной: от самой большой даты к старым.
+    query += ` ORDER BY datetime(timestamp) DESC, rowid DESC`;
     if (dmLimit && dmLimit > 0) {
         query += ` LIMIT ${dmLimit}`;
     }
@@ -298,145 +298,140 @@ async function startMassMessaging(onProgress, options = {}) {
         if (onProgress) onProgress(massMessengerStatus);
     };
 
-    updateStatus({ status: `Broadcasting with ${accounts.length} accounts...` });
+    const account = accounts[0];
+    if (accounts.length > 1) {
+        logger.info(`👤 [MASS] ${accounts.length} sender-аккаунтов → ${account.name} (последовательный порядок)`);
+    }
+    updateStatus({ status: `Broadcasting with ${account.name}...` });
 
-    const queue = [...profiles];
     let currentProcessed = 0;
     const results = [];
 
-    // Account Runner: starts one browser per account and manages multiple workers (tabs)
-    const runAccount = async (account) => {
-        const browserConfig = {
-            id: account.id,
-            proxy: account.proxy,
-            cookies: account.cookies,
-            fingerprint: account.fingerprint,
-            timeouts: { pageLoad: 60000, typingDelayMin: 50, typingDelayMax: 150 }
-        };
-
-        let skipBrowser = await getSetting('showBrowser') !== true;
-        let browser, context, liveInterval;
-
-        try {
-            logger.info(`🚀 [ACCOUNT ${account.name}] Launching browser instance...`);
-            const browserResult = await createBrowserContext(browserConfig, skipBrowser);
-            browser = browserResult.browser;
-            context = browserResult.context;
-            liveInterval = startLiveView(context);
-
-            const workerPromises = [];
-            // Spawn concurrent workers (tabs) for THIS account
-            for (let i = 0; i < concurrentProfiles; i++) {
-                workerPromises.push((async (workerId) => {
-                    // Stagger the start of each tab to avoid overwhelming navigation
-                    await wait(workerId * 1000);
-
-                    try {
-                        while (queue.length > 0 && !messengerStopRequested) {
-                            const profile = queue.shift();
-                            if (!profile) break;
-
-                            // Double-check dmSent status before proceeding to prevent race conditions in parallel mode
-                            const freshProfile = await db.get(`SELECT dmSent FROM profiles WHERE url = ?`, [profile.url]);
-                            if (freshProfile?.dmSent === 1) {
-                                currentProcessed++;
-                                updateStatus({ current: currentProcessed });
-                                continue;
-                            }
-
-                            logger.info(`🧵 [ACC: ${account.name} | TAB: ${workerId}] Starting for ${profile.url}`);
-
-                            try {
-                                // Select message logic
-                                const donorName = profile.donor ? profile.donor.replace('@', '').trim() : '';
-                                const group = donorGroups.find(g => (g.donors || []).some(d => (typeof d === 'string' ? d : d.url).includes(donorName)));
-                                let msgs = (group && group.messages?.length > 0) ? group.messages : [];
-
-                                if (msgs.length === 0) {
-                                    const allGroup = donorGroups.find(g => g.id === 'all');
-                                    msgs = (allGroup && allGroup.messages?.length > 0) ? allGroup.messages : ['Hello!'];
-                                }
-
-                                // [SMART SELECTION] Сортируем сообщения по количеству отправок, чтобы статистика была ровной
-                                let message = msgs[0];
-                                if (msgs.length > 1) {
-                                    try {
-                                        const counts = await db.all(`
-                                            SELECT message_text, COUNT(*) as c 
-                                            FROM messages_log 
-                                            WHERE message_text IN (${msgs.map(() => '?').join(',')})
-                                            GROUP BY message_text
-                                        `, msgs);
-                                        const countMap = Object.fromEntries(counts.map(r => [r.message_text, r.c]));
-
-                                        // Находим минимальное количество отправок
-                                        const minCount = Math.min(...msgs.map(m => countMap[m] || 0));
-                                        // Выбираем все сообщения с минимальным количеством
-                                        const bestMsgs = msgs.filter(m => (countMap[m] || 0) === minCount);
-                                        // Рандом из лучших (чтобы не спамить одним и тем же в одну секунду)
-                                        message = bestMsgs[Math.floor(Math.random() * bestMsgs.length)];
-                                    } catch (e) {
-                                        logger.error(`Error in smart message selection: ${e.message}`);
-                                        message = msgs[Math.floor(Math.random() * msgs.length)];
-                                    }
-                                }
-
-                                // Process the profile using a new tab in the shared context
-                                const result = await sendMessageToProfile(context, profile.url, message, browserConfig);
-
-                                // IMPORTANT: Mark as sent if SUCCESS or skipped due to HISTORY/EXISTING CHAT
-                                if (result.success) {
-                                    await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 0, dmError = NULL WHERE url = ?`, [profile.url]);
-
-                                    await db.run(
-                                        `INSERT INTO messages_log (url, username, name, message_text, status, timestamp, account_id, sender_name) VALUES (?, ?, ?, ?, 'sent', ?, ?, ?)`,
-                                        [profile.url, profile.username || profile.name, profile.name, message, new Date().toISOString(), account.id, account.name]
-                                    );
-                                    logger.info(`🚀 [ACC: ${account.name} SENT] ${profile.url} (@${profile.username})`);
-                                } else {
-                                    // Mark as skipped/failed: tgTagged = 2 means "Не написал" (automatic error report)
-                                    if (result.reason === 'history' || result.reason === 'chat_exists' || result.reason === 'no_button') {
-                                        await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 2, dmError = ? WHERE url = ?`, [result.reason, profile.url]);
-                                    } else {
-                                        await db.run(`UPDATE profiles SET tgTagged = 2, dmError = ? WHERE url = ?`, [result.reason || 'error', profile.url]);
-                                    }
-                                }
-
-                                results.push({ url: profile.url, success: result.success });
-                            } catch (err) {
-                                logger.error(`Task error for ${profile.url} on ${account.name}: ${err.message}`);
-                                results.push({ url: profile.url, success: false, error: err.message });
-                            } finally {
-                                currentProcessed++;
-                                updateStatus({ current: currentProcessed });
-
-                                // Human-like pause between tasks for THIS tab
-                                if (queue.length > 0 && !messengerStopRequested) {
-                                    const delay = humanEmulation ? 15000 + Math.random() * 20000 : 3000;
-                                    await wait(delay);
-                                }
-                            }
-                        }
-                    } catch (workerErr) {
-                        logger.error(`Worker ${workerId} loop error on ${account.name}: ${workerErr.message}`);
-                    }
-                })(i));
-            }
-
-            await Promise.all(workerPromises);
-
-        } catch (err) {
-            logger.error(`Account runner error for ${account.name}: ${err.message}`);
-        } finally {
-            if (liveInterval) clearInterval(liveInterval);
-            if (context) await context.close().catch(() => { });
-            if (browser && !skipBrowser) await browser.close().catch(() => { });
-        }
+    const browserConfig = {
+        id: account.id,
+        proxy: account.proxy,
+        cookies: account.cookies,
+        fingerprint: account.fingerprint,
+        timeouts: { pageLoad: 60000, typingDelayMin: 50, typingDelayMax: 150 },
     };
 
-    // Parallel execution across all accounts
-    const accountPromises = accounts.map(acc => runAccount(acc));
-    await Promise.all(accountPromises);
+    const skipBrowser = await getSetting('showBrowser') !== true;
+    let browser, context, liveInterval, page;
+
+    try {
+        logger.info(`🚀 [ACCOUNT ${account.name}] Launching browser instance...`);
+        const browserResult = await createBrowserContext(browserConfig, skipBrowser);
+        browser = browserResult.browser;
+        context = browserResult.context;
+        liveInterval = startLiveView(context);
+
+        const session = createMessengerSession();
+        page = await context.newPage();
+        logger.info(`🖥️ [ACC: ${account.name}] Последовательная рассылка: ${profilesCount} профилей`);
+        await page.goto('https://www.instagram.com/', {
+            waitUntil: 'domcontentloaded',
+            timeout: 60000,
+        });
+        await wait(2000 + Math.random() * 1500);
+
+        for (let i = 0; i < profiles.length && !messengerStopRequested; i++) {
+            const profile = profiles[i];
+
+            const freshProfile = await db.get(`SELECT dmSent FROM profiles WHERE url = ?`, [profile.url]);
+            if (freshProfile?.dmSent === 1) {
+                currentProcessed++;
+                updateStatus({ current: currentProcessed });
+                continue;
+            }
+
+            logger.info(`🧵 [${i + 1}/${profilesCount}] ${profile.url}`);
+
+            try {
+                const donorName = profile.donor ? profile.donor.replace('@', '').trim() : '';
+                const group = donorGroups.find(g => (g.donors || []).some(d => (typeof d === 'string' ? d : d.url).includes(donorName)));
+                let msgs = (group && group.messages?.length > 0) ? group.messages : [];
+
+                if (msgs.length === 0) {
+                    const allGroup = donorGroups.find(g => g.id === 'all');
+                    msgs = (allGroup && allGroup.messages?.length > 0) ? allGroup.messages : ['Hello!'];
+                }
+
+                let message = msgs[0];
+                if (msgs.length > 1) {
+                    try {
+                        const counts = await db.all(`
+                            SELECT message_text, COUNT(*) as c 
+                            FROM messages_log 
+                            WHERE message_text IN (${msgs.map(() => '?').join(',')})
+                            GROUP BY message_text
+                        `, msgs);
+                        const countMap = Object.fromEntries(counts.map(r => [r.message_text, r.c]));
+                        const minCount = Math.min(...msgs.map(m => countMap[m] || 0));
+                        const bestMsgs = msgs.filter(m => (countMap[m] || 0) === minCount);
+                        message = bestMsgs[Math.floor(Math.random() * bestMsgs.length)];
+                    } catch (e) {
+                        logger.error(`Error in smart message selection: ${e.message}`);
+                        message = msgs[Math.floor(Math.random() * msgs.length)];
+                    }
+                }
+
+                const result = await sendMessageToProfile(page, profile.url, message, browserConfig, session);
+
+                if (result.success && result.delivered) {
+                    await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 0, dmError = NULL WHERE url = ?`, [profile.url]);
+                    await db.run(
+                        `INSERT INTO messages_log (url, username, name, message_text, status, timestamp, account_id, sender_name) VALUES (?, ?, ?, ?, 'sent', ?, ?, ?)`,
+                        [profile.url, profile.username || profile.name, profile.name, message, new Date().toISOString(), account.id, account.name]
+                    );
+                    logger.info(`🚀 [ACC: ${account.name} SENT] ${profile.url} (@${profile.username})`);
+                } else {
+                    const errReason = result.reason || 'error';
+                    if (result.reason === 'history' || result.reason === 'chat_exists' || result.reason === 'no_button') {
+                        await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 2, dmError = ? WHERE url = ?`, [errReason, profile.url]);
+                    } else if (
+                        result.reason === 'delivery_failed' ||
+                        result.reason === 'send_failed_ui' ||
+                        result.reason === 'text_still_in_input' ||
+                        result.reason === 'not_verified'
+                    ) {
+                        await db.run(`UPDATE profiles SET tgTagged = 2, dmError = ? WHERE url = ?`, [errReason, profile.url]);
+                        logger.warn(`🚫 [ACC: ${account.name}] Спамблок/недоставка: ${profile.url}`);
+                    } else {
+                        await db.run(`UPDATE profiles SET tgTagged = 2, dmError = ? WHERE url = ?`, [errReason, profile.url]);
+                    }
+                }
+
+                results.push({
+                    url: profile.url,
+                    success: !!(result.success && result.delivered),
+                });
+            } catch (err) {
+                logger.error(`Task error for ${profile.url} on ${account.name}: ${err.message}`);
+                results.push({ url: profile.url, success: false, error: err.message });
+            } finally {
+                currentProcessed++;
+                updateStatus({ current: currentProcessed });
+
+                const hasMore = i < profiles.length - 1 && !messengerStopRequested;
+                if (hasMore) {
+                    const delay = humanEmulation
+                        ? 20000 + Math.random() * 25000
+                        : 12000 + Math.random() * 18000;
+                    logger.info(`👤 [ANTIFRAUD] Пауза ${Math.round(delay / 1000)}с до следующего профиля`);
+                    await wait(delay);
+                }
+            }
+        }
+    } catch (err) {
+        logger.error(`Account runner error for ${account.name}: ${err.message}`);
+    } finally {
+        if (page && !page.isClosed()) {
+            await page.close().catch(() => { });
+        }
+        if (liveInterval) clearInterval(liveInterval);
+        if (context) await context.close().catch(() => { });
+        if (browser && !skipBrowser) await browser.close().catch(() => { });
+    }
 
     const successfulTotal = results.filter(r => r.success).length;
     logger.info(`✅ Mass messaging session complete. Sent: ${successfulTotal}/${results.length}`);

@@ -57,10 +57,83 @@ const mouseTracker = new WeakMap();
 
 const { SelectorError, AppError } = require('./errors');
 
+const updateVisualCursor = async (page, x, y) => {
+  await page
+    .evaluate(
+      ({ x: cursorX, y: cursorY }) => {
+        const cursorId = 'ig-bot-visual-cursor';
+        let cursor = document.getElementById(cursorId);
+
+        if (!cursor) {
+          cursor = document.createElement('div');
+          cursor.id = cursorId;
+          cursor.setAttribute('aria-hidden', 'true');
+          cursor.style.cssText = `
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 22px;
+            height: 28px;
+            z-index: 2147483647;
+            pointer-events: none;
+            transform: translate3d(${cursorX}px, ${cursorY}px, 0);
+            filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45));
+            transition: transform 45ms linear;
+          `;
+          cursor.innerHTML = `
+            <svg width="22" height="28" viewBox="0 0 22 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M1.5 1.5L1.9 23.2L7.8 17.6L11.6 26.5L15.5 24.8L11.7 16.1H20.1L1.5 1.5Z"
+                fill="white" stroke="black" stroke-width="1.6" stroke-linejoin="round"/>
+            </svg>
+          `;
+          document.documentElement.appendChild(cursor);
+        }
+
+        cursor.style.transform = `translate3d(${cursorX}px, ${cursorY}px, 0)`;
+      },
+      { x, y }
+    )
+    .catch(() => { });
+};
+
 /**
- * Функция эмуляции человеческого ввода текста
+ * Один печатный символ.
+ * keyboard.press принимает имена клавиш и падает на кириллице: Unknown key: "В".
  */
-const humanType = async (page, selector, text, timeouts) => {
+const keyboardPressChar = async (page, char) => {
+  await page.keyboard.type(char);
+};
+
+/**
+ * Посимвольный ввод с опечатками и паузами (только события клавиатуры)
+ */
+const humanTypeChars = async (page, text, timeouts) => {
+  const delayMin = timeouts?.typingDelayMin || 50;
+  const delayMax = timeouts?.typingDelayMax || 150;
+  for (const char of text) {
+    // 2% шанс опечатки с исправлением через Backspace
+    if (Math.random() < 0.02 && char !== ' ') {
+      const incorrectChar = String.fromCharCode(
+        char.charCodeAt(0) + (Math.random() > 0.5 ? 1 : -1)
+      );
+      await keyboardPressChar(page, incorrectChar);
+      await wait(Math.floor(Math.random() * 150) + 100);
+      await page.keyboard.press('Backspace');
+      await wait(Math.floor(Math.random() * 150) + 100);
+    }
+    await keyboardPressChar(page, char);
+    const delay = Math.floor(Math.random() * (delayMax - delayMin + 1)) + delayMin;
+    if (Math.random() < 0.05) await wait(Math.floor(Math.random() * 300) + 300);
+    await wait(delay);
+  }
+};
+exports.humanTypeChars = humanTypeChars;
+
+/**
+ * Эмуляция человеческого ввода: фокус (опционально) + humanTypeChars
+ * @param {object} [options] skipFocus — поле уже в фокусе (после humanClick)
+ */
+const humanType = async (page, selector, text, timeouts, options = {}) => {
   try {
     const element = typeof selector === 'string' ? page.locator(selector).first() : selector;
     const exists = (await element.count()) > 0;
@@ -70,26 +143,14 @@ const humanType = async (page, selector, text, timeouts) => {
         'Element for typing not found'
       );
 
-    await element.click();
-    const delayMin = timeouts?.typingDelayMin || 50;
-    const delayMax = timeouts?.typingDelayMax || 150;
-    for (const char of text) {
-      // 2% chance of making a typo and correcting it
-      if (Math.random() < 0.02 && char !== ' ') {
-        const incorrectChar = String.fromCharCode(
-          char.charCodeAt(0) + (Math.random() > 0.5 ? 1 : -1)
-        );
-        await page.keyboard.type(incorrectChar);
-        await wait(Math.floor(Math.random() * 150) + 100);
-        await page.keyboard.press('Backspace');
-        await wait(Math.floor(Math.random() * 150) + 100);
-      }
-      await page.keyboard.type(char);
-      let delay = Math.floor(Math.random() * (delayMax - delayMin + 1)) + delayMin;
-      // Occasional "human" pause
-      if (Math.random() < 0.05) await (0, exports.wait)(Math.floor(Math.random() * 300) + 300);
-      await (0, exports.wait)(delay);
+    if (!options.skipFocus) {
+      const focused = await element
+        .evaluate((el) => el === document.activeElement)
+        .catch(() => false);
+      if (!focused) await element.focus();
     }
+
+    await humanTypeChars(page, text, timeouts);
   } catch (e) {
     if (e instanceof SelectorError) throw e;
     throw new AppError(`Typing failed: ${e.message}`, {
@@ -98,6 +159,7 @@ const humanType = async (page, selector, text, timeouts) => {
   }
 };
 exports.humanType = humanType;
+exports.keyboardPressChar = keyboardPressChar;
 
 /**
  * Генерирует массив точек для кубической кривой Безье
@@ -123,59 +185,73 @@ const getBezierPoints = (p0, p1, p2, p3, steps = 30) => {
 exports.getBezierPoints = getBezierPoints;
 
 /**
- * Плавное движение мыши по кривой
+ * Быстрое дерганное движение мыши: рывки, микропаузa и занос за цель.
  */
 const humanMove = async (page, targetX, targetY, options = {}) => {
   try {
-    const steps = options.steps || 15 + Math.floor(Math.random() * 15);
-
-    let startPos = mouseTracker.get(page) || {
+    const startPos = mouseTracker.get(page) || {
       x: 100 + Math.random() * 400,
       y: 100 + Math.random() * 400,
     };
     const startX = options.startX || startPos.x;
     const startY = options.startY || startPos.y;
+    const distance = Math.hypot(targetX - startX, targetY - startY);
+    const steps = options.steps || Math.max(5, Math.min(14, Math.round(distance / 90)));
+    const overshootDistance = Math.min(28, Math.max(8, distance * (0.04 + Math.random() * 0.08)));
+    const directionX = distance > 0 ? (targetX - startX) / distance : 0;
+    const directionY = distance > 0 ? (targetY - startY) / distance : 0;
+    const side = Math.random() > 0.5 ? 1 : -1;
+    const overshootX = targetX + directionX * overshootDistance - directionY * side * (4 + Math.random() * 8);
+    const overshootY = targetY + directionY * overshootDistance + directionX * side * (4 + Math.random() * 8);
 
     // Контрольные точки для кривой Безье
     const p1 = {
-      x: startX + (targetX - startX) * Math.random(),
-      y: startY + (targetY - startY) * Math.random(),
+      x: startX + (targetX - startX) * (0.18 + Math.random() * 0.25) + (Math.random() - 0.5) * 90,
+      y: startY + (targetY - startY) * (0.18 + Math.random() * 0.25) + (Math.random() - 0.5) * 90,
     };
     const p2 = {
-      x: startX + (targetX - startX) * Math.random(),
-      y: startY + (targetY - startY) * Math.random(),
+      x: startX + (targetX - startX) * (0.65 + Math.random() * 0.25) + (Math.random() - 0.5) * 70,
+      y: startY + (targetY - startY) * (0.65 + Math.random() * 0.25) + (Math.random() - 0.5) * 70,
     };
 
     const points = getBezierPoints(
       { x: startX, y: startY },
       p1,
       p2,
-      { x: targetX, y: targetY },
+      { x: overshootX, y: overshootY },
       steps
     );
 
-    for (const point of points) {
-      // "Дрожание" (jitter) - добавляем случайное смещение
-      const jitterX = (Math.random() - 0.5) * 3;
-      const jitterY = (Math.random() - 0.5) * 3;
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i];
+      // Дрожание крупнее в начале и почти исчезает у цели.
+      const progress = i / Math.max(1, points.length - 1);
+      const jitter = 9 * (1 - progress) + 1.5;
+      const jitterX = (Math.random() - 0.5) * jitter;
+      const jitterY = (Math.random() - 0.5) * jitter;
 
-      // "Угловатость" - иногда пропускаем промежуточные точки или делаем резкие скачки
-      if (Math.random() > 0.1) {
-        await page.mouse.move(point.x + jitterX, point.y + jitterY);
+      // Пропуски дают резкие скачки вместо идеально гладкой траектории.
+      if (Math.random() > 0.18 || progress > 0.75) {
+        const nextX = point.x + jitterX;
+        const nextY = point.y + jitterY;
+        await page.mouse.move(nextX, nextY);
+        await updateVisualCursor(page, nextX, nextY);
       }
 
-      // Рандомные паузы для имитации "неуверенности"
-      if (Math.random() > 0.85) {
-        await wait(Math.random() * 20 + 10);
-      }
+      if (Math.random() > 0.72) await wait(8 + Math.random() * 28);
     }
 
-    // Финальный микро-прыжок к цели
+    await wait(18 + Math.random() * 45);
+    await page.mouse.move(targetX + (Math.random() - 0.5) * 3, targetY + (Math.random() - 0.5) * 3);
+    await updateVisualCursor(page, targetX, targetY);
+    await wait(12 + Math.random() * 24);
     await page.mouse.move(targetX, targetY);
+    await updateVisualCursor(page, targetX, targetY);
     mouseTracker.set(page, { x: targetX, y: targetY });
   } catch (e) {
     // Fallback or ignore for movement
     await page.mouse.move(targetX, targetY).catch(() => { });
+    await updateVisualCursor(page, targetX, targetY);
     mouseTracker.set(page, { x: targetX, y: targetY });
   }
 };
@@ -210,10 +286,26 @@ const humanHover = async (page, selector) => {
 };
 exports.humanHover = humanHover;
 
+/** Случайная точка внутри bbox — preferEdge смещает клик к краям, не в центр */
+const getClickPoint = (box, preferEdge = false) => {
+  let xRatio;
+  let yRatio;
+  if (preferEdge) {
+    const useLeft = Math.random() < 0.5;
+    xRatio = useLeft ? 0.08 + Math.random() * 0.22 : 0.7 + Math.random() * 0.22;
+    yRatio = 0.12 + Math.random() * 0.76;
+  } else {
+    xRatio = 0.3 + Math.random() * 0.4;
+    yRatio = 0.3 + Math.random() * 0.4;
+  }
+  return { x: box.x + box.width * xRatio, y: box.y + box.height * yRatio };
+};
+
 /**
  * Эмуляция человеческого клика
  */
 const humanClick = async (page, selectorOrHandle, options = {}) => {
+  const { preferEdge = false, ...clickOptions } = options;
   try {
     const element =
       typeof selectorOrHandle === 'string'
@@ -221,12 +313,11 @@ const humanClick = async (page, selectorOrHandle, options = {}) => {
         : selectorOrHandle;
     const box = await element.boundingBox();
     if (box) {
-      const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
-      const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
+      const { x: targetX, y: targetY } = getClickPoint(box, preferEdge);
 
       await humanMove(page, targetX, targetY);
       await wait(100 + Math.random() * 200);
-      await element.click(options);
+      await page.mouse.click(targetX, targetY, clickOptions);
     } else {
       const count = await element.count();
       if (count > 0) {

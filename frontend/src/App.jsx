@@ -628,7 +628,7 @@ export default function App() {
 
   const unopenedCount = girls.filter((g) => !g.viewed).length;
   const likesCount = Object.values(votes).filter((v) => v === 'like').length;
-  const massMsgCount = girls.filter(g => !g.dmSent && votes[g.url] === 'like' && (cityOnly ? g.isInCity : (!g.isInCity || g.isInCity === 0))).length;
+  const massMsgCount = girls.filter(g => !g.dmSent && votes[g.url] === 'like' && (!cityOnly || g.isInCity)).length;
 
   return (
     <div className="app">
