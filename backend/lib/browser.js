@@ -388,6 +388,7 @@ async function watchStory(page) {
 
     if ((await storyBtn.count()) > 0 && (await storyBtn.isVisible())) {
       await storyBtn.click();
+      await (0, utils_1.waitAfterEvent)();
       info(`👤 [HUMAN] Watching story...`);
       // Watch for 5-10 seconds
       await (0, utils_1.wait)(5000 + Math.random() * 5000);
@@ -396,8 +397,10 @@ async function watchStory(page) {
       const closeBtn = page.locator('svg[aria-label="Закрыть"], svg[aria-label="Close"]').first();
       if ((await closeBtn.count()) > 0) {
         await closeBtn.click();
+        await (0, utils_1.waitAfterEvent)();
       } else {
         await page.keyboard.press('Escape');
+        await (0, utils_1.waitAfterEvent)();
       }
       await (0, utils_1.wait)(1000);
     }

@@ -15,16 +15,16 @@ describe('humanType / humanTypeChars', () => {
     vi.restoreAllMocks();
   });
 
-  it('humanTypeChars: только keyboard.press, без type/insertText', async () => {
+  it('humanTypeChars: символы через keyboard.type, без insertText', async () => {
     const keyboard = mockKeyboard();
     vi.spyOn(Math, 'random').mockReturnValue(0.99);
 
     await humanTypeChars({ keyboard }, 'hi', { typingDelayMin: 1, typingDelayMax: 1 });
 
-    expect(keyboard.press).toHaveBeenCalledWith('h');
-    expect(keyboard.press).toHaveBeenCalledWith('i');
-    expect(keyboard.type).not.toHaveBeenCalled();
+    expect(keyboard.type).toHaveBeenCalledWith('h');
+    expect(keyboard.type).toHaveBeenCalledWith('i');
     expect(keyboard.insertText).not.toHaveBeenCalled();
+    expect(keyboard.press).not.toHaveBeenCalled();
   });
 
   it('humanTypeChars: опечатка → Backspace → правильный символ', async () => {
@@ -39,24 +39,23 @@ describe('humanType / humanTypeChars', () => {
 
     await humanTypeChars({ keyboard }, 'a', { typingDelayMin: 1, typingDelayMax: 1 });
 
-    expect(keyboard.press).toHaveBeenNthCalledWith(1, 'b');
+    expect(keyboard.type).toHaveBeenNthCalledWith(1, 'b');
     expect(keyboard.press).toHaveBeenCalledWith('Backspace');
-    expect(keyboard.press).toHaveBeenNthCalledWith(3, 'a');
-    expect(keyboard.type).not.toHaveBeenCalled();
+    expect(keyboard.type).toHaveBeenNthCalledWith(2, 'a');
   });
 
-  it('humanTypeChars: кириллица через keyboard.press', async () => {
+  it('humanTypeChars: кириллица через keyboard.type', async () => {
     const keyboard = mockKeyboard();
     vi.spyOn(Math, 'random').mockReturnValue(0.99);
 
     await humanTypeChars({ keyboard }, 'при', { typingDelayMin: 1, typingDelayMax: 1 });
 
-    expect(keyboard.press).toHaveBeenCalledWith('п');
-    expect(keyboard.press).toHaveBeenCalledWith('р');
-    expect(keyboard.press).toHaveBeenCalledWith('и');
+    expect(keyboard.type).toHaveBeenCalledWith('п');
+    expect(keyboard.type).toHaveBeenCalledWith('р');
+    expect(keyboard.type).toHaveBeenCalledWith('и');
   });
 
-  it('humanType: skipFocus — без click/fill, только keyboard.press', async () => {
+  it('humanType: skipFocus — без click/fill, только keyboard.type', async () => {
     const keyboard = mockKeyboard();
     const element = {
       count: vi.fn().mockResolvedValue(1),
@@ -76,7 +75,7 @@ describe('humanType / humanTypeChars', () => {
     expect(element.click).not.toHaveBeenCalled();
     expect(element.fill).not.toHaveBeenCalled();
     expect(element.focus).not.toHaveBeenCalled();
-    expect(keyboard.press).toHaveBeenCalledWith('o');
-    expect(keyboard.press).toHaveBeenCalledWith('k');
+    expect(keyboard.type).toHaveBeenCalledWith('o');
+    expect(keyboard.type).toHaveBeenCalledWith('k');
   });
 });

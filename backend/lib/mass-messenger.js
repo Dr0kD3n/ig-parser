@@ -2,7 +2,7 @@
 const { getDB } = require('./db');
 const { getAllAccounts, getSetting } = require('./config');
 const { createBrowserContext, startLiveView, takeLiveScreenshot } = require('./browser');
-const { wait, humanType, humanClick } = require('./utils');
+const { wait, humanType, humanClick, scrollToTop } = require('./utils');
 const {
     navigateViaSearch,
     browseProfileBeforeDM,
@@ -12,6 +12,8 @@ const {
     verifyMessageDelivered,
     createMessengerSession,
     CLICK_OPTS,
+    PROFILE_GAP,
+    waitWithActivity,
 } = require('./anti-fraud');
 const logger = require('./logger');
 const IG = require('./ig-selectors');
@@ -36,17 +38,19 @@ async function sendMessageToProfile(page, url, message, config, session) {
             return { success: false, reason: 'nav_failed' };
         }
 
-        await wait(1000 + Math.random() * 1500);
+        await waitWithActivity(page, 400 + Math.random() * 600);
         await takeLiveScreenshot(page);
 
         const isDirectChat = page.url().includes('/direct/t/');
 
         if (!isDirectChat) {
             await page.waitForSelector('header section button, div[role="dialog"]', { timeout: 8000 }).catch(() => { });
-            await wait(1500 + Math.random() * 1000);
+            await waitWithActivity(page, 500 + Math.random() * 400);
 
             // Просмотр профиля: hover, случайный пост — до кнопки Message
             await browseProfileBeforeDM(page);
+            await scrollToTop(page);
+            await wait(200);
 
             const chatLoaded = (await page.locator(IG.CHAT_INPUT).count()) > 0;
 
@@ -55,6 +59,7 @@ async function sendMessageToProfile(page, url, message, config, session) {
                 const msgBtn = await IG.findFirstVisible(page, IG.MESSAGE_BTN);
                 if (msgBtn) {
                     await humanClick(page, msgBtn, CLICK_OPTS);
+                    await wait(1200);
                     foundDirect = true;
                     logger.info(`✅ Found "Message" button in profile header`);
                 }
@@ -64,11 +69,12 @@ async function sendMessageToProfile(page, url, message, config, session) {
                     if (optionsEl) {
                         const optionsTarget = await IG.resolveClickable(optionsEl);
                         await humanClick(page, optionsTarget, CLICK_OPTS);
-                        await wait(2000);
+                        await waitWithActivity(page, 800);
 
                         const menuBtn = await IG.findFirstVisible(page, IG.MENU_MESSAGE_BTN);
                         if (menuBtn && (await menuBtn.isVisible())) {
                             await humanClick(page, menuBtn, CLICK_OPTS);
+                            await wait(1200);
                             logger.info(`✅ Found message button in options menu`);
                         } else {
                             logger.warn(`❌ No message button found for ${url}`);
@@ -88,28 +94,34 @@ async function sendMessageToProfile(page, url, message, config, session) {
 
         try {
             await Promise.race([
-                page.waitForSelector(inputSelector, { state: 'visible', timeout: 30000 }),
-                page.waitForSelector(notNowSelector, { state: 'visible', timeout: 30000 })
+                page.waitForSelector(inputSelector, { state: 'visible', timeout: 12000 }),
+                page.waitForSelector(notNowSelector, { state: 'visible', timeout: 12000 }),
             ]);
 
             const notNow = page.locator(notNowSelector).first();
             if (await notNow.isVisible()) {
                 await humanClick(page, notNow, CLICK_OPTS);
-                await wait(2000);
+                await wait(800);
             }
 
             // Final wait for input
-            await page.waitForSelector(inputSelector, { state: 'visible', timeout: 15000 });
+            await page.waitForSelector(inputSelector, { state: 'visible', timeout: 8000 });
         } catch (e) {
             logger.warn(`⚠️ Timeout waiting for chat input for ${url}`);
         }
-        await wait(500); // Reduced stabilization wait
+        await wait(200);
 
         // DISMISS "Not Now" if present
         const notNow = page.locator(IG.NOT_NOW_BTN).first();
         if (await notNow.isVisible()) {
             await humanClick(page, notNow, CLICK_OPTS);
-            await wait(1000);
+            await wait(400);
+        }
+
+        const chatInputReady = await page.locator(inputSelector).first().isVisible().catch(() => false);
+        if (!chatInputReady) {
+            logger.error(`❌ Textbox not found after Message click for ${url}`);
+            return { success: false, reason: 'no_textbox' };
         }
 
         // HISTORY DETECTION
@@ -196,11 +208,12 @@ async function sendMessageToProfile(page, url, message, config, session) {
         const textbox = page.locator(inputSelector).first();
         if (await textbox.count() > 0) {
             await humanClick(page, textbox, CLICK_OPTS);
-            await wait(300 + Math.random() * 500);
+            await wait(150 + Math.random() * 250);
             await humanType(page, inputSelector, message, config.timeouts, { skipFocus: true });
-            await wait(800 + Math.random() * 1200);
+            // После ввода нельзя запускать idle-действия: они могут увести фокус из composer.
+            await wait(250 + Math.random() * 350);
             await submitMessage(page, inputSelector, session);
-            await wait(500);
+            await wait(200);
 
             const delivery = await verifyMessageDelivered(page, message);
             if (!delivery.delivered) {
@@ -208,7 +221,7 @@ async function sendMessageToProfile(page, url, message, config, session) {
                 return { success: false, reason: delivery.reason || 'delivery_failed', delivered: false };
             }
 
-            await wait(1500 + Math.random() * 1500);
+            await waitWithActivity(page, 500 + Math.random() * 700);
             return { success: true, delivered: true, confidence: delivery.confidence };
         } else {
             logger.error(`❌ Textbox not found for ${url}`);
@@ -222,7 +235,7 @@ async function sendMessageToProfile(page, url, message, config, session) {
         if (page && !page.isClosed()) {
             try {
                 await swipeHomeFeed(page, session);
-                if (session.profileCount % 3 === 0) {
+                if (session.profileCount % 5 === 0) {
                     await performMicroActions(page);
                 }
             } catch (postErr) {
@@ -312,7 +325,7 @@ async function startMassMessaging(onProgress, options = {}) {
         proxy: account.proxy,
         cookies: account.cookies,
         fingerprint: account.fingerprint,
-        timeouts: { pageLoad: 60000, typingDelayMin: 50, typingDelayMax: 150 },
+        timeouts: { pageLoad: 60000, typingDelayMin: 30, typingDelayMax: 90 },
     };
 
     const skipBrowser = await getSetting('showBrowser') !== true;
@@ -332,7 +345,7 @@ async function startMassMessaging(onProgress, options = {}) {
             waitUntil: 'domcontentloaded',
             timeout: 60000,
         });
-        await wait(2000 + Math.random() * 1500);
+        await waitWithActivity(page, 700 + Math.random() * 600);
 
         for (let i = 0; i < profiles.length && !messengerStopRequested; i++) {
             const profile = profiles[i];
@@ -414,11 +427,10 @@ async function startMassMessaging(onProgress, options = {}) {
 
                 const hasMore = i < profiles.length - 1 && !messengerStopRequested;
                 if (hasMore) {
-                    const delay = humanEmulation
-                        ? 20000 + Math.random() * 25000
-                        : 12000 + Math.random() * 18000;
+                    const [gapMin, gapMax] = humanEmulation ? PROFILE_GAP.human : PROFILE_GAP.normal;
+                    const delay = gapMin + Math.random() * (gapMax - gapMin);
                     logger.info(`👤 [ANTIFRAUD] Пауза ${Math.round(delay / 1000)}с до следующего профиля`);
-                    await wait(delay);
+                    await waitWithActivity(page, delay);
                 }
             }
         }

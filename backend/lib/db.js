@@ -75,6 +75,9 @@ async function getDB() {
             username TEXT,
             bio TEXT,
             photo TEXT,
+            photo_local TEXT,
+            photo_cached_at TEXT,
+            photo_status TEXT,
             followers_count INTEGER DEFAULT 0,
             following_count INTEGER DEFAULT 0,
             publications_count INTEGER DEFAULT 0,
@@ -112,6 +115,9 @@ async function getDB() {
             publications_count INTEGER DEFAULT 0,
             posts_count INTEGER DEFAULT 0,
             photo TEXT,
+            photo_local TEXT,
+            photo_cached_at TEXT,
+            photo_status TEXT,
             last_updated TEXT
         );
 
@@ -307,6 +313,16 @@ async function getDB() {
     await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN dm_status TEXT`);
   } catch (e) {
     // Ignore
+  }
+
+  for (const table of ['profiles', 'donors']) {
+    for (const column of ['photo_local TEXT', 'photo_cached_at TEXT', 'photo_status TEXT']) {
+      try {
+        await dbInstance.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`);
+      } catch (e) {
+        // Ignore
+      }
+    }
   }
 
 

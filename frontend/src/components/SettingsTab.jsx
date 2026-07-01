@@ -298,6 +298,16 @@ export default function SettingsTab({
       toast.error(e.message);
     }
   };
+  const handleInstagramCooldown = async (id) => {
+    try {
+      const res = await authFetch(`/api/accounts/${id}/instagram-cooldown`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) toast.success(tr('instagram_cooldown_started'));
+      else toast.error(data.error);
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
   const onDragStart = (e, index, field) => {
     setDraggedItem({ index, field });
     e.dataTransfer.effectAllowed = 'move';
@@ -620,6 +630,12 @@ export default function SettingsTab({
                           >
                             {tr('btn_warmup')}
                           </button>
+                          <button
+                            onClick={() => handleInstagramCooldown(acc.id)}
+                            className="btn-acc-action btn-acc-warmup"
+                          >
+                            {tr('btn_instagram_cooldown')}
+                          </button>
                         </div>
                       </>
                     )}
@@ -761,7 +777,7 @@ export default function SettingsTab({
                     });
                     onSettingsChange({ ...settingsData, donors: updatedDonors });
                   }}
-                  placeholder="@username1\n@username2..."
+                  placeholder={`https://www.instagram.com/username/\nhttps://www.instagram.com/username2/`}
                 />
               </div>
             </div>

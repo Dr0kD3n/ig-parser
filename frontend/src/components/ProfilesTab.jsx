@@ -1,4 +1,4 @@
-import React, { useState, memo } from 'react';
+import React, { useEffect, useRef, useState, memo } from 'react';
 import {
   HeartIcon,
   XIcon,
@@ -58,6 +58,11 @@ const SkeletonCard = memo(function SkeletonCard() {
     </div>
   );
 });
+function getProfilePhotoSrc(localPhoto, remotePhoto) {
+  if (localPhoto) return localPhoto;
+  if (!remotePhoto) return '';
+  return `https://images.weserv.nl/?url=${encodeURIComponent(remotePhoto)}`;
+}
 const ProfileCard = memo(function ProfileCard({
   g,
   votes,
@@ -79,8 +84,8 @@ const ProfileCard = memo(function ProfileCard({
   const isLiked = votes[g.url] === 'like';
   const isDisliked = votes[g.url] === 'dislike';
   const [checkingTg, setCheckingTg] = useState(false);
-  const photoSrc = `https://images.weserv.nl/?url=${encodeURIComponent(g.photo)}`;
-  const donorPhotoSrc = `https://images.weserv.nl/?url=${encodeURIComponent(g.donor_photo)}`;
+  const photoSrc = getProfilePhotoSrc(g.photo_local, g.photo);
+  const donorPhotoSrc = getProfilePhotoSrc(g.donor_photo_local, g.donor_photo);
   const handleTgClick = async (e) => {
     e.stopPropagation();
     const tgUrl = `https://t.me/${g.name}`;
@@ -312,6 +317,7 @@ export default function ProfilesTab({
   token,
   cityOnly,
   setCityOnly,
+  matchesProfileCity,
 }) {
   const [filterText, setFilterText] = useState(() => localStorage.getItem('ig_filter_text') || '');
   const [filterStatus, setFilterStatus] = useState(() => localStorage.getItem('ig_filter_status') || 'all');
@@ -320,8 +326,12 @@ export default function ProfilesTab({
   const [hideNoImage, setHideNoImage] = useState(() => localStorage.getItem('ig_hide_no_img') === 'true');
   const [hideViewed, setHideViewed] = useState(() => localStorage.getItem('ig_hide_viewed') === 'true');
   const [filterDonor, setFilterDonor] = useState(() => localStorage.getItem('ig_filter_donor') || 'all');
+  const [followersMin, setFollowersMin] = useState(() => localStorage.getItem('ig_followers_min') || '');
+  const [followersMax, setFollowersMax] = useState(() => localStorage.getItem('ig_followers_max') || '');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [checkingAllTg, setCheckingAllTg] = useState(false);
+  const filtersRef = useRef(null);
 
   React.useEffect(() => {
     localStorage.setItem('ig_filter_text', filterText);
@@ -331,7 +341,29 @@ export default function ProfilesTab({
     localStorage.setItem('ig_hide_no_img', String(hideNoImage));
     localStorage.setItem('ig_hide_viewed', String(hideViewed));
     localStorage.setItem('ig_filter_donor', filterDonor);
-  }, [filterText, filterStatus, filterTgStatus, sortOption, hideNoImage, hideViewed, filterDonor]);
+    localStorage.setItem('ig_followers_min', followersMin);
+    localStorage.setItem('ig_followers_max', followersMax);
+  }, [
+    filterText,
+    filterStatus,
+    filterTgStatus,
+    sortOption,
+    hideNoImage,
+    hideViewed,
+    filterDonor,
+    followersMin,
+    followersMax,
+  ]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!filtersRef.current || filtersRef.current.contains(event.target)) return;
+      setFiltersOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const ITEMS_PER_PAGE = 60;
   const handleCheckAllTg = async () => {
     const toCheck = girls.filter((g) => !g.tg_status).map((g) => g.name);
@@ -376,14 +408,21 @@ export default function ProfilesTab({
       let matchesTg = true;
       if (filterTgStatus === 'yes') matchesTg = g.tg_status === 'valid';
       else if (filterTgStatus === 'none') matchesTg = !g.tg_status;
+      const followersCount = Number(g.followers_count || 0);
+      const minFollowers = followersMin === '' ? null : Number(followersMin);
+      const maxFollowers = followersMax === '' ? null : Number(followersMax);
+      const matchesFollowers =
+        (minFollowers === null || followersCount >= minFollowers) &&
+        (maxFollowers === null || followersCount <= maxFollowers);
       const matchesViewed = !hideViewed || !g.viewed;
-      const matchesCity = !cityOnly || g.isInCity;
-      const imgOk = !hideNoImage || (g.photo && !failedImages.has(g.url));
+      const matchesCity = !cityOnly || (matchesProfileCity ? matchesProfileCity(g) : g.isInCity);
+      const imgOk = !hideNoImage || ((g.photo_local || g.photo) && !failedImages.has(g.url));
       const matchesDonor = filterDonor === 'all' || g.donor === filterDonor;
       return (
         matchesName &&
         matchesStatus &&
         matchesTg &&
+        matchesFollowers &&
         matchesViewed &&
         matchesCity &&
         imgOk &&
@@ -453,42 +492,87 @@ export default function ProfilesTab({
             </option>
           ))}
         </select>
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={hideNoImage}
-            onChange={(e) => {
-              setHideNoImage(e.target.checked);
-              setCurrentPage(1);
-            }}
-          />
-          {tr('hide_no_photo')}
-        </label>
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={hideViewed}
-            onChange={(e) => {
-              setHideViewed(e.target.checked);
-              setCurrentPage(1);
-            }}
-          />
-          {tr('filter_viewed')}
-        </label>
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={cityOnly}
-            onChange={(e) => {
-              setCityOnly(e.target.checked);
-              setCurrentPage(1);
-            }}
-          />
-          {tr('filter_city')}
-        </label>
         <span className="count-badge ml-auto">
           {filtered.length} {plural(filtered.length, 'профиль', 'профиля', 'профилей')}
         </span>
+        <div className="profile-filters-menu" ref={filtersRef}>
+          <button
+            className={`profile-filters-btn${filtersOpen ? ' active' : ''}`}
+            type="button"
+            onClick={() => setFiltersOpen((open) => !open)}
+            aria-label="Открыть фильтры"
+          >
+            <span />
+            <span />
+            <span />
+          </button>
+          {filtersOpen && (
+            <div className="profile-filters-popover">
+              <div className="popover-title">Фильтры</div>
+              <div className="followers-filter-row">
+                <label>
+                  <span>Подписчики от</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={followersMin}
+                    onChange={(e) => {
+                      setFollowersMin(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    placeholder="0"
+                  />
+                </label>
+                <label>
+                  <span>до</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={followersMax}
+                    onChange={(e) => {
+                      setFollowersMax(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    placeholder="∞"
+                  />
+                </label>
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={hideNoImage}
+                  onChange={(e) => {
+                    setHideNoImage(e.target.checked);
+                    setCurrentPage(1);
+                  }}
+                />
+                {tr('hide_no_photo')}
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={hideViewed}
+                  onChange={(e) => {
+                    setHideViewed(e.target.checked);
+                    setCurrentPage(1);
+                  }}
+                />
+                {tr('filter_viewed')}
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={cityOnly}
+                  onChange={(e) => {
+                    setCityOnly(e.target.checked);
+                    setCurrentPage(1);
+                  }}
+                />
+                {tr('filter_city')}
+              </label>
+            </div>
+          )}
+        </div>
       </div>
 
       <main className="grid">

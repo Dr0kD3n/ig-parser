@@ -9,6 +9,7 @@ const {
 const { wait } = require('./utils');
 const { saveCrashReport } = require('./reporter');
 const { getSetting, getAllAccounts, getList } = require('./config');
+const { cacheProfilePhotoFromPage } = require('./photo-cache');
 
 let stopRequested = false;
 
@@ -227,19 +228,30 @@ async function restorePhotos(onProgress, options = {}) {
 
           // Проверяем, удалось ли на этот раз найти фото (или хотя бы био)
           if (profileData.photo && !profileData.photo.includes('placeholder')) {
+            const photoCache = await cacheProfilePhotoFromPage(page, profileData.photo).catch((e) => ({
+              success: false,
+              status: 'failed',
+              error: e.message,
+            }));
 
             // 1. Обновляем основную таблицу profiles
             await db.run(
               `UPDATE profiles SET 
                     photo = ?, 
+                    photo_local = COALESCE(NULLIF(?, ''), photo_local),
+                    photo_cached_at = COALESCE(?, photo_cached_at),
+                    photo_status = ?,
                     bio = COALESCE(NULLIF(?, ''), bio), 
                     followers_count = CASE WHEN ? > 0 THEN ? ELSE followers_count END,
                     following_count = CASE WHEN ? > 0 THEN ? ELSE following_count END,
                     publications_count = CASE WHEN ? > 0 THEN ? ELSE publications_count END,
-                    name = COALESCE(NULLIF(?, ''), name),
+                    name = COALESCE(NULLIF(?, ''), name)
                  WHERE url = ? OR username = ?`,
               [
                 profileData.photo,
+                photoCache.localPath || '',
+                photoCache.cachedAt || null,
+                photoCache.status || 'failed',
                 profileData.bio,
                 profileData.followers,
                 profileData.followers,
@@ -257,6 +269,9 @@ async function restorePhotos(onProgress, options = {}) {
             await db.run(
               `UPDATE donors SET 
                     photo = ?, 
+                    photo_local = COALESCE(NULLIF(?, ''), photo_local),
+                    photo_cached_at = COALESCE(?, photo_cached_at),
+                    photo_status = ?,
                     bio = COALESCE(NULLIF(?, ''), bio), 
                     followers_count = CASE WHEN ? > 0 THEN ? ELSE followers_count END,
                     publications_count = CASE WHEN ? > 0 THEN ? ELSE publications_count END,
@@ -265,8 +280,13 @@ async function restorePhotos(onProgress, options = {}) {
                  WHERE username = ?`,
               [
                 profileData.photo,
+                photoCache.localPath || '',
+                photoCache.cachedAt || null,
+                photoCache.status || 'failed',
                 profileData.bio,
                 profileData.followers,
+                profileData.followers,
+                profileData.publications,
                 profileData.publications,
                 profileData.name,
                 new Date().toISOString(),
@@ -274,11 +294,14 @@ async function restorePhotos(onProgress, options = {}) {
               ]
             );
 
-            // 3. УДАЛЯЕМ ИЗ СПИСКА ОШИБОК, так как фото успешно восстановлено
-            await db.run(`DELETE FROM failed_images WHERE url = ?`, [url]);
-
-            updatedCount++;
-            console.log(`   ✅ [Поток ${workerId}] Фото восстановлено! Убрано из списка ошибок: ${username}`);
+            if (photoCache.success) {
+              // 3. УДАЛЯЕМ ИЗ СПИСКА ОШИБОК, так как фото сохранено локально
+              await db.run(`DELETE FROM failed_images WHERE url = ?`, [url]);
+              updatedCount++;
+              console.log(`   ✅ [Поток ${workerId}] Фото восстановлено локально: ${username}`);
+            } else {
+              console.log(`   ⚠️ [Поток ${workerId}] URL фото найден, но локально не сохранен: ${username}`);
+            }
           } else {
             console.log(`   ⚠️ [Поток ${workerId}] Фото всё еще не доступно для ${username}`);
           }

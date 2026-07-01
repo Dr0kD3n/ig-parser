@@ -16,6 +16,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/profile-photos': {
+        target: process.env.VITE_API_URL || 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        secure: false,
+      },
     },
     watch: {
       ignored: ['**/node_modules/**', '**/dist/**', '**/.git/**'],

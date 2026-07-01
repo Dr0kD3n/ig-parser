@@ -14,6 +14,7 @@ const reporter_1 = require('./lib/reporter');
 const config_1 = require('./lib/config');
 const warmup_1 = require('./lib/warmup');
 const { restorePhotos, stopRestorePhotos } = require('./lib/photo-restorer');
+const { getLocalPhotoPath } = require('./lib/photo-cache');
 const { startMassMessaging, stopMassMessaging, getMassMessengerStatus } = require('./lib/mass-messenger');
 const { checkFeedback, getCheckerStatus, stopChecker } = require('./lib/feedback-handler');
 const logger = require('./lib/logger');
@@ -72,12 +73,17 @@ let currentSessionId = Date.now().toString();
 function refreshSession() {
   currentSessionId = Date.now().toString();
 }
+const stripAnsi = (value) =>
+  String(value || '').replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
 let historicalLogs = [];
 try {
   if (fs_1.existsSync(LOGS_FILE)) {
     const data = fs_1.readFileSync(LOGS_FILE, 'utf8');
     if (data && data.trim()) {
-      historicalLogs = JSON.parse(data);
+      historicalLogs = JSON.parse(data).map((log) => ({
+        ...log,
+        message: stripAnsi(log.message),
+      }));
     }
   }
 } catch (e) {
@@ -102,7 +108,7 @@ function broadcastLog(source, message) {
   const logEntry = {
     timestamp: new Date().toISOString(),
     source,
-    message: message.toString().trim(),
+    message: stripAnsi(message).trim(),
     sessionId: currentSessionId,
   };
 
@@ -291,7 +297,9 @@ async function getGirlsCached() {
                    d.bio as donor_bio, 
                    d.followers_count as donor_followers_count,
                    d.posts_count as donor_posts_count,
-                   d.photo as donor_photo
+                   d.photo as donor_photo,
+                   d.photo_local as donor_photo_local,
+                   d.photo_status as donor_photo_status
             FROM profiles p
             LEFT JOIN donors d ON p.donor = d.username
             ORDER BY p.timestamp DESC
@@ -312,6 +320,15 @@ const authController = require('./lib/auth-controller');
 app.use('/api', apiLimiter); // Apply rate limiting to all /api routes
 app.post('/api/auth/login', authLimiter, authController.login);
 app.post('/api/auth/signup', authLimiter, authController.signup);
+
+app.get('/profile-photos/:fileName', (req, res) => {
+  const photoPath = getLocalPhotoPath(req.params.fileName);
+  if (!photoPath || !fs_1.existsSync(photoPath)) {
+    return res.status(404).send('Photo not found');
+  }
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(photoPath);
+});
 
 // --- Protected Routes ---
 app.use('/api', verifyToken);
@@ -763,6 +780,35 @@ app.post('/api/accounts/:id/warmup', async (req, res) => {
 app.get('/api/accounts/:id/warmup/status', (req, res) => {
   const { id } = req.params;
   res.json(warmupStatus.get(id) || { running: false });
+});
+
+let instagramCooldownStatus = new Map();
+
+app.post('/api/accounts/:id/instagram-cooldown', async (req, res) => {
+  const { id } = req.params;
+  if (instagramCooldownStatus.get(id)?.running) {
+    return res.status(400).json({ success: false, error: 'Instagram cooldown already in progress' });
+  }
+
+  instagramCooldownStatus.set(id, { running: true, current: 0, total: 12, site: '' });
+
+  warmup_1
+    .startInstagramCooldown(id, (progress) => {
+      instagramCooldownStatus.set(id, { running: true, ...progress });
+    })
+    .then(() => {
+      instagramCooldownStatus.set(id, { running: false, done: true });
+    })
+    .catch((e) => {
+      instagramCooldownStatus.set(id, { running: false, error: e.message });
+    });
+
+  res.json({ success: true });
+});
+
+app.get('/api/accounts/:id/instagram-cooldown/status', (req, res) => {
+  const { id } = req.params;
+  res.json(instagramCooldownStatus.get(id) || { running: false });
 });
 
 let restorePhotosStatus = { running: false, current: 0, total: 0, status: '' };
@@ -1541,6 +1587,7 @@ const sendMessageToProfile = async (context, url, message) => {
     await (0, utils_1.humanType)(page, CONFIG.selectors.chatInput, message, CONFIG.timeouts);
     await (0, utils_1.wait)(1000);
     await page.keyboard.press('Enter');
+    await (0, utils_1.waitAfterEvent)();
     await (0, browser_1.takeLiveScreenshot)(page);
     console.log(`🚀 [SENT] Сообщение отправлено: ${url}`);
     await (0, utils_1.wait)(3000);

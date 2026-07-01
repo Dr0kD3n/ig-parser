@@ -1,6 +1,7 @@
 node_modules
 .git
 data/
+config/profile-photos/
 dist/
 tmp/
 *.sqlite-shm
@@ -12,3 +13,6 @@ tmp/
 !backups/database_2026*.sqlite
 export-data
 exports/
+agent-transcripts/
+backend/logs.json
+*.log

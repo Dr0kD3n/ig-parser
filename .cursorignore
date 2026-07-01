@@ -1,0 +1,32 @@
+﻿# Синхронизировано с .gitignore + тяжёлые/нерелевантные пути для индексации
+node_modules/
+.git/
+data/
+dist/
+build/
+tmp/
+logs/
+.env
+export-data/
+exports/
+coverage/
+playwright-report/
+test-results/
+.gemini/
+.memory/
+agent-transcripts/
+
+# Логи
+backend/logs.json
+data/logs/
+logs.json
+*.log
+
+# Бинарники и артефакты
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+backend/public/assets/
+
+# Skills — читать только по запросу задачи
+.agents/

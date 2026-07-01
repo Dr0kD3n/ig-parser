@@ -6,8 +6,10 @@ const config_1 = require('./lib/config');
 const state_1 = require('./lib/state');
 const browser_1 = require('./lib/browser');
 const utils_1 = require('./lib/utils');
+const anti_fraud_1 = require('./lib/anti-fraud');
 const logger = require('./lib/logger');
 const reporter_1 = require('./lib/reporter');
+const { cacheProfilePhotoFromPage } = require('./lib/photo-cache');
 
 const isAnonymousPhoto = (url) => {
   if (!url) return true;
@@ -82,6 +84,38 @@ const checkSkipSignal = (contextState) => {
   return false;
 };
 const randomDelay = (min = 100, max = 300) => utils_1.wait(min + Math.random() * (max - min));
+const getInstagramPage = async (context) => {
+  const page = context.pages().find((p) => p.url().includes('instagram.com')) || await context.newPage();
+  if (!page.url().includes('instagram.com')) {
+    await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
+  }
+  return page;
+};
+const fetchProfileInfo = async (page, username) => {
+  return page.evaluate(async (uname) => {
+    try {
+      const res = await fetch(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(uname)}`, {
+        headers: { 'X-IG-App-ID': '936619743392459' },
+      });
+      if (!res.ok) return null;
+
+      const json = await res.json();
+      const u = json.data?.user;
+      if (!u) return null;
+
+      return {
+        name: u.full_name || uname,
+        bio: u.biography || '',
+        photo: u.profile_pic_url_hd || u.profile_pic_url || '',
+        fCount: u.edge_followed_by?.count || 0,
+        pCount: u.edge_owner_to_timeline_media?.count || 0,
+        isPrivate: u.is_private,
+      };
+    } catch (e) {
+      return null;
+    }
+  }, username);
+};
 const extractVisibleCandidates = () => {
   const dialog = document.querySelector('div[role="dialog"]');
   if (!dialog) return [];
@@ -148,7 +182,9 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
     // 0. Initial wait: Catch results triggered by typing/filling without scrolling
     await Promise.race([
       new Promise(resolve => { resolveResponse = resolve; }),
-      (0, utils_1.wait)(1500)
+      humanEmulation
+        ? (0, anti_fraud_1.waitWithActivity)(page, 1500)
+        : (0, utils_1.wait)(1500),
     ]);
     resolveResponse = null;
 
@@ -184,7 +220,9 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
       await Promise.race([
         new Promise(resolve => { resolveResponse = resolve; }),
         page.waitForResponse(r => r.url().includes('/friendships/') && r.status() === 200, { timeout: timeout }).catch(() => { }),
-        (0, utils_1.wait)(timeout)
+        humanEmulation
+          ? (0, anti_fraud_1.waitWithActivity)(page, timeout)
+          : (0, utils_1.wait)(timeout),
       ]);
       resolveResponse = null;
 
@@ -390,11 +428,24 @@ const analyzeProfile = async (context, url, config, donor = '') => {
     if (isAnonymousPhoto(extraData.pUrl) && extraData.pUrl) {
       logger.warn(`         ⚠️ Обнаружена анонимная аватарка, не сохраняем фото.`);
     }
+    const photoCache = photo
+      ? await cacheProfilePhotoFromPage(page, photo).catch((e) => ({
+        success: false,
+        status: 'failed',
+        error: e.message,
+      }))
+      : { success: false, status: 'missing' };
+    if (photo && !photoCache.success) {
+      logger.warn(`         ⚠️ Фото найдено, но локально не сохранено: ${photoCache.error || photoCache.status}`);
+    }
     const profileData = {
       name,
       username,
       bio,
       photo,
+      photo_local: photoCache.localPath || '',
+      photo_cached_at: photoCache.cachedAt || null,
+      photo_status: photoCache.status || 'missing',
       url,
       donor,
       followers_count: extraData.fCount,
@@ -419,39 +470,20 @@ const analyzeProfile = async (context, url, config, donor = '') => {
  */
 const analyzeProfileFast = async (context, url, config, donor = '') => {
   if (state_1.StateManager.has(url)) return;
-  await state_1.StateManager.add(url);
 
   const username = url.split('/').filter(Boolean).pop() || '';
   logger.info(`      ⚡ Быстрый анализ (API): ${username}`);
 
   try {
-    const page = context.pages()[0] || await context.newPage();
-    const data = await page.evaluate(async (uname) => {
-      try {
-        const res = await fetch(`/api/v1/users/web_profile_info/?username=${uname}`, {
-          headers: { 'X-IG-App-ID': '936619743392459' },
-        });
-        if (res.ok) {
-          const json = await res.json();
-          const u = json.data?.user;
-          if (!u) return null;
-          return {
-            name: u.full_name || uname,
-            bio: u.biography || '',
-            photo: u.profile_pic_url_hd || u.profile_pic_url || '',
-            fCount: u.edge_followed_by?.count || 0,
-            pCount: u.edge_owner_to_timeline_media?.count || 0,
-            isPrivate: u.is_private
-          };
-        }
-      } catch (e) { }
-      return null;
-    }, username);
+    const page = await getInstagramPage(context);
+    const data = await fetchProfileInfo(page, username);
 
     if (!data) {
-      // Fallback to slow method if API fails
+      logger.warn(`         ⚠️ API не вернул данные, открываем профиль как fallback.`);
       return analyzeProfile(context, url, config, donor);
     }
+
+    await state_1.StateManager.add(url);
 
     const searchString = `${data.name} ${data.bio} ${username}`.toLowerCase();
     const cityKeywords = config.target.cityKeywords || [];
@@ -465,12 +497,26 @@ const analyzeProfileFast = async (context, url, config, donor = '') => {
     );
 
     const isTarget = matchesWhitelist && !matchesBlacklist;
+    const photo = isAnonymousPhoto(data.photo) ? '' : data.photo;
+    const photoCache = photo
+      ? await cacheProfilePhotoFromPage(page, photo).catch((e) => ({
+        success: false,
+        status: 'failed',
+        error: e.message,
+      }))
+      : { success: false, status: 'missing' };
+    if (photo && !photoCache.success) {
+      logger.warn(`         ⚠️ Фото найдено, но локально не сохранено: ${photoCache.error || photoCache.status}`);
+    }
 
     await state_1.StateManager.saveResult({
       name: data.name,
       username,
       bio: data.bio,
-      photo: isAnonymousPhoto(data.photo) ? '' : data.photo,
+      photo,
+      photo_local: photoCache.localPath || '',
+      photo_cached_at: photoCache.cachedAt || null,
+      photo_status: photoCache.status || 'missing',
       url,
       donor,
       followers_count: data.fCount,
@@ -498,7 +544,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       logger.info(`👤 [HUMAN] Переходим на главную для поиска донора...`);
       await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
       await (0, browser_1.takeLiveScreenshot)(page);
-      await (0, utils_1.wait)(2000);
+      await (0, anti_fraud_1.waitWithActivity)(page, 2000);
 
       // Look for search input
       let searchInput = page
@@ -514,7 +560,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
           .first();
         if ((await searchIcon.count()) > 0) {
           await searchIcon.click();
-          await (0, utils_1.wait)(1500);
+          await (0, anti_fraud_1.waitWithActivity)(page, 1500);
           searchInput = page
             .locator(
               'input[aria-label="Search input"], input[placeholder="Search"], input[placeholder="Поиск"]'
@@ -528,14 +574,13 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         logger.info(`👤 [HUMAN] Вводим имя донора в поиск: ${donorName}`);
         await (0, utils_1.humanMouseMove)(page, 100, 100);
         await (0, utils_1.humanType)(page, searchInput, donorName, config.timeouts);
-        await (0, utils_1.wait)(3000);
+        await (0, anti_fraud_1.waitWithActivity)(page, 3000);
 
         const donorLink = page.locator(`a[href="/${donorName}/"]`).first();
         if ((await donorLink.count()) > 0) {
           await donorLink.click();
-          await (0, utils_1.wait)(2000);
-          // 👤 [HUMAN] Engagement pause - "reading" the profile
-          await (0, utils_1.wait)(3000 + Math.random() * 5000);
+          await (0, anti_fraud_1.waitWithActivity)(page, 2000);
+          await (0, anti_fraud_1.waitWithActivity)(page, 3000 + Math.random() * 5000);
         } else {
           logger.warn(`⚠️ [HUMAN] Ссылка на донора не найдена в результатах. Переходим напрямую.`);
           await page.goto(donorUrl, { waitUntil: 'domcontentloaded' });
@@ -724,11 +769,24 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     if (isAnonymousPhoto(donorInfo.photo) && donorInfo.photo) {
       logger.warn(`   ⚠️ Обнаружена анонимная аватарка донора, не сохраняем фото.`);
     }
+    const donorPhotoCache = donorPhoto
+      ? await cacheProfilePhotoFromPage(page, donorPhoto).catch((e) => ({
+        success: false,
+        status: 'failed',
+        error: e.message,
+      }))
+      : { success: false, status: 'missing' };
+    if (donorPhoto && !donorPhotoCache.success) {
+      logger.warn(`   ⚠️ Фото донора найдено, но локально не сохранено: ${donorPhotoCache.error || donorPhotoCache.status}`);
+    }
     await state_1.StateManager.saveDonorInfo({
       username: donorInfo.username,
       name: donorInfo.name,
       bio: donorInfo.bio,
       photo: donorPhoto,
+      photo_local: donorPhotoCache.localPath || '',
+      photo_cached_at: donorPhotoCache.cachedAt || null,
+      photo_status: donorPhotoCache.status || 'missing',
       followers_count: donorInfo.followers_count,
       posts_count: donorInfo.publications_count,
     });
@@ -785,7 +843,9 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         break;
       }
       await searchInput.click({ clickCount: 3 });
+      await (0, utils_1.waitAfterEvent)();
       await page.keyboard.press('Backspace');
+      await (0, utils_1.waitAfterEvent)();
       try {
         await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 5000 });
       } catch (e) { }
@@ -830,17 +890,17 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
               }
               const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
               // Используем быстрый анализ для ускорения в 10 раз
-              await analyzeProfile(context, url, config, donorName);
+              await analyzeProfileFast(context, url, config, donorName);
               const delay = 2000 + Math.random() * 2000;
               logger.info(
                 `👤 [HUMAN] Ожидание ${Math.round(delay / 1000)}с перед следующим профилем...`
               );
-              await (0, utils_1.wait)(delay);
+              await (0, anti_fraud_1.waitWithActivity)(page, delay);
             }
           } else {
             const chunkPromises = chunk.map((url) => {
               const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
-              return analyzeProfile(context, url, config, donorName);
+              return analyzeProfileFast(context, url, config, donorName);
             });
             await Promise.all(chunkPromises);
             await randomDelay(100, 300);
@@ -978,9 +1038,9 @@ const run = async () => {
               logger.info(`👤 [HUMAN] Заходим в ленту новостей для "отдыха"...`);
               const feedPage = await context.newPage();
               await feedPage.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
-              await (0, utils_1.wait)(2000);
+              await (0, anti_fraud_1.waitWithActivity)(feedPage, 2000);
               await (0, utils_1.humanScroll)(feedPage, null, 'down', 800 + Math.random() * 1000);
-              await (0, utils_1.wait)(3000 + Math.random() * 4000);
+              await (0, anti_fraud_1.waitWithActivity)(feedPage, 3000 + Math.random() * 4000);
               await feedPage.close();
             } catch (e) { }
           }

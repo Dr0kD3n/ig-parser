@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { t } from './i18n';
 import ProfilesTab from './components/ProfilesTab';
 import ControlsTab from './components/ControlsTab';
@@ -10,6 +10,20 @@ import { API_BASE, LOCAL_API_BASE } from './config';
 import { toast } from 'react-hot-toast';
 
 const LOG_BUFFER = 200;
+
+const normalizeKeyword = (value) => String(value || '').trim().toLowerCase();
+
+const createCityMatcher = (cities = [], citiesBlacklist = []) => {
+  const whitelist = cities.map(normalizeKeyword).filter(Boolean);
+  const blacklist = citiesBlacklist.map(normalizeKeyword).filter(Boolean);
+
+  return (profile) => {
+    const text = normalizeKeyword(`${profile?.name || ''} ${profile?.bio || ''} ${profile?.username || ''}`);
+    const matchesWhitelist = whitelist.length === 0 || whitelist.some((kw) => text.includes(kw));
+    const matchesBlacklist = blacklist.length > 0 && blacklist.some((kw) => text.includes(kw));
+    return matchesWhitelist && !matchesBlacklist;
+  };
+};
 
 const safeStorage = {
   getItem: (key, def) => {
@@ -73,6 +87,7 @@ export default function App() {
       activeProfilesAccountIds: [],
       names: [],
       cities: [],
+      citiesBlacklist: [],
       niches: [],
       donors: [],
       showBrowser: false,
@@ -107,6 +122,11 @@ export default function App() {
   useEffect(() => {
     safeStorage.setItem('ig_city_only', String(cityOnly));
   }, [cityOnly]);
+
+  const matchesProfileCity = useMemo(
+    () => createCityMatcher(settingsData.cities, settingsData.citiesBlacklist),
+    [settingsData.cities, settingsData.citiesBlacklist]
+  );
 
   const handleLoginSuccess = (newToken, newUser) => {
     setToken(newToken);
@@ -200,6 +220,7 @@ export default function App() {
           ...data,
           names: Array.isArray(data.names) ? data.names : [],
           cities: Array.isArray(data.cities) ? data.cities : [],
+          citiesBlacklist: Array.isArray(data.citiesBlacklist) ? data.citiesBlacklist : [],
           niches: Array.isArray(data.niches) ? data.niches : [],
           donors: Array.isArray(data.donors) ? data.donors : [],
           showBrowser: data.showBrowser || false,
@@ -628,7 +649,9 @@ export default function App() {
 
   const unopenedCount = girls.filter((g) => !g.viewed).length;
   const likesCount = Object.values(votes).filter((v) => v === 'like').length;
-  const massMsgCount = girls.filter(g => !g.dmSent && votes[g.url] === 'like' && (!cityOnly || g.isInCity)).length;
+  const massMsgCount = girls.filter(
+    (g) => !g.dmSent && votes[g.url] === 'like' && (!cityOnly || matchesProfileCity(g))
+  ).length;
 
   return (
     <div className="app">
@@ -749,6 +772,7 @@ export default function App() {
             token={token}
             cityOnly={cityOnly}
             setCityOnly={setCityOnly}
+            matchesProfileCity={matchesProfileCity}
           />
         )}
 

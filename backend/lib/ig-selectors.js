@@ -38,6 +38,24 @@ const NOTIFICATIONS_NAV = [
   'div[role="link"]:has(svg[aria-label="Уведомления"])',
 ].join(', ');
 
+const EXPLORE_NAV = [
+  'nav a[href="/explore/"]',
+  'a[href="/explore/"]:has(svg)',
+  'a:has(svg[aria-label="Explore"])',
+  'a:has(svg[aria-label="Интересное"])',
+  'div[role="link"]:has(svg[aria-label="Explore"])',
+  'div[role="link"]:has(svg[aria-label="Интересное"])',
+].join(', ');
+
+const REELS_NAV = [
+  'nav a[href="/reels/"]',
+  'a[href="/reels/"]:has(svg)',
+  'a:has(svg[aria-label="Reels"])',
+  'a:has(svg[aria-label="Видео Reels"])',
+  'div[role="link"]:has(svg[aria-label="Reels"])',
+  'div[role="link"]:has(svg[aria-label="Видео Reels"])',
+].join(', ');
+
 const MESSAGE_BTN = [
   'main header section button:has-text("Message")',
   'main header section button:has-text("Сообщение")',
@@ -200,6 +218,8 @@ module.exports = {
   SEARCH_NAV,
   HOME_NAV,
   NOTIFICATIONS_NAV,
+  EXPLORE_NAV,
+  REELS_NAV,
   MESSAGE_BTN,
   OPTIONS_BTN,
   MENU_MESSAGE_BTN,

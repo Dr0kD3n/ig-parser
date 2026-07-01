@@ -3,6 +3,7 @@ Object.defineProperty(exports, '__esModule', { value: true });
 exports.PATHS = exports.StateManager = void 0;
 const db_1 = require('./db');
 const config_1 = require('./config');
+const { cacheProfilePhoto } = require('./photo-cache');
 exports.StateManager = {
   processed: new Set(),
   processedDonors: new Set(),
@@ -76,18 +77,39 @@ exports.StateManager = {
     const db = await (0, db_1.getDB)();
     const existing = await db.get(`SELECT * FROM profiles WHERE url = ?`, [profileData.url]);
     const ts = new Date().toISOString();
+    const photoUrl = profileData.photo || existing?.photo || '';
+    const photoCache = profileData.photo_local
+      ? {
+        success: true,
+        status: profileData.photo_status || 'cached',
+        localPath: profileData.photo_local,
+        cachedAt: profileData.photo_cached_at || ts,
+      }
+      : photoUrl
+        ? await cacheProfilePhoto(photoUrl).catch((e) => ({
+        success: false,
+        status: 'failed',
+        error: e.message,
+      }))
+        : { success: false, status: 'missing' };
+    if (photoUrl && !photoCache.success) {
+      console.warn(`⚠️ [PHOTO CACHE] Не удалось сохранить фото профиля ${profileData.username || profileData.url}: ${photoCache.error || photoCache.status}`);
+    }
     const pubCount =
       profileData.publications_count !== undefined
         ? profileData.publications_count
         : profileData.posts_count || 0;
     if (existing) {
       await db.run(
-        `UPDATE profiles SET name = ?, username = ?, bio = ?, photo = ?, followers_count = ?, publications_count = ?, posts_count = ?, donor = ?, isInCity = ?, timestamp = ? WHERE url = ?`,
+        `UPDATE profiles SET name = ?, username = ?, bio = ?, photo = ?, photo_local = ?, photo_cached_at = ?, photo_status = ?, followers_count = ?, publications_count = ?, posts_count = ?, donor = ?, isInCity = ?, timestamp = ? WHERE url = ?`,
         [
           profileData.name || existing.name,
           profileData.username || existing.username,
           profileData.bio || existing.bio,
-          profileData.photo || existing.photo,
+          photoUrl,
+          photoCache.localPath || existing.photo_local || '',
+          photoCache.cachedAt || existing.photo_cached_at || null,
+          photoCache.status || existing.photo_status || 'missing',
           profileData.followers_count !== undefined
             ? profileData.followers_count
             : existing.followers_count,
@@ -101,13 +123,16 @@ exports.StateManager = {
       );
     } else {
       await db.run(
-        `INSERT INTO profiles (url, name, username, bio, photo, followers_count, publications_count, posts_count, donor, vote, isInCity, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO profiles (url, name, username, bio, photo, photo_local, photo_cached_at, photo_status, followers_count, publications_count, posts_count, donor, vote, isInCity, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           profileData.url,
           profileData.name || '',
           profileData.username || '',
           profileData.bio || '',
-          profileData.photo || '',
+          photoUrl,
+          photoCache.localPath || '',
+          photoCache.cachedAt || null,
+          photoCache.status || 'missing',
           profileData.followers_count || 0,
           pubCount || 0,
           pubCount || 0,
@@ -158,13 +183,34 @@ exports.StateManager = {
     const db = await (0, db_1.getDB)();
     const ts = new Date().toISOString();
     const existing = await db.get(`SELECT * FROM donors WHERE username = ?`, [donorData.username]);
+    const photoUrl = donorData.photo || existing?.photo || '';
+    const photoCache = donorData.photo_local
+      ? {
+        success: true,
+        status: donorData.photo_status || 'cached',
+        localPath: donorData.photo_local,
+        cachedAt: donorData.photo_cached_at || ts,
+      }
+      : photoUrl
+        ? await cacheProfilePhoto(photoUrl).catch((e) => ({
+        success: false,
+        status: 'failed',
+        error: e.message,
+      }))
+        : { success: false, status: 'missing' };
+    if (photoUrl && !photoCache.success) {
+      console.warn(`⚠️ [PHOTO CACHE] Не удалось сохранить фото донора ${donorData.username}: ${photoCache.error || photoCache.status}`);
+    }
     if (existing) {
       await db.run(
-        `UPDATE donors SET name = ?, bio = ?, photo = ?, followers_count = ?, posts_count = ?, last_updated = ? WHERE username = ?`,
+        `UPDATE donors SET name = ?, bio = ?, photo = ?, photo_local = ?, photo_cached_at = ?, photo_status = ?, followers_count = ?, posts_count = ?, last_updated = ? WHERE username = ?`,
         [
           donorData.name || existing.name,
           donorData.bio || existing.bio,
-          donorData.photo || existing.photo,
+          photoUrl,
+          photoCache.localPath || existing.photo_local || '',
+          photoCache.cachedAt || existing.photo_cached_at || null,
+          photoCache.status || existing.photo_status || 'missing',
           donorData.followers_count || existing.followers_count,
           donorData.posts_count || existing.posts_count,
           ts,
@@ -173,12 +219,15 @@ exports.StateManager = {
       );
     } else {
       await db.run(
-        `INSERT INTO donors (username, name, bio, photo, followers_count, posts_count, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO donors (username, name, bio, photo, photo_local, photo_cached_at, photo_status, followers_count, posts_count, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           donorData.username,
           donorData.name || '',
           donorData.bio || '',
-          donorData.photo || '',
+          photoUrl,
+          photoCache.localPath || '',
+          photoCache.cachedAt || null,
+          photoCache.status || 'missing',
           donorData.followers_count || 0,
           donorData.posts_count || 0,
           ts,

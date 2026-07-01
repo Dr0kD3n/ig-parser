@@ -8,6 +8,10 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 exports.wait = wait;
 const randomDelay = (min = 200, max = 600) => (0, exports.wait)(min + Math.random() * (max - min));
 exports.randomDelay = randomDelay;
+const EVENT_DELAY_MS = 100;
+const waitAfterEvent = () => wait(EVENT_DELAY_MS);
+exports.EVENT_DELAY_MS = EVENT_DELAY_MS;
+exports.waitAfterEvent = waitAfterEvent;
 const shuffleArray = (array) => {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -102,14 +106,15 @@ const updateVisualCursor = async (page, x, y) => {
  */
 const keyboardPressChar = async (page, char) => {
   await page.keyboard.type(char);
+  await waitAfterEvent();
 };
 
 /**
  * Посимвольный ввод с опечатками и паузами (только события клавиатуры)
  */
 const humanTypeChars = async (page, text, timeouts) => {
-  const delayMin = timeouts?.typingDelayMin || 50;
-  const delayMax = timeouts?.typingDelayMax || 150;
+  const delayMin = timeouts?.typingDelayMin || 30;
+  const delayMax = timeouts?.typingDelayMax || 90;
   for (const char of text) {
     // 2% шанс опечатки с исправлением через Backspace
     if (Math.random() < 0.02 && char !== ' ') {
@@ -117,13 +122,14 @@ const humanTypeChars = async (page, text, timeouts) => {
         char.charCodeAt(0) + (Math.random() > 0.5 ? 1 : -1)
       );
       await keyboardPressChar(page, incorrectChar);
-      await wait(Math.floor(Math.random() * 150) + 100);
+      await wait(Math.floor(Math.random() * 80) + 50);
       await page.keyboard.press('Backspace');
-      await wait(Math.floor(Math.random() * 150) + 100);
+      await waitAfterEvent();
+      await wait(Math.floor(Math.random() * 80) + 50);
     }
     await keyboardPressChar(page, char);
     const delay = Math.floor(Math.random() * (delayMax - delayMin + 1)) + delayMin;
-    if (Math.random() < 0.05) await wait(Math.floor(Math.random() * 300) + 300);
+    if (Math.random() < 0.04) await wait(Math.floor(Math.random() * 200) + 150);
     await wait(delay);
   }
 };
@@ -235,6 +241,7 @@ const humanMove = async (page, targetX, targetY, options = {}) => {
         const nextX = point.x + jitterX;
         const nextY = point.y + jitterY;
         await page.mouse.move(nextX, nextY);
+        await waitAfterEvent();
         await updateVisualCursor(page, nextX, nextY);
       }
 
@@ -243,14 +250,17 @@ const humanMove = async (page, targetX, targetY, options = {}) => {
 
     await wait(18 + Math.random() * 45);
     await page.mouse.move(targetX + (Math.random() - 0.5) * 3, targetY + (Math.random() - 0.5) * 3);
+    await waitAfterEvent();
     await updateVisualCursor(page, targetX, targetY);
     await wait(12 + Math.random() * 24);
     await page.mouse.move(targetX, targetY);
+    await waitAfterEvent();
     await updateVisualCursor(page, targetX, targetY);
     mouseTracker.set(page, { x: targetX, y: targetY });
   } catch (e) {
     // Fallback or ignore for movement
     await page.mouse.move(targetX, targetY).catch(() => { });
+    await waitAfterEvent();
     await updateVisualCursor(page, targetX, targetY);
     mouseTracker.set(page, { x: targetX, y: targetY });
   }
@@ -318,10 +328,12 @@ const humanClick = async (page, selectorOrHandle, options = {}) => {
       await humanMove(page, targetX, targetY);
       await wait(100 + Math.random() * 200);
       await page.mouse.click(targetX, targetY, clickOptions);
+      await waitAfterEvent();
     } else {
       const count = await element.count();
       if (count > 0) {
         await element.click(options);
+        await waitAfterEvent();
       } else {
         throw new SelectorError(
           typeof selectorOrHandle === 'string' ? selectorOrHandle : 'Locator',
@@ -376,6 +388,20 @@ const humanScroll = async (page, selector, direction = 'down', amount = 300) => 
 exports.humanScroll = humanScroll;
 
 /**
+ * Возврат к началу страницы перед кликами по header.
+ */
+const scrollToTop = async (page) => {
+  try {
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await waitAfterEvent();
+  } catch (e) {
+    await page.keyboard.press('Home').catch(() => {});
+    await waitAfterEvent();
+  }
+};
+exports.scrollToTop = scrollToTop;
+
+/**
  * Оверскролл: проскроллить дальше, а потом немного вернуться
  */
 const humanOverscroll = async (page, direction = 'down', amount = 300) => {
@@ -399,7 +425,7 @@ const humanMouseLeave = async (page) => {
     const targetY = Math.random() * viewport.height;
     await humanMove(page, targetX, targetY);
     console.log(`👤 [HUMAN] Mouse left the viewport (simulating distraction).`);
-    await wait(2000 + Math.random() * 5000); // stay out for a bit
+    await wait(800 + Math.random() * 1200); // пауза «отвлёкся»
     mouseTracker.set(page, {
       x: Math.max(0, Math.min(targetX, viewport.width)),
       y: Math.max(0, Math.min(targetY, viewport.height)),
@@ -426,6 +452,7 @@ const humanSelection = async (page) => {
         // Double click behavior vs drag
         if (Math.random() > 0.5) {
           await page.mouse.click(startX, startY, { clickCount: 2 });
+          await waitAfterEvent();
           console.log(`👤 [HUMAN] Double clicked random text.`);
         } else {
           await page.mouse.down();

@@ -3,6 +3,7 @@ const { getDB } = require('./lib/db');
 const { createBrowserContext, checkLoginPage } = require('./lib/browser');
 const { getSetting, getAllAccounts } = require('./lib/config');
 const { wait } = require('./lib/utils');
+const { waitWithActivity } = require('./lib/anti-fraud');
 
 async function checkAccounts() {
   console.log('🚀 ЗАПУСК ПРОВЕРКИ АККАУНТОВ...');
@@ -53,7 +54,7 @@ async function checkAccounts() {
           waitUntil: 'domcontentloaded',
           timeout: 60000,
         });
-        await wait(2000);
+        await waitWithActivity(page, 2000);
 
         const isLoginNeeded = await checkLoginPage(page);
 

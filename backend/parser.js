@@ -6,6 +6,7 @@ const config_1 = require('./lib/config');
 const state_1 = require('./lib/state');
 const browser_1 = require('./lib/browser');
 const utils_1 = require('./lib/utils');
+const anti_fraud_1 = require('./lib/anti-fraud');
 const { info, warn, error: logError } = require('./lib/logger');
 const { handleError, setupProcessHandlers } = require('./lib/error-handler');
 const { getDB } = require('./lib/db');
@@ -125,7 +126,7 @@ const run = async () => {
         timeout: CONFIG.timeouts.pageLoad,
       });
       await (0, browser_1.takeLiveScreenshot)(page);
-      await (0, utils_1.wait)(3000);
+      await (0, anti_fraud_1.waitWithActivity)(page, 3000);
       // Ищем строку поиска
       // Selectors updated to support English, Russian, French, and Spanish
       let searchInputLocator = page
@@ -150,7 +151,7 @@ const run = async () => {
         } else if ((await searchIcon.count()) > 0) {
           await searchIcon.click();
         }
-        await (0, utils_1.wait)(2000);
+        await (0, anti_fraud_1.waitWithActivity)(page, 2000);
       }
       searchInputLocator = page
         .locator(
@@ -163,7 +164,7 @@ const run = async () => {
           const { keyword, city, niche } = kwObj;
           try {
             console.log(`\n🔎 Ищем профили по запросу: "${keyword}"`);
-            await (0, utils_1.wait)(1000);
+            await (0, anti_fraud_1.waitWithActivity)(page, 1000);
 
             // More aggressive API fetch using multiple endpoints to ensure >5 results
             info(`📡 [API] Глубокий поиск профилей для: "${keyword}"`);
@@ -201,7 +202,7 @@ const run = async () => {
             }, keyword).catch(() => []);
 
             await (0, browser_1.takeLiveScreenshot)(page);
-            await (0, utils_1.wait)(1000);
+            await (0, anti_fraud_1.waitWithActivity)(page, 1000);
 
             const uniqueLinks = [...new Set(apiLinks)];
             const finalLinks = uniqueLinks.slice(0, 30); // Target up to 30
@@ -232,7 +233,7 @@ const run = async () => {
               }
             }
             info(`✅ Всего найдено: ${uniqueLinks.length} | Взято: ${finalLinks.length} | Новых: ${addedCount}`);
-            await (0, utils_1.wait)(2000 + Math.random() * 3000);
+            await (0, anti_fraud_1.waitWithActivity)(page, 2000 + Math.random() * 3000);
           } catch (itemErr) {
             handleError(
               new AppError(`Error processing keyword "${keyword}": ${itemErr.message}`, { keyword })
