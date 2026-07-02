@@ -49,11 +49,6 @@ export default function AuthPage({ onLoginSuccess }) {
       <div className="auth-page-glow auth-page-glow--right" aria-hidden="true" />
 
       <div className="modal-card fade-in-up auth-card">
-        <div className="auth-brand">
-          <div className="logo-container auth-logo">IG</div>
-          <span className="auth-brand-name">IG Bot</span>
-        </div>
-
         <div className="auth-tabs" role="tablist">
           <button
             type="button"

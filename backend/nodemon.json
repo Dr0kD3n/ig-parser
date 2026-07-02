@@ -1,0 +1,7 @@
+{
+  "watch": [".", "lib"],
+  "ext": "js",
+  "ignore": ["public/**", "node_modules/**", "scripts/**"],
+  "delay": 300,
+  "exec": "node server.js"
+}

@@ -928,7 +928,7 @@ export default function SettingsTab({
         settingsTab === 'names' && (
           <textarea
             className="msg-textarea"
-            style={{ height: 500 }}
+            style={{ height: 500, margin: '0 32px' }}
             value={(settingsData.names || []).join('\n')}
             onChange={(e) => onSettingsChange({ names: e.target.value.split('\n') })}
           />
@@ -996,11 +996,9 @@ export default function SettingsTab({
       {
         settingsTab === 'blacklist' && (
           <div className="flex-v gap-8">
-            <label className="fs-14 font-bold">{"Чёрный список слов"}</label>
-            <p className="fs-12 color-muted m-0">{"Профили с этими словами в имени, био или username будут исключены. Одно слово на строку."}</p>
             <textarea
               className="msg-textarea"
-              style={{ height: 500 }}
+              style={{ height: 500, margin: '0 32px' }}
               value={(settingsData.wordsBlacklist || []).join('\n')}
               onChange={(e) => onSettingsChange({ wordsBlacklist: e.target.value.split('\n') })}
               placeholder={'магазин\nshop\ncrypto\nреклама...'}
@@ -1012,7 +1010,7 @@ export default function SettingsTab({
         settingsTab === 'niches' && (
           <textarea
             className="msg-textarea"
-            style={{ height: 500 }}
+            style={{ height: 500, margin: '0 32px' }}
             value={(settingsData.niches || []).join('\n')}
             onChange={(e) => onSettingsChange({ niches: e.target.value.split('\n') })}
           />

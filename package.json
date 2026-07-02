@@ -2,7 +2,7 @@
   "name": "ig-bot",
   "version": "1.0.0",
   "scripts": {
-    "dev": "concurrently \"npx cross-env PORT=5001 npm start --workspace=backend\" \"npm start --prefix ../ig-bot-backend\" \"npx wait-on http://127.0.0.1:5001 -t 30000 && npx cross-env VITE_API_URL=http://127.0.0.1:5001 npm run dev --workspace=frontend\"",
+    "dev": "concurrently \"npx cross-env PORT=5001 npm run dev --workspace=backend\" \"npm start --prefix ../ig-bot-backend\" \"npx wait-on http://127.0.0.1:5001 -t 30000 && npx cross-env VITE_API_URL=http://127.0.0.1:5001 npm run dev --workspace=frontend\"",
     "locale": "concurrently \"npx cross-env PORT=5001 AUTH_SERVER_URL=http://127.0.0.1:5000 npm start --workspace=backend\" \"npm start --prefix ../ig-bot-backend\" \"npx wait-on http://127.0.0.1:5001 -t 30000 && npx cross-env VITE_AUTH_URL=http://127.0.0.1:5000 VITE_API_URL=http://127.0.0.1:5001 npm run locale --workspace=frontend\"",
     "dev:proxy": "set VITE_PROXY_BACKEND=true&& npm run dev --workspace=frontend",
     "dev:watch": "concurrently --prefix \"[{name}]\" --names \"FRONT,BACK,BOT\" --prefix-colors \"cyan,magenta,yellow\" \"cross-env VITE_API_URL=http://localhost:5000 npm run dev --workspace=frontend\" \"cross-env PORT=5000 npm start --workspace=backend\" \"npm start --prefix ../ig-bot-backend\"",
@@ -44,6 +44,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "nodemon": "^3.1.14",
     "pkg": "^5.8.1",
     "playwright": "1.61.0-alpha-2026-05-18",
     "prettier": "^3.8.1",

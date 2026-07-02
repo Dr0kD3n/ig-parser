@@ -2317,18 +2317,9 @@ body::before {
   width: 100%;
   max-width: 400px;
   padding: 40px 36px 36px;
-  border-color: hsla(var(--primary), 0.2);
   box-shadow:
     var(--shadow-lg),
     0 0 0 1px hsla(var(--primary), 0.08) inset;
-}
-
-.auth-brand {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  margin-bottom: 32px;
 }
 
 .auth-logo {
