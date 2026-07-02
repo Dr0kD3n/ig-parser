@@ -271,6 +271,11 @@ const matchesWordsBlacklist = (searchString, wordsBlacklist = []) =>
 
 const analyzeProfile = async (context, url, config, donor = '') => {
   if (state_1.StateManager.has(url)) return;
+  const usernameFromUrl = url.split('/').filter(Boolean).pop() || '';
+  if (state_1.StateManager.hasUsername(usernameFromUrl)) {
+    await state_1.StateManager.mergeDonorHint(usernameFromUrl, donor, url);
+    return;
+  }
   await state_1.StateManager.add(url);
   const page = await context.newPage();
   logger.info(`      👀 Открываем профиль: ${url}`);
@@ -481,6 +486,11 @@ const analyzeProfile = async (context, url, config, donor = '') => {
  */
 const analyzeProfileFast = async (context, url, config, donor = '') => {
   if (state_1.StateManager.has(url)) return;
+  const usernameFromUrl = url.split('/').filter(Boolean).pop() || '';
+  if (state_1.StateManager.hasUsername(usernameFromUrl)) {
+    await state_1.StateManager.mergeDonorHint(usernameFromUrl, donor, url);
+    return;
+  }
 
   const username = url.split('/').filter(Boolean).pop() || '';
   logger.info(`      ⚡ Быстрый анализ (API): ${username}`);
@@ -877,7 +887,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       await (0, browser_1.takeLiveScreenshot)(page);
       await (0, utils_1.wait)(50);
       const candidates = await scrollAndCollectUrls(page, config, contextState, name);
-      const newCandidates = candidates.filter((url) => !state_1.StateManager.has(url));
+      const newCandidates = candidates.filter((candidateUrl) => !state_1.StateManager.has(candidateUrl));
       const skippedCount = candidates.length - newCandidates.length;
       logger.info(`      📊 ИТОГИ СБОРА ССЫЛОК:`);
       logger.info(`         • Всего найдено (со сторис): ${candidates.length}`);

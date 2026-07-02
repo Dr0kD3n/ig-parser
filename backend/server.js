@@ -43,7 +43,7 @@ try {
 const { handleError, expressErrorHandler, setupProcessHandlers } = require('./lib/error-handler');
 const { verifyToken, isAdmin } = require('./lib/auth-middleware');
 const { rateLimit } = require('express-rate-limit');
-const { encrypt, decrypt } = require('./lib/encryption');
+const { markDmSentByUsername } = require('./lib/profile-dedup');
 
 // Rate limiters
 const isLocal = (ip) => ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1' || ip === 'localhost';
@@ -1424,7 +1424,7 @@ app.post('/api/dm', async (req, res) => {
           `INSERT INTO messages_log (url, username, message_text, status, timestamp) VALUES (?, ?, ?, ?, ?)`,
           [url, username, message, 'sent', new Date().toISOString()]
         );
-        await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 0 WHERE url = ?`, [url]);
+        await markDmSentByUsername(db, profile?.username || username, { clearError: true, tgTagged: 0 });
       } catch (dbErr) {
         console.error('Ошибка сохранения в messages_log:', dbErr);
       }

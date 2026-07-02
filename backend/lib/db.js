@@ -326,6 +326,22 @@ async function getDB() {
   }
 
 
+  try {
+    await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_profiles_username ON profiles(username)`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
+    const { mergeDuplicateProfiles } = require('./profile-dedup');
+    const merged = await mergeDuplicateProfiles(dbInstance);
+    if (merged > 0) {
+      console.log(`[DEDUP] Объединено групп дублей по username: ${merged}`);
+    }
+  } catch (e) {
+    console.error('[DEDUP] Ошибка merge дублей:', e.message);
+  }
+
   // Seeding removed for security.
   /*
   const adminExists = await dbInstance.get("SELECT * FROM users WHERE role = 'admin'");

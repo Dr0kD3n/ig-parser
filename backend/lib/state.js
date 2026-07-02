@@ -4,10 +4,17 @@ exports.PATHS = exports.StateManager = void 0;
 const db_1 = require('./db');
 const config_1 = require('./config');
 const { cacheProfilePhoto } = require('./photo-cache');
+const {
+  normalizeUsername,
+  findProfileByUsername,
+  mergeProfileRecords,
+  mergeDonors,
+} = require('./profile-dedup');
 exports.StateManager = {
   processed: new Set(),
   processedDonors: new Set(),
   checkedSearches: new Set(), // Map "donorUrl|searchTerm"
+  knownUsernames: new Set(),
   resultsCache: [], // Used for fast memory lookups if needed elsewhere
   async init() {
     const db = await db_1.getDB();
@@ -28,6 +35,32 @@ exports.StateManager = {
 
     const profiles = await db.all(`SELECT * FROM profiles`);
     this.resultsCache = profiles;
+    this.knownUsernames = new Set(
+      profiles.map((p) => normalizeUsername(p.username)).filter(Boolean)
+    );
+    console.log(`🗄️ [ДЕДУП] Уникальных username в базе: ${this.knownUsernames.size}`);
+  },
+  hasUsername(username) {
+    return this.knownUsernames.has(normalizeUsername(username));
+  },
+  /** Добавить донора к уже известному username без повторного скрапа */
+  async mergeDonorHint(username, donor, url) {
+    if (!donor) return;
+    const db = await (0, db_1.getDB)();
+    const existing = await findProfileByUsername(db, username);
+    if (!existing) return;
+    const mergedDonor = mergeDonors(existing.donor, donor);
+    if (mergedDonor === existing.donor) {
+      if (url) await this.add(url);
+      return;
+    }
+    await db.run(`UPDATE profiles SET donor = ?, timestamp = ? WHERE url = ?`, [
+      mergedDonor,
+      new Date().toISOString(),
+      existing.url,
+    ]);
+    if (url) await this.add(url);
+    console.log(`   🔗 [MERGE] @${username} — донор «${donor}» добавлен (${existing.url})`);
   },
   isChecked(donorUrl, searchTerm) {
     return this.checkedSearches.has(`${config_1.normalizeUrl(donorUrl)}|${searchTerm}`);
@@ -75,7 +108,44 @@ exports.StateManager = {
   },
   async saveResult(profileData) {
     const db = await (0, db_1.getDB)();
-    const existing = await db.get(`SELECT * FROM profiles WHERE url = ?`, [profileData.url]);
+    const usernameNorm = normalizeUsername(profileData.username);
+    let existing = await db.get(`SELECT * FROM profiles WHERE url = ?`, [profileData.url]);
+
+    // Merge по username: тот же человек из другого донора / другой URL
+    if (!existing && usernameNorm) {
+      const byUsername = await findProfileByUsername(db, profileData.username);
+      if (byUsername && byUsername.url !== profileData.url) {
+        await this.add(profileData.url);
+        const merged = mergeProfileRecords(byUsername, {
+          ...profileData,
+          donor: mergeDonors(byUsername.donor, profileData.donor),
+        });
+        await db.run(
+          `UPDATE profiles SET name = ?, bio = ?, photo = ?, photo_local = ?, photo_cached_at = ?, photo_status = ?,
+           followers_count = ?, publications_count = ?, posts_count = ?, donor = ?, isInCity = ?, timestamp = ? WHERE url = ?`,
+          [
+            merged.name,
+            merged.bio,
+            merged.photo,
+            merged.photo_local,
+            merged.photo_cached_at,
+            merged.photo_status,
+            merged.followers_count,
+            merged.publications_count,
+            merged.posts_count,
+            merged.donor,
+            merged.isInCity,
+            new Date().toISOString(),
+            byUsername.url,
+          ]
+        );
+        console.log(
+          `   🔗 [MERGE] @${profileData.username} уже в базе — донор «${profileData.donor || '?'}» добавлен к ${byUsername.url}`
+        );
+        return;
+      }
+    }
+
     const ts = new Date().toISOString();
     const photoUrl = profileData.photo || existing?.photo || '';
     const photoCache = profileData.photo_local
@@ -115,13 +185,14 @@ exports.StateManager = {
             : existing.followers_count,
           pubCount || existing.publications_count || existing.posts_count || 0,
           pubCount || existing.publications_count || existing.posts_count || 0,
-          profileData.donor || existing.donor,
+          mergeDonors(existing.donor, profileData.donor),
           profileData.isInCity !== undefined ? profileData.isInCity : existing.isInCity,
           ts,
           profileData.url,
         ]
       );
     } else {
+      if (usernameNorm) this.knownUsernames.add(usernameNorm);
       await db.run(
         `INSERT INTO profiles (url, name, username, bio, photo, photo_local, photo_cached_at, photo_status, followers_count, publications_count, posts_count, donor, vote, isInCity, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [

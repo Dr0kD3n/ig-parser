@@ -24,6 +24,12 @@ const {
 } = require('./anti-fraud');
 const logger = require('./logger');
 const IG = require('./ig-selectors');
+const {
+    dedupeProfilesForMessaging,
+    markDmSentByUsername,
+    normalizeUsername,
+    USERNAME_SQL,
+} = require('./profile-dedup');
 
 let massMessengerStatus = {
     running: false,
@@ -240,12 +246,27 @@ async function startMassMessaging(onProgress, options = {}) {
 
     const profiles = await db.all(query, params);
     const wordsBlacklist = await getList('wordBlacklist.txt');
-    const filteredProfiles = wordsBlacklist.length > 0
-        ? profiles.filter((p) => {
-            const text = `${p.name || ''} ${p.bio || ''} ${p.username || ''}`.toLowerCase();
-            return !wordsBlacklist.some((kw) => text.includes(String(kw).trim().toLowerCase()));
+    const dmSentRows = await db.all(`
+        SELECT DISTINCT ${USERNAME_SQL} AS uname
+        FROM profiles
+        WHERE dmSent = 1 AND username IS NOT NULL AND TRIM(username) != ''
+    `);
+    const dmSentUsernames = new Set(dmSentRows.map((r) => r.uname));
+
+    const afterBlacklist =
+        wordsBlacklist.length > 0
+            ? profiles.filter((p) => {
+                const text = `${p.name || ''} ${p.bio || ''} ${p.username || ''}`.toLowerCase();
+                return !wordsBlacklist.some((kw) => text.includes(String(kw).trim().toLowerCase()));
+            })
+            : profiles;
+
+    const filteredProfiles = dedupeProfilesForMessaging(
+        afterBlacklist.filter((p) => {
+            const uname = normalizeUsername(p.username);
+            return !uname || !dmSentUsernames.has(uname);
         })
-        : profiles;
+    );
     const profilesCount = filteredProfiles.length;
     logger.info(`🔍 Found ${profilesCount} profiles for mass messaging (cityOnly: ${!!options.cityOnly})`);
 
@@ -334,8 +355,15 @@ async function startMassMessaging(onProgress, options = {}) {
                 continue;
             }
 
-            const freshProfile = await db.get(`SELECT dmSent FROM profiles WHERE url = ?`, [profile.url]);
+            const freshProfile = await db.get(`SELECT dmSent, username FROM profiles WHERE url = ?`, [profile.url]);
             if (freshProfile?.dmSent === 1) {
+                currentProcessed++;
+                updateStatus({ current: currentProcessed });
+                continue;
+            }
+            const freshUname = normalizeUsername(freshProfile?.username || profile.username);
+            if (freshUname && dmSentUsernames.has(freshUname)) {
+                await markDmSentByUsername(db, freshUname, { clearError: true });
                 currentProcessed++;
                 updateStatus({ current: currentProcessed });
                 continue;
@@ -344,8 +372,16 @@ async function startMassMessaging(onProgress, options = {}) {
             logger.info(`🧵 [${i + 1}/${profilesCount}] ${profile.url}`);
 
             try {
-                const donorName = profile.donor ? profile.donor.replace('@', '').trim() : '';
-                const group = donorGroups.find(g => (g.donors || []).some(d => (typeof d === 'string' ? d : d.url).includes(donorName)));
+                const donorNames = String(profile.donor || '')
+                    .split(',')
+                    .map((d) => d.replace('@', '').trim())
+                    .filter(Boolean);
+                const group = donorGroups.find((g) =>
+                    (g.donors || []).some((d) => {
+                        const donorRef = typeof d === 'string' ? d : d.url;
+                        return donorNames.some((n) => donorRef.includes(n));
+                    })
+                );
                 let msgs = (group && group.messages?.length > 0) ? group.messages : [];
 
                 if (msgs.length === 0) {
@@ -381,7 +417,8 @@ async function startMassMessaging(onProgress, options = {}) {
                 }
 
                 if (result.success && result.delivered) {
-                    await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 0, dmError = NULL WHERE url = ?`, [profile.url]);
+                    await markDmSentByUsername(db, profile.username || profile.name, { clearError: true, tgTagged: 0 });
+                    if (profile.username) dmSentUsernames.add(normalizeUsername(profile.username));
                     await db.run(
                         `INSERT INTO messages_log (url, username, name, message_text, status, timestamp, account_id, sender_name) VALUES (?, ?, ?, ?, 'sent', ?, ?, ?)`,
                         [profile.url, profile.username || profile.name, profile.name, message, new Date().toISOString(), account.id, account.name]
@@ -390,7 +427,8 @@ async function startMassMessaging(onProgress, options = {}) {
                 } else {
                     const errReason = result.reason || 'error';
                     if (result.reason === 'history' || result.reason === 'chat_exists' || result.reason === 'no_button') {
-                        await db.run(`UPDATE profiles SET dmSent = 1, dmError = ? WHERE url = ?`, [errReason, profile.url]);
+                        await markDmSentByUsername(db, profile.username || profile.name, { dmError: errReason });
+                        if (profile.username) dmSentUsernames.add(normalizeUsername(profile.username));
                     } else if (
                         result.reason === 'delivery_failed' ||
                         result.reason === 'send_failed_ui' ||
