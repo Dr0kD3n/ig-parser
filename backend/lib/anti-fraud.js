@@ -8,6 +8,7 @@ const {
   humanClick,
   humanHover,
   humanScroll,
+  humanScrollToTop,
   humanMouseLeave,
   humanSelection,
   humanMove,
@@ -118,6 +119,112 @@ async function humanTypeRemainder(page, text, timeouts) {
   await humanTypeChars(page, text, timeouts);
 }
 
+/** Закрывает только inbox-виджет снизу справа (не DM-диалог с composer) */
+async function closeFloatingInbox(page) {
+  if (!page || page.isClosed()) return;
+
+  const activeInput = await IG.findActiveChatInput(page);
+  if (activeInput) return;
+
+  const inboxOpen = await page.locator(IG.FLOATING_INBOX).first().isVisible().catch(() => false);
+  if (!inboxOpen) return;
+
+  logger.info('🚪 [ANTIFRAUD] Закрываем inbox-виджет Messenger...');
+
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press('Escape').catch(() => {});
+    await waitAfterEvent();
+    await T.pause(200, 350);
+    const stillOpen = await page.locator(IG.FLOATING_INBOX).first().isVisible().catch(() => false);
+    if (!stillOpen) return;
+  }
+}
+
+/** Закрывает модалку Direct/чата, если она осталась от предыдущего профиля */
+async function closeDirectModal(page, session = {}) {
+  if (!page || page.isClosed()) return;
+
+  await closeFloatingInbox(page);
+
+  const chatVisible = !!(await IG.findActiveChatInput(page));
+  const onDirect = /instagram\.com\/direct\//.test(page.url());
+  if (!chatVisible && !onDirect) return;
+
+  logger.info('🚪 [ANTIFRAUD] Закрываем открытый диалог Direct...');
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const closeBtn = await IG.findFirstVisible(page, IG.POST_CLOSE);
+    if (closeBtn) {
+      const target = await IG.resolveClickable(closeBtn);
+      await humanClick(page, target, CLICK_OPTS).catch(() => {});
+    } else {
+      await page.keyboard.press('Escape').catch(() => {});
+    }
+    await waitAfterEvent();
+    await T.pause(250, 450);
+
+    const stillVisible = !!(await IG.findActiveChatInput(page));
+    if (!stillVisible && !/instagram\.com\/direct\//.test(page.url())) return;
+  }
+
+  if (/instagram\.com\/direct\//.test(page.url())) {
+    await clickGoHome(page, session).catch(() => {});
+    await T.pause(400, 700);
+  }
+
+  await closeOverlays(page);
+}
+
+/** Проверяет, что открытый чат принадлежит целевому username */
+async function isChatForUsername(page, username, session = {}) {
+  const uname = String(username || '').replace('@', '').trim().toLowerCase();
+  if (!uname) return false;
+
+  const activeInput = await IG.findActiveChatInput(page);
+  if (!activeInput) return false;
+
+  if (session.lastOpenedDM === uname) return true;
+
+  const profileInDialog = page.locator(
+    `div[role="dialog"] a[href="/${uname}/"], div[role="dialog"] a[href="/${uname.toLowerCase()}/"]`
+  ).first();
+  if (await profileInDialog.isVisible().catch(() => false)) return true;
+
+  const url = page.url().toLowerCase().replace(/\?.*$/, '');
+  const onProfile = new RegExp(`instagram\\.com/${uname}/?$`, 'i').test(url);
+  if (onProfile) return true;
+
+  if (url.includes('/direct/t/')) {
+    const scopes = [
+      page.locator('section main header').first(),
+      page.locator('div[role="dialog"] header').first(),
+      page.locator('header').first(),
+    ];
+    for (const scope of scopes) {
+      if ((await scope.count()) === 0) continue;
+      const text = ((await scope.innerText().catch(() => '')) || '').toLowerCase();
+      if (text.includes(uname)) return true;
+    }
+  }
+
+  return false;
+}
+
+/** Закрывает чужой/зависший диалог перед работой с новым профилем */
+async function ensureCorrectChatOrClosed(page, username, session = {}) {
+  const activeInput = await IG.findActiveChatInput(page);
+  if (!activeInput) {
+    await closeFloatingInbox(page);
+    return true;
+  }
+
+  if (await isChatForUsername(page, username, session)) return true;
+
+  logger.warn(`⚠️ [ANTIFRAUD] Открыт чужой диалог (@${username}) — закрываем`);
+  await closeDirectModal(page, session);
+  return !(await IG.findActiveChatInput(page));
+}
+
 /** Закрывает модалки/поиск/DM через Escape */
 async function closeOverlays(page) {
   for (let i = 0; i < 2; i++) {
@@ -125,6 +232,92 @@ async function closeOverlays(page) {
     await waitAfterEvent();
     await T.pause(120, 200);
   }
+}
+
+/** DM-composer открыт — не путать со сторис */
+async function isDmComposerOpen(page) {
+  if (!page || page.isClosed()) return false;
+  if (/instagram\.com\/direct\//.test(page.url())) return true;
+
+  const inDialog = page
+    .locator(
+      'div[role="dialog"]:has(div[role="textbox"][contenteditable="true"]) div[role="textbox"][contenteditable="true"]'
+    )
+    .first();
+  if (await inDialog.isVisible().catch(() => false)) return true;
+
+  const inPresentation = page
+    .locator(
+      'div[role="presentation"]:has(div[role="textbox"][contenteditable="true"]) div[role="textbox"][contenteditable="true"]'
+    )
+    .first();
+  return inPresentation.isVisible().catch(() => false);
+}
+
+/** Ждёт появления поля ввода DM после клика Message */
+async function waitForChatComposer(page, timeout = 15000) {
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    if (page.isClosed()) return null;
+
+    const notNow = page.locator(IG.NOT_NOW_BTN).first();
+    if (await notNow.isVisible().catch(() => false)) {
+      await humanClick(page, notNow, CLICK_OPTS).catch(() => {});
+      await wait(600);
+    }
+
+    const input = await IG.findActiveChatInput(page);
+    if (input && (await input.isVisible().catch(() => false))) return input;
+
+    await wait(350 + Math.random() * 250);
+  }
+
+  return null;
+}
+
+/** Закрывает случайно открытый просмотр сторис, не закрывая DM-диалог */
+async function closeStoryIfOpen(page) {
+  if (!page || page.isClosed()) return false;
+  if (await isDmComposerOpen(page)) return false;
+
+  const storyOpen =
+    page.url().includes('/stories/') ||
+    (await page
+      .locator(
+        [
+          'div[role="dialog"]:has(svg[aria-label="Close"]):not(:has(div[role="textbox"][contenteditable="true"]))',
+          'div[role="dialog"]:has(svg[aria-label="Закрыть"]):not(:has(div[role="textbox"][contenteditable="true"]))',
+        ].join(', ')
+      )
+      .first()
+      .isVisible()
+      .catch(() => false));
+
+  if (!storyOpen) return false;
+
+  logger.warn(`⚠️ [ANTIFRAUD] Открылась сторис — закрываем и продолжаем рассылку`);
+
+  for (let i = 0; i < 3; i++) {
+    const closeBtn = await IG.findFirstVisible(page, IG.POST_CLOSE);
+    if (closeBtn) {
+      const target = await IG.resolveClickable(closeBtn);
+      await humanClick(page, target, CLICK_OPTS).catch(() => {});
+    } else {
+      await page.keyboard.press('Escape').catch(() => {});
+    }
+
+    await waitAfterEvent();
+    await T.pause(350, 650);
+    if (!page.url().includes('/stories/')) return true;
+  }
+
+  if (page.url().includes('/stories/')) {
+    await page.goBack({ waitUntil: 'domcontentloaded', timeout: 8000 }).catch(() => {});
+    await T.pause(500, 900);
+  }
+
+  return true;
 }
 
 /** Ищет ссылку на профиль в результатах поиска (без учёта регистра) */
@@ -192,11 +385,12 @@ async function navigateViaSearch(page, url, config, session = {}) {
 /**
  * Одно случайное «живое» действие на странице (скролл, курсор, hover, клик по блоку)
  */
-async function performIdleAction(page) {
+async function performIdleAction(page, options = {}) {
   if (!page || page.isClosed()) return;
+  const { noScroll = false, noClick = false } = options;
   const roll = Math.random();
   try {
-    if (roll < 0.32) {
+    if (!noScroll && roll < 0.32) {
       const dir = Math.random() < 0.82 ? 'down' : 'up';
       await humanScroll(page, null, dir, 120 + Math.random() * 380);
       await T.pause(120, 280);
@@ -212,7 +406,7 @@ async function performIdleAction(page) {
         }
       }
     } else if (roll < 0.78) {
-      const blocks = page.locator('main article, main img, main div[role="button"], article a');
+      const blocks = page.locator('main article, main img, article a');
       const count = await blocks.count().catch(() => 0);
       if (count > 0) {
         const idx = Math.floor(Math.random() * Math.min(count, 14));
@@ -224,7 +418,7 @@ async function performIdleAction(page) {
       }
     } else if (roll < 0.9) {
       await humanSelection(page);
-    } else if (roll < 0.96) {
+    } else if (roll < 0.96 && !noClick) {
       const articles = page.locator('main article, article');
       const count = await articles.count().catch(() => 0);
       if (count > 0) {
@@ -237,7 +431,7 @@ async function performIdleAction(page) {
           await T.pause(150, 300);
         }
       }
-    } else {
+    } else if (!noScroll) {
       await humanScroll(page, null, 'down', 200 + Math.random() * 300);
       await T.pause(200, 400);
       await humanScroll(page, null, 'up', 60 + Math.random() * 120);
@@ -252,6 +446,7 @@ async function performIdleAction(page) {
  */
 async function waitWithActivity(page, ms, options = {}) {
   const threshold = options.threshold ?? 400;
+  const idleOpts = { noScroll: options.noScroll, noClick: options.noClick };
   if (!page || page.isClosed() || ms < threshold) {
     return wait(ms);
   }
@@ -265,7 +460,7 @@ async function waitWithActivity(page, ms, options = {}) {
       await wait(Math.max(0, deadline - Date.now()));
       return;
     }
-    await performIdleAction(page);
+    await performIdleAction(page, idleOpts);
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
     await wait(Math.min(remaining, minChunk + Math.random() * (maxChunk - minChunk)));
@@ -363,8 +558,46 @@ async function browseProfileBeforeDM(page) {
     await T.pause(400, 800);
   }
 
+  await closeStoryIfOpen(page);
   await shortPause(0.02);
-  await T.pause(400, 900);
+  await humanScrollToTop(page);
+  await T.pause(200, 450);
+}
+
+/**
+ * Открывает DM с профиля: кнопка Message или через меню Options
+ */
+async function openProfileDM(page, username, session = {}) {
+  await closeFloatingInbox(page);
+  await humanScrollToTop(page);
+  await T.pause(250, 500);
+
+  const uname = String(username || '').replace('@', '').trim().toLowerCase();
+
+  const msgBtn = await IG.findProfileMessageButton(page);
+  if (msgBtn) {
+    await humanClick(page, msgBtn, CLICK_OPTS);
+    session.lastOpenedDM = uname;
+    logger.info(`✅ [ANTIFRAUD] Клик по кнопке Message в header профиля`);
+    return true;
+  }
+
+  const optionsEl = await IG.findFirstVisible(page, IG.OPTIONS_BTN);
+  if (!optionsEl) return false;
+
+  const optionsTarget = await IG.resolveClickable(optionsEl);
+  await humanClick(page, optionsTarget, CLICK_OPTS);
+  await wait(800);
+
+  const menuBtn = await IG.findFirstVisible(page, IG.MENU_MESSAGE_BTN);
+  if (menuBtn && (await menuBtn.isVisible())) {
+    await humanClick(page, menuBtn, CLICK_OPTS);
+    session.lastOpenedDM = uname;
+    logger.info(`✅ [ANTIFRAUD] Кнопка Message в меню Options`);
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -389,10 +622,13 @@ async function swipeHomeFeed(page, session = {}) {
 /**
  * Отправка сообщения — Enter или кнопка Send (чередование через session.useEnter)
  */
-async function submitMessage(page, inputSelector, session) {
+async function submitMessage(page, inputSelectorOrLocator, session) {
   const useEnter = session.useEnter;
   session.useEnter = !session.useEnter;
-  const input = page.locator(inputSelector).first();
+  const input =
+    typeof inputSelectorOrLocator === 'string'
+      ? page.locator(inputSelectorOrLocator).first()
+      : inputSelectorOrLocator;
 
   if ((await input.count()) > 0) {
     await input.click({ timeout: 3000 }).catch(() => {});
@@ -448,8 +684,10 @@ async function verifyMessageDeliveredOnce(page, message) {
   }
 
   const target = normalizeText(message);
-  const inputLocator = page.locator(IG.CHAT_INPUT).first();
-  const inputText = normalizeText(await inputLocator.innerText().catch(() => ''));
+  const inputLocator = await IG.findActiveChatInput(page);
+  const inputText = normalizeText(
+    inputLocator ? await inputLocator.innerText().catch(() => '') : ''
+  );
 
   if (inputText && target && (inputText.includes(target) || target.includes(inputText))) {
     logger.warn(`❌ [DELIVERY] Текст остался в поле ввода`);
@@ -517,6 +755,7 @@ function createMessengerSession() {
     useEnter: Math.random() < 0.5,
     allowGotoFallback: true,
     profileCount: 0,
+    lastOpenedDM: null,
   };
 }
 
@@ -528,6 +767,14 @@ module.exports = {
   swipeHomeFeed,
   clickGoHome,
   closeOverlays,
+  closeDirectModal,
+  closeFloatingInbox,
+  closeStoryIfOpen,
+  isDmComposerOpen,
+  waitForChatComposer,
+  isChatForUsername,
+  ensureCorrectChatOrClosed,
+  openProfileDM,
   performMicroActions,
   performIdleAction,
   waitWithActivity,

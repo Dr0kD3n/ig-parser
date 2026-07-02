@@ -34,6 +34,7 @@ const getDynamicConfig = async () => {
       account: activeAccount,
       cities: await (0, config_1.getList)('cityKeywords.txt'),
       citiesBlacklist: await (0, config_1.getList)('cityBlacklist.txt'),
+      wordsBlacklist: await (0, config_1.getList)('wordBlacklist.txt'),
       niches: await (0, config_1.getList)('nicheKeywords.txt'),
     };
   } catch (e) {
@@ -87,6 +88,9 @@ const run = async () => {
   info(`📍 Ключевых слов города: ${CONFIG.cities.length}`);
   if (CONFIG.citiesBlacklist.length > 0) {
     info(`🚫 В черном списке городов: ${CONFIG.citiesBlacklist.length}`);
+  }
+  if (CONFIG.wordsBlacklist.length > 0) {
+    info(`🚫 В чёрном списке слов: ${CONFIG.wordsBlacklist.length}`);
   }
 
   info(`🌐 Запуск браузера для аккаунта: ${account.name || account.id}...`);
@@ -219,10 +223,13 @@ const run = async () => {
               const isBlacklisted = CONFIG.citiesBlacklist.length > 0 && CONFIG.citiesBlacklist.some(bl =>
                 normLink.toLowerCase().includes(bl.toLowerCase()) ||
                 city.toLowerCase().includes(bl.toLowerCase())
+              ) || CONFIG.wordsBlacklist.length > 0 && CONFIG.wordsBlacklist.some(bl =>
+                normLink.toLowerCase().includes(bl.toLowerCase()) ||
+                niche.toLowerCase().includes(bl.toLowerCase())
               );
 
               if (isBlacklisted) {
-                warn(`🚫 Профиль ${normLink} пропущен (черный список городов: ${city})`);
+                warn(`🚫 Профиль ${normLink} пропущен (чёрный список)`);
                 continue;
               }
 

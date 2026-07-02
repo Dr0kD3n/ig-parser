@@ -115,6 +115,7 @@ async function getList(fileName) {
     if (fileName === 'names.txt') type = 'name';
     else if (fileName === 'cityKeywords.txt') type = 'city';
     else if (fileName === 'cityBlacklist.txt') type = 'city_blacklist';
+    else if (fileName === 'wordBlacklist.txt') type = 'word_blacklist';
     else if (fileName === 'nicheKeywords.txt') type = 'niche';
     else return [];
     const rows = await db.all(`SELECT value FROM keywords WHERE type = ?`, [type]);

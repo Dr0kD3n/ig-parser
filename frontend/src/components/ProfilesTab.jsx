@@ -145,11 +145,11 @@ const ProfileCard = memo(function ProfileCard({
           {isLiked && <div className="badge likedTag">{tr('badge_like')}</div>}
           {isDisliked && <div className="badge dislikedTag">{tr('badge_skip')}</div>}
           {g.viewed && <div className="badge viewedTag">{tr('badge_viewed')}</div>}
-          {g.dmSent && !g.dm_status && <div className="badge dmTag">{tr('badge_sent_dm')}</div>}
+          {g.dmSent && !g.dmError && !g.dm_status && <div className="badge dmTag">{tr('badge_sent_dm')}</div>}
           {g.dm_status === 'replied' && <div className="badge dmTag" style={{ background: 'hsl(var(--success))' }}>✨ {tr('badge_replied')}</div>}
           {g.dm_status === 'liked' && <div className="badge likedTag">❤️ {tr('badge_liked')}</div>}
           {g.tg_status === 'valid' && <div className="badge tgTag">{tr('badge_tg_tagged')}</div>}
-          {g.tgTagged === 2 && (
+          {g.dmError && (
             <div
               className="badge tgNotSentTag"
               title={tr(`reason_${g.dmError === 'chat_exists' ? 'history' : (g.dmError || 'error')}`)}
@@ -272,7 +272,7 @@ const ProfileCard = memo(function ProfileCard({
             <XIcon />
           </button>
           <button
-            className={`actionBtn tgBtn${g.tgTagged ? ' active' : ''}`}
+            className={`actionBtn tgBtn${g.tgTagged === 1 ? ' active' : ''}`}
             onClick={() => onTagTg(g)}
             title={tr('btn_tag_tg')}
           >
@@ -318,6 +318,7 @@ export default function ProfilesTab({
   cityOnly,
   setCityOnly,
   matchesProfileCity,
+  matchesWordsBlacklist,
 }) {
   const [filterText, setFilterText] = useState(() => localStorage.getItem('ig_filter_text') || '');
   const [filterStatus, setFilterStatus] = useState(() => localStorage.getItem('ig_filter_status') || 'all');
@@ -392,6 +393,7 @@ export default function ProfilesTab({
   const uniqueDonors = Array.from(new Set(girls.map((g) => g.donor).filter(Boolean))).sort();
 
   const filtered = girls
+    .filter((g) => !matchesWordsBlacklist || !matchesWordsBlacklist(g))
     .filter((g) => {
       const matchesName = g.name.toLowerCase().includes(filterText.toLowerCase());
       let matchesStatus = false;

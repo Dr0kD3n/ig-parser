@@ -519,6 +519,7 @@ app.get('/api/settings', async (req, res) => {
   const names = await (0, config_1.getList)('names.txt');
   const cities = await (0, config_1.getList)('cityKeywords.txt');
   const citiesBlacklist = await (0, config_1.getList)('cityBlacklist.txt');
+  const wordsBlacklist = await (0, config_1.getList)('wordBlacklist.txt');
   const niches = await (0, config_1.getList)('nicheKeywords.txt');
   const donors = await state_1.StateManager.loadDonors();
   const db = await (0, db_1.getDB)();
@@ -544,6 +545,7 @@ app.get('/api/settings', async (req, res) => {
     names,
     cities,
     citiesBlacklist,
+    wordsBlacklist,
     niches,
     donors,
     checkedDonors,
@@ -556,7 +558,7 @@ app.get('/api/settings', async (req, res) => {
 });
 app.post('/api/settings', async (req, res) => {
   console.log(`[DEBUG] POST /api/settings received. Keys: ${Object.keys(req.body)}`);
-  const { accounts, names, cities, citiesBlacklist, niches, donors, showBrowser } = req.body;
+  const { accounts, names, cities, citiesBlacklist, wordsBlacklist, niches, donors, showBrowser } = req.body;
   try {
     const db = await (0, db_1.getDB)();
     await db.run('BEGIN TRANSACTION');
@@ -635,6 +637,7 @@ app.post('/api/settings', async (req, res) => {
       await updateList('name', 'names', names);
       await updateList('city', 'cities', cities);
       await updateList('city_blacklist', 'citiesBlacklist', citiesBlacklist);
+      await updateList('word_blacklist', 'wordsBlacklist', wordsBlacklist);
       await updateList('niche', 'niches', niches);
       if (req.body.hasOwnProperty('donors')) {
         const processedDonorsInReq = (donors || []).map((d) => {

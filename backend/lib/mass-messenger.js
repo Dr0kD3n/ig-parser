@@ -1,8 +1,8 @@
 'use strict';
 const { getDB } = require('./db');
-const { getAllAccounts, getSetting } = require('./config');
+const { getAllAccounts, getSetting, getList } = require('./config');
 const { createBrowserContext, startLiveView, takeLiveScreenshot } = require('./browser');
-const { wait, humanType, humanClick, scrollToTop } = require('./utils');
+const { wait, humanType, humanClick, humanScrollToTop } = require('./utils');
 const {
     navigateViaSearch,
     browseProfileBeforeDM,
@@ -11,6 +11,13 @@ const {
     submitMessage,
     verifyMessageDelivered,
     createMessengerSession,
+    closeStoryIfOpen,
+    closeDirectModal,
+    closeFloatingInbox,
+    ensureCorrectChatOrClosed,
+    isChatForUsername,
+    openProfileDM,
+    waitForChatComposer,
     CLICK_OPTS,
     PROFILE_GAP,
     waitWithActivity,
@@ -30,144 +37,86 @@ let messengerStopRequested = false;
 
 async function sendMessageToProfile(page, url, message, config, session) {
     try {
+        if (!page || page.isClosed()) {
+            logger.warn(`⚠️ [MASS] Вкладка закрыта до обработки ${url}`);
+            return { success: false, reason: 'page_closed' };
+        }
+
         logger.info(`🌐 [ANTIFRAUD] Сессия для: ${url}`);
         session.profileCount++;
+        const username = url.split('/').filter(Boolean).pop() || '';
+        session.lastOpenedDM = null;
+
+        await closeDirectModal(page, session);
 
         const navigated = await navigateViaSearch(page, url, config, session);
         if (!navigated) {
             return { success: false, reason: 'nav_failed' };
         }
 
-        await waitWithActivity(page, 400 + Math.random() * 600);
+        await waitWithActivity(page, 400 + Math.random() * 600, { noScroll: true });
+        await closeStoryIfOpen(page);
+        await closeFloatingInbox(page);
+        await ensureCorrectChatOrClosed(page, username, session);
         await takeLiveScreenshot(page);
 
         const isDirectChat = page.url().includes('/direct/t/');
 
         if (!isDirectChat) {
             await page.waitForSelector('header section button, div[role="dialog"]', { timeout: 8000 }).catch(() => { });
-            await waitWithActivity(page, 500 + Math.random() * 400);
+            await wait(500 + Math.random() * 400);
 
-            // Просмотр профиля: hover, случайный пост — до кнопки Message
             await browseProfileBeforeDM(page);
-            await scrollToTop(page);
-            await wait(200);
+            await closeStoryIfOpen(page);
+            await closeFloatingInbox(page);
+            await ensureCorrectChatOrClosed(page, username, session);
+            await humanScrollToTop(page);
+            await wait(300 + Math.random() * 300);
 
-            const chatLoaded = (await page.locator(IG.CHAT_INPUT).count()) > 0;
+            const chatInput = await IG.findActiveChatInput(page);
+            const chatLoaded = chatInput && (await isChatForUsername(page, username, session));
 
             if (!chatLoaded) {
-                let foundDirect = false;
-                const msgBtn = await IG.findFirstVisible(page, IG.MESSAGE_BTN);
-                if (msgBtn) {
-                    await humanClick(page, msgBtn, CLICK_OPTS);
-                    await wait(1200);
-                    foundDirect = true;
-                    logger.info(`✅ Found "Message" button in profile header`);
-                }
-
-                if (!foundDirect) {
-                    const optionsEl = await IG.findFirstVisible(page, IG.OPTIONS_BTN);
-                    if (optionsEl) {
-                        const optionsTarget = await IG.resolveClickable(optionsEl);
-                        await humanClick(page, optionsTarget, CLICK_OPTS);
-                        await waitWithActivity(page, 800);
-
-                        const menuBtn = await IG.findFirstVisible(page, IG.MENU_MESSAGE_BTN);
-                        if (menuBtn && (await menuBtn.isVisible())) {
-                            await humanClick(page, menuBtn, CLICK_OPTS);
-                            await wait(1200);
-                            logger.info(`✅ Found message button in options menu`);
-                        } else {
-                            logger.warn(`❌ No message button found for ${url}`);
-                            return { success: false, reason: 'no_button' };
-                        }
-                    } else {
-                        logger.warn(`❌ No message button and no options for ${url}`);
-                        return { success: false, reason: 'no_button' };
-                    }
+                const opened = await openProfileDM(page, username, session);
+                if (!opened) {
+                    logger.warn(`❌ No message button found for ${url}`);
+                    return { success: false, reason: 'no_button' };
                 }
             }
         }
 
-        // Wait for chat stabilizing
-        const inputSelector = IG.CHAT_INPUT;
-        const notNowSelector = IG.NOT_NOW_BTN;
+        const scopedChatInput = await waitForChatComposer(page, 15000);
 
-        try {
-            await Promise.race([
-                page.waitForSelector(inputSelector, { state: 'visible', timeout: 12000 }),
-                page.waitForSelector(notNowSelector, { state: 'visible', timeout: 12000 }),
-            ]);
-
-            const notNow = page.locator(notNowSelector).first();
-            if (await notNow.isVisible()) {
-                await humanClick(page, notNow, CLICK_OPTS);
-                await wait(800);
-            }
-
-            // Final wait for input
-            await page.waitForSelector(inputSelector, { state: 'visible', timeout: 8000 });
-        } catch (e) {
-            logger.warn(`⚠️ Timeout waiting for chat input for ${url}`);
-        }
-        await wait(200);
-
-        // DISMISS "Not Now" if present
-        const notNow = page.locator(IG.NOT_NOW_BTN).first();
-        if (await notNow.isVisible()) {
-            await humanClick(page, notNow, CLICK_OPTS);
-            await wait(400);
-        }
-
-        const chatInputReady = await page.locator(inputSelector).first().isVisible().catch(() => false);
-        if (!chatInputReady) {
+        if (!scopedChatInput) {
             logger.error(`❌ Textbox not found after Message click for ${url}`);
             return { success: false, reason: 'no_textbox' };
         }
 
-        // HISTORY DETECTION
-        // 1. Locate the actual chat window to avoid sidebar/profile teasers
-        const chatContainerSelector = '[role="group"], .x13dflua.x19991ni, .x13a6bvl, [aria-label="Conversation"], [aria-label="Диалог"], [aria-label="Dialog"]';
-        const chatWindow = page.locator(chatContainerSelector).last(); // 'last' usually handles the active chat modal/area
+        if (!(await isChatForUsername(page, username, session))) {
+            logger.warn(`⚠️ [HISTORY] Открыт не тот чат для @${username}, закрываем и пропускаем`);
+            await closeDirectModal(page, session);
+            return { success: false, reason: 'wrong_chat' };
+        }
 
-        const historySelectors = [
-            'div[role="none"]', // Core message bubble container
-            'div[id^="mid."]',   // Explicit message ID
-            '[aria-label*="Double tap"], [aria-label*="нравится"]' // Interaction labels
-        ];
+        // HISTORY DETECTION — только в активном диалоге текущего пользователя
+        const chatInputShort = 'div[role="textbox"][contenteditable="true"]';
+        const activeChat = page
+            .locator(`div[role="dialog"]:has(${chatInputShort})`)
+            .last()
+            .or(page.locator('section main').filter({ has: page.locator(chatInputShort) }));
 
         const BLACKLIST = [
             'Instagram', 'Active now', 'Followed by', ' followers', ' posts',
             'This is the beginning', 'Not for you', 'You followed',
             'Отправить', 'Send', 'Type a message', 'Напишите', 'View profile',
             'Search', 'Joined', 'Follow', 'Following', 'Message', 'Сообщение',
-            'Block', 'Report', 'Restrict'
+            'Block', 'Report', 'Restrict', 'Смотреть профиль', 'View Profile',
         ];
 
-        let hasOutgoing = false;
-        let hasMatchingContent = false;
         let totalMessages = 0;
         let detectedTexts = [];
 
-        const normalize = (t) => t.toLowerCase().replace(/[^\w\sа-яё]/gi, '').trim();
-        const normalizedTarget = normalize(message);
-
-        // EXTRA CHECK: Check for the presence of the scrollable message list
-        const groupIndicator = page.locator('.x13dflua.x19991ni [role="none"], [role="group"] [role="none"]').first();
-        if (await groupIndicator.count() > 0) {
-            const text = await groupIndicator.innerText().catch(() => '');
-            if (text.length > 1 && !BLACKLIST.some(b => text.includes(b))) {
-                logger.debug(`📍 [HISTORY] Detected message bubbles in chat container.`);
-                totalMessages = 1;
-                detectedTexts.push(text.slice(0, 100).replace(/\n/g, ' '));
-            }
-        }
-
-        if (!(await chatWindow.count() > 0)) {
-            logger.warn(`⚠️ Chat container not found for ${url}. History check may be unreliable.`);
-        }
-
-        // Only scan 'scope' if chatWindow was definitely found, otherwise we risk whole-page false positives
-        // [HYBRID OPTIMIZATION] Быстрая проверка истории через API
+        // [HYBRID OPTIMIZATION] Быстрая проверка истории через API — только если есть реальный текст
         const apiHistory = await page.evaluate(async (uname) => {
             try {
                 const res = await fetch(`/api/v1/direct_v2/visual_threads/`, {
@@ -177,26 +126,33 @@ async function sendMessageToProfile(page, url, message, config, session) {
                     const json = await res.json();
                     const threads = json.threads || [];
                     const thread = threads.find(t => t.users && t.users.some(u => u.username === uname));
-                    if (thread) {
-                        return { hasHistory: true, lastMsg: thread.last_permanent_item?.text || 'Sent' };
+                    const lastText = thread?.last_permanent_item?.text?.trim();
+                    if (thread && lastText) {
+                        return { hasHistory: true, lastMsg: lastText };
                     }
                 }
             } catch (e) { }
             return null;
-        }, url.split('/').filter(Boolean).pop());
+        }, username);
 
         if (apiHistory?.hasHistory) {
             logger.info(`⛔ [SKIP] API History detected: "${apiHistory.lastMsg}" for ${url}`);
             return { success: false, reason: 'history' };
         }
 
-        // ... existing structural fallback if API is inconclusive
-        const scope = await chatWindow.count() > 0 ? chatWindow : null;
-        if (scope) {
-            // (existing DOM check logic remains as secondary layer)
+        if ((await activeChat.count()) > 0) {
+            const bubbles = activeChat.locator('div[role="none"], div[id^="mid."]');
+            const bubbleCount = await bubbles.count();
+            for (let i = 0; i < Math.min(bubbleCount, 20); i++) {
+                const text = ((await bubbles.nth(i).innerText().catch(() => '')) || '').trim();
+                if (!text || text.length <= 1) continue;
+                if (BLACKLIST.some((b) => text.includes(b))) continue;
+                totalMessages++;
+                detectedTexts.push(text.slice(0, 100).replace(/\n/g, ' '));
+            }
         }
 
-        if (totalMessages > 0 || hasOutgoing || hasMatchingContent) {
+        if (totalMessages > 0) {
             const preview = detectedTexts.length > 0 ? ` | Content: [${detectedTexts.join(' | ')}]` : '';
             logger.info(`⛔ [SKIP] Chat history detected (${totalMessages} msgs).${preview} for ${url}`);
             return { success: false, reason: 'history' };
@@ -205,14 +161,15 @@ async function sendMessageToProfile(page, url, message, config, session) {
         logger.info(`ℹ️ No prior history detected for ${url}. Proceeding with message.`);
 
         // SENDING
-        const textbox = page.locator(inputSelector).first();
-        if (await textbox.count() > 0) {
+        const textbox = scopedChatInput;
+        if (textbox) {
+            await closeStoryIfOpen(page);
             await humanClick(page, textbox, CLICK_OPTS);
-            await wait(150 + Math.random() * 250);
-            await humanType(page, inputSelector, message, config.timeouts, { skipFocus: true });
+            await wait(200 + Math.random() * 300);
+            await humanType(page, textbox, message, config.timeouts);
             // После ввода нельзя запускать idle-действия: они могут увести фокус из composer.
             await wait(250 + Math.random() * 350);
-            await submitMessage(page, inputSelector, session);
+            await submitMessage(page, scopedChatInput, session);
             await wait(200);
 
             const delivery = await verifyMessageDelivered(page, message);
@@ -234,6 +191,8 @@ async function sendMessageToProfile(page, url, message, config, session) {
     } finally {
         if (page && !page.isClosed()) {
             try {
+                await closeDirectModal(page, session);
+                session.lastOpenedDM = null;
                 await swipeHomeFeed(page, session);
                 if (session.profileCount % 5 === 0) {
                     await performMicroActions(page);
@@ -280,7 +239,14 @@ async function startMassMessaging(onProgress, options = {}) {
     }
 
     const profiles = await db.all(query, params);
-    const profilesCount = profiles.length;
+    const wordsBlacklist = await getList('wordBlacklist.txt');
+    const filteredProfiles = wordsBlacklist.length > 0
+        ? profiles.filter((p) => {
+            const text = `${p.name || ''} ${p.bio || ''} ${p.username || ''}`.toLowerCase();
+            return !wordsBlacklist.some((kw) => text.includes(String(kw).trim().toLowerCase()));
+        })
+        : profiles;
+    const profilesCount = filteredProfiles.length;
     logger.info(`🔍 Found ${profilesCount} profiles for mass messaging (cityOnly: ${!!options.cityOnly})`);
 
     if (profilesCount === 0) {
@@ -347,8 +313,26 @@ async function startMassMessaging(onProgress, options = {}) {
         });
         await waitWithActivity(page, 700 + Math.random() * 600);
 
-        for (let i = 0; i < profiles.length && !messengerStopRequested; i++) {
-            const profile = profiles[i];
+        const reopenPage = async (reason = 'closed') => {
+            logger.warn(`⚠️ [MASS] Вкладка закрылась (${reason}). Открываем новую и продолжаем со следующего профиля.`);
+            page = await context.newPage();
+            await page.goto('https://www.instagram.com/', {
+                waitUntil: 'domcontentloaded',
+                timeout: 60000,
+            });
+            await waitWithActivity(page, 700 + Math.random() * 600);
+            return page;
+        };
+
+        for (let i = 0; i < filteredProfiles.length && !messengerStopRequested; i++) {
+            const profile = filteredProfiles[i];
+
+            if (!page || page.isClosed()) {
+                await reopenPage('before_profile');
+                currentProcessed++;
+                updateStatus({ current: currentProcessed });
+                continue;
+            }
 
             const freshProfile = await db.get(`SELECT dmSent FROM profiles WHERE url = ?`, [profile.url]);
             if (freshProfile?.dmSent === 1) {
@@ -390,6 +374,12 @@ async function startMassMessaging(onProgress, options = {}) {
 
                 const result = await sendMessageToProfile(page, profile.url, message, browserConfig, session);
 
+                if (result.reason === 'page_closed') {
+                    await reopenPage('during_profile');
+                    results.push({ url: profile.url, success: false, error: 'page_closed' });
+                    continue;
+                }
+
                 if (result.success && result.delivered) {
                     await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 0, dmError = NULL WHERE url = ?`, [profile.url]);
                     await db.run(
@@ -400,17 +390,17 @@ async function startMassMessaging(onProgress, options = {}) {
                 } else {
                     const errReason = result.reason || 'error';
                     if (result.reason === 'history' || result.reason === 'chat_exists' || result.reason === 'no_button') {
-                        await db.run(`UPDATE profiles SET dmSent = 1, tgTagged = 2, dmError = ? WHERE url = ?`, [errReason, profile.url]);
+                        await db.run(`UPDATE profiles SET dmSent = 1, dmError = ? WHERE url = ?`, [errReason, profile.url]);
                     } else if (
                         result.reason === 'delivery_failed' ||
                         result.reason === 'send_failed_ui' ||
                         result.reason === 'text_still_in_input' ||
                         result.reason === 'not_verified'
                     ) {
-                        await db.run(`UPDATE profiles SET tgTagged = 2, dmError = ? WHERE url = ?`, [errReason, profile.url]);
+                        await db.run(`UPDATE profiles SET dmError = ? WHERE url = ?`, [errReason, profile.url]);
                         logger.warn(`🚫 [ACC: ${account.name}] Спамблок/недоставка: ${profile.url}`);
                     } else {
-                        await db.run(`UPDATE profiles SET tgTagged = 2, dmError = ? WHERE url = ?`, [errReason, profile.url]);
+                        await db.run(`UPDATE profiles SET dmError = ? WHERE url = ?`, [errReason, profile.url]);
                     }
                 }
 
@@ -419,18 +409,29 @@ async function startMassMessaging(onProgress, options = {}) {
                     success: !!(result.success && result.delivered),
                 });
             } catch (err) {
+                if (/Target page, context or browser has been closed|Page closed|Target closed/i.test(err.message || '')) {
+                    await reopenPage('exception').catch((e) => {
+                        logger.warn(`⚠️ [MASS] Не удалось открыть новую вкладку: ${e.message}`);
+                    });
+                    results.push({ url: profile.url, success: false, error: 'page_closed' });
+                    continue;
+                }
                 logger.error(`Task error for ${profile.url} on ${account.name}: ${err.message}`);
                 results.push({ url: profile.url, success: false, error: err.message });
             } finally {
                 currentProcessed++;
                 updateStatus({ current: currentProcessed });
 
-                const hasMore = i < profiles.length - 1 && !messengerStopRequested;
+                const hasMore = i < filteredProfiles.length - 1 && !messengerStopRequested;
                 if (hasMore) {
                     const [gapMin, gapMax] = humanEmulation ? PROFILE_GAP.human : PROFILE_GAP.normal;
                     const delay = gapMin + Math.random() * (gapMax - gapMin);
                     logger.info(`👤 [ANTIFRAUD] Пауза ${Math.round(delay / 1000)}с до следующего профиля`);
-                    await waitWithActivity(page, delay);
+                    if (!page || page.isClosed()) {
+                        await reopenPage('before_gap');
+                    } else {
+                        await waitWithActivity(page, delay);
+                    }
                 }
             }
         }

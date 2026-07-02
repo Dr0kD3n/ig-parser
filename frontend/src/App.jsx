@@ -25,6 +25,15 @@ const createCityMatcher = (cities = [], citiesBlacklist = []) => {
   };
 };
 
+const createWordsBlacklistMatcher = (wordsBlacklist = []) => {
+  const blacklist = wordsBlacklist.map(normalizeKeyword).filter(Boolean);
+  return (profile) => {
+    if (blacklist.length === 0) return false;
+    const text = normalizeKeyword(`${profile?.name || ''} ${profile?.bio || ''} ${profile?.username || ''}`);
+    return blacklist.some((kw) => text.includes(kw));
+  };
+};
+
 const safeStorage = {
   getItem: (key, def) => {
     try {
@@ -88,6 +97,7 @@ export default function App() {
       names: [],
       cities: [],
       citiesBlacklist: [],
+      wordsBlacklist: [],
       niches: [],
       donors: [],
       showBrowser: false,
@@ -126,6 +136,11 @@ export default function App() {
   const matchesProfileCity = useMemo(
     () => createCityMatcher(settingsData.cities, settingsData.citiesBlacklist),
     [settingsData.cities, settingsData.citiesBlacklist]
+  );
+
+  const matchesWordsBlacklist = useMemo(
+    () => createWordsBlacklistMatcher(settingsData.wordsBlacklist),
+    [settingsData.wordsBlacklist]
   );
 
   const handleLoginSuccess = (newToken, newUser) => {
@@ -221,6 +236,7 @@ export default function App() {
           names: Array.isArray(data.names) ? data.names : [],
           cities: Array.isArray(data.cities) ? data.cities : [],
           citiesBlacklist: Array.isArray(data.citiesBlacklist) ? data.citiesBlacklist : [],
+          wordsBlacklist: Array.isArray(data.wordsBlacklist) ? data.wordsBlacklist : [],
           niches: Array.isArray(data.niches) ? data.niches : [],
           donors: Array.isArray(data.donors) ? data.donors : [],
           showBrowser: data.showBrowser || false,
@@ -359,15 +375,18 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [settingsData, user, authFetch]);
 
-  const onSettingsChange = (newSettings) => {
+  const onSettingsChange = useCallback((newSettingsOrFn) => {
     pendingSave.current = true;
-    setSettingsData((prev) => ({ ...prev, ...newSettings }));
-  };
+    setSettingsData((prev) => {
+      const patch = typeof newSettingsOrFn === 'function' ? newSettingsOrFn(prev) : newSettingsOrFn;
+      return { ...prev, ...patch };
+    });
+  }, []);
 
 
   const handleVote = useCallback(
     async (g, status) => {
-      if (status === 'like' && g.tgTagged) {
+      if (status === 'like' && g.tgTagged === 1) {
         authFetch('/api/profiles/tag-tg', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -430,23 +449,32 @@ export default function App() {
         if (allGroup && allGroup.messages?.length > 0) msgs = allGroup.messages;
       }
       const m = msgs[Math.floor(Math.random() * msgs.length)] || 'Hello!';
-      const newSent = [...sentDM, g.url];
-      setSentDM(newSent);
-      safeStorage.setItem('ig_sent_dm', JSON.stringify(newSent));
-      setGirls((prev) => prev.map((p) => (p.url === g.url ? { ...p, dmSent: true } : p)));
-      authFetch('/api/dm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: g.url, message: m }),
-      });
+      try {
+        const res = await authFetch('/api/dm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: g.url, message: m }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          const newSent = [...sentDM, g.url];
+          setSentDM(newSent);
+          safeStorage.setItem('ig_sent_dm', JSON.stringify(newSent));
+          setGirls((prev) => prev.map((p) => (p.url === g.url ? { ...p, dmSent: true, dmError: null } : p)));
+        } else {
+          toast.error(data.message || 'Не отправлено');
+        }
+      } catch (e) {
+        toast.error('Ошибка отправки');
+      }
     },
     [sentDM, authFetch, settingsData.donorGroups]
   );
 
   const handleTagTg = useCallback(
     async (g) => {
-      // If currently 1 or 2, toggle to 0. If currently 0, toggle to 1.
-      const nextStatus = (g.tgTagged === 1 || g.tgTagged === 2) ? 0 : 1;
+      // Переключение ручной отметки «написал в TG»
+      const nextStatus = g.tgTagged === 1 ? 0 : 1;
 
       setGirls((prev) =>
         prev.map((p) =>
@@ -629,14 +657,64 @@ export default function App() {
     if (!user || !token) return;
     const normalizedToken = token === 'null' ? null : token;
     if (!normalizedToken) return;
-    const baseUrl = LOCAL_API_BASE;
-    const es = new EventSource(`${baseUrl}/api/logs?token=${normalizedToken}`);
-    es.onmessage = (ev) => {
-      const log = JSON.parse(ev.data);
-      setLogs((prev) => [...prev, log].slice(-LOG_BUFFER));
+
+    let es;
+    let cancelled = false;
+    let retryTimer;
+
+    const connectLogs = () => {
+      if (cancelled) return;
+      es = new EventSource(`/api/logs?token=${encodeURIComponent(normalizedToken)}`);
+      es.onmessage = (ev) => {
+        const log = JSON.parse(ev.data);
+        setLogs((prev) => [...prev, log].slice(-LOG_BUFFER));
+      };
+      es.onerror = () => {
+        es?.close();
+        if (!cancelled) retryTimer = setTimeout(connectLogs, 3000);
+      };
     };
-    return () => es.close();
-  }, [user, token]);
+
+    // Ждём backend — иначе vite proxy падает с ECONNREFUSED и светит token в URL
+    (async () => {
+      for (let i = 0; i < 15 && !cancelled; i++) {
+        try {
+          const res = await authFetch('/api/bot/status');
+          if (res.ok) {
+            connectLogs();
+            return;
+          }
+        } catch (_) { /* backend ещё не поднялся */ }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      if (!cancelled) connectLogs();
+    })();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      es?.close();
+    };
+  }, [user, token, authFetch]);
+
+  const unopenedCount = useMemo(() => girls.filter((g) => !g.viewed).length, [girls]);
+  const likesCount = useMemo(() => Object.values(votes).filter((v) => v === 'like').length, [votes]);
+  const dmSentCount = useMemo(() => girls.filter((g) => g.dmSent).length, [girls]);
+  const massMsgCount = useMemo(
+    () =>
+      girls.filter(
+        (g) =>
+          !g.dmSent &&
+          votes[g.url] === 'like' &&
+          !matchesWordsBlacklist(g) &&
+          (!cityOnly || matchesProfileCity(g))
+      ).length,
+    [girls, votes, matchesWordsBlacklist, cityOnly, matchesProfileCity]
+  );
+  const scrapedDonors = useMemo(
+    () => Array.from(new Set(girls.map((g) => g.donor).filter(Boolean))).sort(),
+    [girls]
+  );
 
   if (isLoading)
     return (
@@ -646,12 +724,6 @@ export default function App() {
     );
 
   if (!user) return <AuthPage onLoginSuccess={handleLoginSuccess} tr={tr} />;
-
-  const unopenedCount = girls.filter((g) => !g.viewed).length;
-  const likesCount = Object.values(votes).filter((v) => v === 'like').length;
-  const massMsgCount = girls.filter(
-    (g) => !g.dmSent && votes[g.url] === 'like' && (!cityOnly || matchesProfileCity(g))
-  ).length;
 
   return (
     <div className="app">
@@ -665,7 +737,7 @@ export default function App() {
               {tr('viewed')} <b>{viewed.length}</b>
             </span>
             <span>
-              {tr('dm_sent')} <b className="color-accent">{girls.filter(g => g.dmSent).length}</b>
+              {tr('dm_sent')} <b className="color-accent">{dmSentCount}</b>
             </span>
             <div className="stats-divider" />
             <span>
@@ -773,6 +845,7 @@ export default function App() {
             cityOnly={cityOnly}
             setCityOnly={setCityOnly}
             matchesProfileCity={matchesProfileCity}
+            matchesWordsBlacklist={matchesWordsBlacklist}
           />
         )}
 
@@ -796,7 +869,7 @@ export default function App() {
             isLoading={isLoading}
             authFetch={authFetch}
             failedUrls={Array.from(failedImages)}
-            scrapedDonors={Array.from(new Set(girls.map((g) => g.donor).filter(Boolean))).sort()}
+            scrapedDonors={scrapedDonors}
           />
         )}
 

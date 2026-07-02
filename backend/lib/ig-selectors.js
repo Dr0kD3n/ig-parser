@@ -69,6 +69,22 @@ const MESSAGE_BTN = [
   'main header section a:has-text("Сообщение")',
 ].join(', ');
 
+const DIRECT_NAV = [
+  'a[href="/direct/inbox/"]',
+  'a[href*="/direct/inbox"]',
+  'nav a:has(svg[aria-label="Messenger"])',
+  'nav a:has(svg[aria-label="Сообщения"])',
+  'div[role="navigation"] a:has(svg[aria-label="Messenger"])',
+  'div[role="navigation"] a:has(svg[aria-label="Сообщения"])',
+].join(', ');
+
+const FLOATING_INBOX = [
+  '[aria-label="Thread list"]',
+  '[aria-label="Список диалогов"]',
+  '[aria-label="Direct messages"]',
+  '[aria-label="Личные сообщения"]',
+].join(', ');
+
 const OPTIONS_BTN = [
   'main header svg[aria-label="Options"]',
   'main header svg[aria-label="Параметры"]',
@@ -195,6 +211,96 @@ async function findProfileLink(page, username) {
   return null;
 }
 
+/** Поле ввода в активном DM (не inbox-виджет снизу справа) */
+async function findActiveChatInput(page) {
+  const tb = 'div[role="textbox"][contenteditable="true"]';
+
+  const isExcluded = async (input) =>
+    input.evaluate((el) => {
+      let node = el;
+      for (let d = 0; d < 18 && node; d++) {
+        const aria = (node.getAttribute?.('aria-label') || '').toLowerCase();
+        if (aria.includes('thread list') || aria.includes('список диалогов')) return true;
+        if (node.querySelector?.('input[aria-label*="Search"], input[placeholder*="Search"], input[placeholder*="Поиск"]')) {
+          return true;
+        }
+        node = node.parentElement;
+      }
+      return false;
+    }).catch(() => false);
+
+  const containers = [
+    page.locator(`div[role="dialog"]:has(${tb})`),
+    page.locator(`div[role="presentation"]:has(${tb})`),
+  ];
+
+  for (const container of containers) {
+    const count = await container.count().catch(() => 0);
+    for (let i = count - 1; i >= 0; i--) {
+      const dlg = container.nth(i);
+      if (!(await dlg.isVisible().catch(() => false))) continue;
+
+      const isInboxList = await dlg
+        .evaluate((el) => {
+          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+          return aria.includes('thread list') || aria.includes('список диалогов');
+        })
+        .catch(() => false);
+      if (isInboxList) continue;
+
+      const input = dlg.locator(tb).first();
+      if (!(await input.isVisible().catch(() => false))) continue;
+      if (await isExcluded(input)) continue;
+      return input;
+    }
+  }
+
+  const allInputs = page.locator(tb);
+  const total = await allInputs.count().catch(() => 0);
+  for (let i = total - 1; i >= 0; i--) {
+    const input = allInputs.nth(i);
+    if (!(await input.isVisible().catch(() => false))) continue;
+    if (await isExcluded(input)) continue;
+    return input;
+  }
+
+  const mainInput = page.locator('section main').locator(tb).first();
+  if (await mainInput.isVisible().catch(() => false)) return mainInput;
+
+  return null;
+}
+
+/** @deprecated — используй findActiveChatInput */
+function getScopedChatInput(page) {
+  const textbox = 'div[role="textbox"][contenteditable="true"]';
+  return page
+    .locator(`div[role="dialog"]:has(${textbox})`)
+    .last()
+    .locator(textbox)
+    .first()
+    .or(
+      page
+        .locator('section main')
+        .filter({ has: page.locator(textbox) })
+        .locator(textbox)
+        .first()
+    );
+}
+
+/** Кнопка Message в header профиля — плавно в viewport */
+async function findProfileMessageButton(page) {
+  const btn = await findFirstVisible(page, MESSAGE_BTN);
+  if (!btn) return null;
+  await btn
+    .evaluate((el) => {
+      el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+    })
+    .catch(() => {});
+  await new Promise((r) => setTimeout(r, 350 + Math.random() * 250));
+  const box = await btn.boundingBox().catch(() => null);
+  return box ? btn : null;
+}
+
 /** Кнопка Send в области чата (не иконка «Отправить» в меню) */
 async function findSendButton(page) {
   const scoped = await findFirstVisible(page, SEND_BTN);
@@ -221,6 +327,8 @@ module.exports = {
   EXPLORE_NAV,
   REELS_NAV,
   MESSAGE_BTN,
+  DIRECT_NAV,
+  FLOATING_INBOX,
   OPTIONS_BTN,
   MENU_MESSAGE_BTN,
   CHAT_INPUT,
@@ -232,5 +340,8 @@ module.exports = {
   resolveClickable,
   clickFirst,
   findProfileLink,
+  findProfileMessageButton,
+  findActiveChatInput,
+  getScopedChatInput,
   findSendButton,
 };

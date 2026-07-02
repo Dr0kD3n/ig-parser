@@ -356,6 +356,7 @@ async function importLegacyData(db) {
   const imports = [
     { file: 'cityKeywords.txt', type: 'city', table: 'keywords' },
     { file: 'cityBlacklist.txt', type: 'city_blacklist', table: 'keywords' },
+    { file: 'wordBlacklist.txt', type: 'word_blacklist', table: 'keywords' },
     { file: 'names.txt', type: 'name', table: 'keywords' },
     { file: 'nicheKeywords.txt', type: 'niche', table: 'keywords' },
     { file: 'profiles.txt', type: 'donor', table: 'urls' },

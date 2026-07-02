@@ -1,4 +1,4 @@
-import React, { useState, memo } from 'react';
+import React, { useState, memo, useMemo, useCallback, useEffect, useRef, startTransition } from 'react';
 import { EditIcon, TrashIcon } from './Icons';
 import { toast } from 'react-hot-toast';
 const SkeletonSettings = memo(function SkeletonSettings() {
@@ -64,7 +64,343 @@ const CITIES_PRESETS = [
   { name: 'Владивосток', value: 'Владивосток\nVladivostok' }
 ];
 
-const DonorGroupCard = ({ group, allDonors, onUpdate, onDelete, isAll, tr, TrashIcon, settingsData }) => {
+const normalizeDonorUrl = (u) =>
+  String(u || '')
+    .toLowerCase()
+    .replace(/https?:\/\/(www\.)?instagram\.com\//, '')
+    .replace(/[@/]/g, '')
+    .trim();
+
+const DONOR_PICKER_LIMIT = 60;
+
+// Поиск + лимит DOM-узлов вместо сотен кнопок
+const DonorPicker = memo(function DonorPicker({ allDonors, selectedSet, checkedDonorsSet, onToggle }) {
+  const [query, setQuery] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = allDonors || [];
+    if (q) {
+      list = list.filter((d) => {
+        const url = typeof d === 'string' ? d : d.url;
+        return url.toLowerCase().includes(q) || normalizeDonorUrl(url).includes(q);
+      });
+    }
+    return list.slice(0, DONOR_PICKER_LIMIT);
+  }, [allDonors, query]);
+
+  const total = (allDonors || []).length;
+  const hidden = Math.max(0, total - filtered.length);
+
+  return (
+    <div className="donors-selector mb-12">
+      <input
+        type="text"
+        className="search-input w-full mb-8 fs-12"
+        placeholder={`Поиск донора (${total})...`}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <div className="flex-wrap gap-6 max-h-120 scroll-y p-8 bg-black-20 rounded-8">
+        {filtered.map((d) => {
+          const url = typeof d === 'string' ? d : d.url;
+          const isSelected = selectedSet.has(url);
+          const isProcessed = checkedDonorsSet.has(normalizeDonorUrl(url));
+          const niche = d.niche;
+          const city = d.city;
+
+          return (
+            <button
+              key={url}
+              type="button"
+              className={`acc-task-tag ${isSelected ? 'active' : 'inactive'} ${isProcessed ? 'donor-processed' : ''}`}
+              onClick={() => onToggle(url, d, isSelected)}
+              title={isProcessed ? 'Отработан' : ''}
+            >
+              @{url.replace('https://www.instagram.com/', '').replace('/', '')}
+              {(niche || city) && (
+                <span className="donor-keyword">({[niche, city].filter(Boolean).join(', ')})</span>
+              )}
+            </button>
+          );
+        })}
+        {total === 0 && <div className="fs-12 color-dim">Нет доноров в списке</div>}
+        {hidden > 0 && (
+          <div className="fs-11 color-dim w-full">+ ещё {hidden} — уточни поиск</div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// Debounced textarea для списка доноров (без visual-layer)
+const DonorsListEditor = memo(function DonorsListEditor({ donors, onCommit }) {
+  const serialized = useMemo(
+    () => (donors || []).map((d) => (typeof d === 'string' ? d : d.url)).join('\n'),
+    [donors]
+  );
+  const [draft, setDraft] = useState(serialized);
+  const lastCommitted = useRef(serialized);
+  const timerRef = useRef(null);
+  const donorsRef = useRef(donors);
+
+  useEffect(() => {
+    donorsRef.current = donors;
+  }, [donors]);
+
+  useEffect(() => {
+    if (serialized !== lastCommitted.current) {
+      setDraft(serialized);
+      lastCommitted.current = serialized;
+    }
+  }, [serialized]);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  const commit = useCallback(
+    (text) => {
+      lastCommitted.current = text;
+      const lines = text.split('\n');
+      const updated = lines.map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+        const existing = (donorsRef.current || []).find(
+          (ed) => (typeof ed === 'string' ? ed : ed.url) === trimmed
+        );
+        return existing || line;
+      });
+      onCommit(updated);
+    },
+    [onCommit]
+  );
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    setDraft(val);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => commit(val), 400);
+  };
+
+  return (
+    <textarea
+      className="msg-textarea"
+      style={{ height: 180 }}
+      value={draft}
+      onChange={handleChange}
+      onBlur={() => {
+        clearTimeout(timerRef.current);
+        commit(draft);
+      }}
+      placeholder={'https://www.instagram.com/username/\nhttps://www.instagram.com/username2/'}
+    />
+  );
+});
+
+const DonorsSettingsSection = memo(function DonorsSettingsSection({
+  settingsData,
+  onSettingsChange,
+  scrapedDonors,
+  tr,
+  TrashIcon,
+}) {
+  const checkedDonorsSet = useMemo(() => {
+    const set = new Set();
+    for (const cd of settingsData.checkedDonors || []) {
+      set.add(normalizeDonorUrl(cd));
+    }
+    return set;
+  }, [settingsData.checkedDonors]);
+
+  const allDonorUrls = useMemo(
+    () => (scrapedDonors || []).map((u) => `https://www.instagram.com/${u}/`),
+    [scrapedDonors]
+  );
+
+  const handleDonorGroupUpdate = useCallback(
+    (groupId, patch) => {
+      onSettingsChange((prev) => {
+        const groups = prev.donorGroups || [];
+        const exists = groups.some((g) => g.id === groupId);
+        let newGroups;
+        if (exists) {
+          newGroups = groups.map((g) => (g.id === groupId ? { ...g, ...patch } : g));
+        } else if (groupId === 'all') {
+          newGroups = [{ id: 'all', name: tr('all_other_donors'), donors: [], messages: [], ...patch }, ...groups];
+        } else {
+          newGroups = groups;
+        }
+        return { donorGroups: newGroups };
+      });
+    },
+    [onSettingsChange, tr]
+  );
+
+  const allGroup = useMemo(
+    () =>
+      (settingsData.donorGroups || []).find((g) => g.id === 'all') || {
+        id: 'all',
+        name: tr('all_other_donors'),
+        donors: [],
+        messages: [],
+      },
+    [settingsData.donorGroups, tr]
+  );
+
+  const otherDonorGroups = useMemo(
+    () => (settingsData.donorGroups || []).filter((g) => g.id !== 'all'),
+    [settingsData.donorGroups]
+  );
+
+  const handleDonorsCommit = useCallback(
+    (donors) => onSettingsChange({ donors }),
+    [onSettingsChange]
+  );
+
+  return (
+    <div className="donor-groups-manager">
+      <div className="donors-raw-list mb-24">
+        <h4 className="mb-12 fs-16 color-accent">📋 {tr('tab_donors')} (Общий список)</h4>
+        <DonorsListEditor donors={settingsData.donors} onCommit={handleDonorsCommit} />
+      </div>
+
+      <div className="groups-header flex-between mb-20">
+        <h4 className="fs-18 font-bold">🧩 {tr('donor_groups')}</h4>
+        <button
+          type="button"
+          className="btn-primary btn-sm"
+          onClick={() => {
+            const name = prompt(tr('add_group') + ':');
+            if (!name) return;
+            onSettingsChange({
+              donorGroups: [
+                ...(settingsData.donorGroups || []),
+                { id: Date.now().toString(), name, donors: [], messages: [] },
+              ],
+            });
+          }}
+        >
+          + {tr('add_group')}
+        </button>
+      </div>
+
+      <div className="donor-groups-list flex-v gap-24">
+        <DonorGroupCard
+          group={allGroup}
+          allDonors={allDonorUrls}
+          onUpdate={handleDonorGroupUpdate}
+          onDelete={() => {}}
+          isAll={true}
+          tr={tr}
+          TrashIcon={TrashIcon}
+          checkedDonorsSet={checkedDonorsSet}
+        />
+        {otherDonorGroups.map((group) => (
+          <DonorGroupCard
+            key={group.id}
+            group={group}
+            allDonors={allDonorUrls}
+            onUpdate={handleDonorGroupUpdate}
+            onDelete={() => {
+              if (!confirm('Удалить эту группу?')) return;
+              onSettingsChange({
+                donorGroups: (settingsData.donorGroups || []).filter((g) => g.id !== group.id),
+              });
+            }}
+            tr={tr}
+            TrashIcon={TrashIcon}
+            checkedDonorsSet={checkedDonorsSet}
+          />
+        ))}
+      </div>
+    </div>
+  );
+});
+
+// Локальный draft — не поднимаем каждый символ в App
+const DebouncedLinesTextarea = memo(function DebouncedLinesTextarea({
+  lines,
+  onCommit,
+  debounceMs = 400,
+  className,
+  style,
+  placeholder,
+}) {
+  const serialized = (lines || []).join('\n');
+  const [draft, setDraft] = useState(serialized);
+  const lastCommitted = useRef(serialized);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    if (serialized !== lastCommitted.current) {
+      setDraft(serialized);
+      lastCommitted.current = serialized;
+    }
+  }, [serialized]);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  const commit = useCallback(
+    (text) => {
+      lastCommitted.current = text;
+      onCommit(text.split('\n'));
+    },
+    [onCommit]
+  );
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    setDraft(val);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => commit(val), debounceMs);
+  };
+
+  const handleBlur = () => {
+    clearTimeout(timerRef.current);
+    commit(draft);
+  };
+
+  return (
+    <textarea
+      className={className}
+      style={style}
+      value={draft}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      placeholder={placeholder}
+    />
+  );
+});
+
+const DonorGroupCard = memo(function DonorGroupCard({
+  group,
+  allDonors,
+  onUpdate,
+  onDelete,
+  isAll,
+  tr,
+  TrashIcon,
+  checkedDonorsSet,
+}) {
+  const handleMessagesCommit = useCallback(
+    (messages) => onUpdate(group.id, { messages }),
+    [group.id, onUpdate]
+  );
+
+  const selectedSet = useMemo(
+    () => new Set((group.donors || []).map((d) => (typeof d === 'string' ? d : d.url))),
+    [group.donors]
+  );
+
+  const handleDonorToggle = useCallback(
+    (url, d, isSelected) => {
+      const newDonors = isSelected
+        ? (group.donors || []).filter((u) => (typeof u === 'string' ? u : u.url) !== url)
+        : [...(group.donors || []), d];
+      onUpdate(group.id, { donors: newDonors });
+    },
+    [group.donors, group.id, onUpdate]
+  );
+
   return (
     <div className={`donor-group-card ${isAll ? 'all-group' : ''}`}>
       <div className="flex-between mb-12">nБрн
@@ -79,7 +415,7 @@ const DonorGroupCard = ({ group, allDonors, onUpdate, onDelete, isAll, tr, Trash
             <input
               className="group-name-input"
               value={group.name}
-              onChange={(e) => onUpdate({ ...group, name: e.target.value })}
+              onChange={(e) => onUpdate(group.id, { name: e.target.value })}
               placeholder="Название группы"
             />
           )}
@@ -96,55 +432,26 @@ const DonorGroupCard = ({ group, allDonors, onUpdate, onDelete, isAll, tr, Trash
       </div>
 
       {!isAll && (
-        <div className="donors-selector mb-12">
-          <div className="flex-wrap gap-6 max-h-120 scroll-y p-8 bg-black-20 rounded-8">
-            {(allDonors || []).map((d) => {
-              const url = typeof d === 'string' ? d : d.url;
-              const normalize = (u) => u.toLowerCase().replace(/https?:\/\/(www\.)?instagram\.com\//, '').replace(/[@/]/g, '').trim();
-              const isSelected = (group.donors || []).some(gd => (typeof gd === 'string' ? gd : gd.url) === url);
-              const target = normalize(url);
-              const isProcessed = (settingsData?.checkedDonors || []).some(cd => normalize(cd) === target);
-              const niche = d.niche;
-              const city = d.city;
-
-              return (
-                <button
-                  key={url}
-                  className={`acc-task-tag ${isSelected ? 'active' : 'inactive'} ${isProcessed ? 'donor-processed' : ''}`}
-                  onClick={() => {
-                    const newDonors = isSelected
-                      ? group.donors.filter((u) => (typeof u === 'string' ? u : u.url) !== url)
-                      : [...(group.donors || []), d];
-                    onUpdate({ ...group, donors: newDonors });
-                  }}
-                  title={isProcessed ? 'Отработан' : ''}
-                >
-                  @{url.replace('https://www.instagram.com/', '').replace('/', '')}
-                  {(niche || city) && (
-                    <span className="donor-keyword">
-                      ({[niche, city].filter(Boolean).join(', ')})
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-            {allDonors.length === 0 && <div className="fs-12 color-dim">Нет доноров в списке</div>}
-          </div>
-        </div>
+        <DonorPicker
+          allDonors={allDonors}
+          selectedSet={selectedSet}
+          checkedDonorsSet={checkedDonorsSet}
+          onToggle={handleDonorToggle}
+        />
       )}
 
       <div className="group-messages">
         <label className="fs-12 mb-4 block color-muted">{tr('modal_templates_title')}:</label>
-        <textarea
+        <DebouncedLinesTextarea
           className="msg-textarea h-100 fs-13"
-          value={(group.messages || []).join('\n')}
-          onChange={(e) => onUpdate({ ...group, messages: e.target.value.split('\n') })}
+          lines={group.messages}
+          onCommit={handleMessagesCommit}
           placeholder={tr('one_msg_per_line')}
         />
       </div>
     </div>
   );
-};
+});
 
 export default function SettingsTab({
   settingsData,
@@ -156,10 +463,37 @@ export default function SettingsTab({
   scrapedDonors,
 }) {
   const [settingsTab, setSettingsTab] = useState(() => localStorage.getItem('ig_settings_tab') || 'accounts');
+  const [donorsMounted, setDonorsMounted] = useState(
+    () => localStorage.getItem('ig_settings_tab') === 'donors'
+  );
+  const [donorsReady, setDonorsReady] = useState(false);
+
   const handleSettingsTabChange = (tab) => {
-    setSettingsTab(tab);
+    if (tab === 'donors') setDonorsMounted(true);
+    startTransition(() => setSettingsTab(tab));
     localStorage.setItem('ig_settings_tab', tab);
   };
+
+  useEffect(() => {
+    if (!donorsMounted || settingsTab !== 'donors') return;
+    if (donorsReady) return;
+    let cancelled = false;
+    const mount = () => {
+      if (!cancelled) setDonorsReady(true);
+    };
+    if (typeof requestIdleCallback !== 'undefined') {
+      const id = requestIdleCallback(mount, { timeout: 250 });
+      return () => {
+        cancelled = true;
+        cancelIdleCallback(id);
+      };
+    }
+    const id = setTimeout(mount, 16);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [donorsMounted, settingsTab, donorsReady]);
   const [draggedItem, setDraggedItem] = useState(null);
   const [editingAccount, setEditingAccount] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -363,7 +697,7 @@ export default function SettingsTab({
     <div className="settings-wrap tab-content-fade">
       <div className="settings-header">
         <div className="settings-nested-tabs">
-          {['accounts', 'names', 'cities', 'niches', 'donors'].map((tab) => (
+          {['accounts', 'names', 'cities', 'blacklist', 'niches', 'donors'].map((tab) => (
             <button
               key={tab}
               className={`tab-btn${settingsTab === tab ? ' active' : ''}`}
@@ -721,6 +1055,23 @@ export default function SettingsTab({
         )
       }
       {
+        settingsTab === 'blacklist' && (
+          <div className="flex-v gap-8">
+            <label className="fs-14 font-bold">{tr('words_blacklist')}</label>
+            <p className="fs-12 color-muted m-0">{tr('words_blacklist_hint')}</p>
+            <textarea
+              className="msg-textarea"
+              style={{ height: 500 }}
+              value={(settingsData.wordsBlacklist || []).join('\n')}
+              onChange={(e) =>
+                onSettingsChange({ ...settingsData, wordsBlacklist: e.target.value.split('\n') })
+              }
+              placeholder={'магазин\nshop\ncrypto\nреклама...'}
+            />
+          </div>
+        )
+      }
+      {
         settingsTab === 'niches' && (
           <textarea
             className="msg-textarea"
@@ -733,125 +1084,19 @@ export default function SettingsTab({
         )
       }
       {
-        settingsTab === 'donors' && (
-          <div className="donor-groups-manager">
-            <div className="donors-raw-list mb-24">
-              <h4 className="mb-12 fs-16 color-accent">📋 {tr('tab_donors')} (Общий список)</h4>
-              <div className="donors-editor-container">
-                <div
-                  id="donors-visual"
-                  className="donors-visual-layer"
-                  style={{ height: 180 }}
-                >
-                  {(settingsData.donors || []).map((d, i) => {
-                    const url = typeof d === 'string' ? d : d.url;
-                    const normalize = (u) => u.toLowerCase().replace(/https?:\/\/(www\.)?instagram\.com\//, '').replace(/[@/]/g, '').trim();
-                    const target = normalize(url);
-                    const isProcessed = (settingsData.checkedDonors || []).some(cd => normalize(cd) === target);
-
-                    return (
-                      <div key={i} className="donor-line">
-                        <span className={isProcessed ? 'donor-processed' : ''}>{url}</span>
-                        {d && typeof d === 'object' && (d.niche || d.city) && (
-                          <span className="donor-keyword">({[d.niche, d.city].filter(Boolean).join(', ')})</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                <textarea
-                  className="donors-input-layer"
-                  style={{ height: 180 }}
-                  value={(settingsData.donors || []).map(d => typeof d === 'string' ? d : d.url).join('\n')}
-                  onScroll={(e) => {
-                    const visual = document.getElementById('donors-visual');
-                    if (visual) visual.scrollTop = e.target.scrollTop;
-                  }}
-                  onChange={(e) => {
-                    const lines = e.target.value.split('\n');
-                    const updatedDonors = lines.map(line => {
-                      const trimmed = line.trim();
-                      if (!trimmed) return line;
-                      const existing = (settingsData.donors || []).find(ed => (typeof ed === 'string' ? ed : ed.url) === trimmed);
-                      return existing || line;
-                    });
-                    onSettingsChange({ ...settingsData, donors: updatedDonors });
-                  }}
-                  placeholder={`https://www.instagram.com/username/\nhttps://www.instagram.com/username2/`}
-                />
-              </div>
-            </div>
-
-            <div className="groups-header flex-between mb-20">
-              <h4 className="fs-18 font-bold">🧩 {tr('donor_groups')}</h4>
-              <button
-                className="btn-primary btn-sm"
-                onClick={() => {
-                  const name = prompt(tr('add_group') + ':');
-                  if (!name) return;
-                  const newGroups = [
-                    ...(settingsData.donorGroups || []),
-                    { id: Date.now().toString(), name, donors: [], messages: [] },
-                  ];
-                  onSettingsChange({ ...settingsData, donorGroups: newGroups });
-                }}
-              >
-                + {tr('add_group')}
-              </button>
-            </div>
-
-            <div className="donor-groups-list flex-v gap-24">
-              {/* Special 'all' group */}
-              <DonorGroupCard
-                group={
-                  (settingsData.donorGroups || []).find((g) => g.id === 'all') || {
-                    id: 'all',
-                    name: tr('all_other_donors'),
-                    donors: [],
-                    messages: [],
-                  }
-                }
-                allDonors={(scrapedDonors || []).map(u => `https://www.instagram.com/${u}/`)}
-                onUpdate={(updated) => {
-                  const groups = settingsData.donorGroups || [];
-                  const exists = groups.some((g) => g.id === 'all');
-                  const newGroups = exists
-                    ? groups.map((g) => (g.id === 'all' ? updated : g))
-                    : [updated, ...groups];
-                  onSettingsChange({ ...settingsData, donorGroups: newGroups });
-                }}
-                onDelete={() => { }}
-                isAll={true}
+        donorsMounted && (
+          <div style={{ display: settingsTab === 'donors' ? 'block' : 'none' }} aria-hidden={settingsTab !== 'donors'}>
+            {donorsReady ? (
+              <DonorsSettingsSection
+                settingsData={settingsData}
+                onSettingsChange={onSettingsChange}
+                scrapedDonors={scrapedDonors}
                 tr={tr}
                 TrashIcon={TrashIcon}
-                settingsData={settingsData}
               />
-
-              {/* Other groups */}
-              {(settingsData.donorGroups || [])
-                .filter((g) => g.id !== 'all')
-                .map((group) => (
-                  <DonorGroupCard
-                    key={group.id}
-                    group={group}
-                    allDonors={(scrapedDonors || []).map(u => `https://www.instagram.com/${u}/`)}
-                    onUpdate={(updated) => {
-                      const newGroups = settingsData.donorGroups.map((g) =>
-                        g.id === group.id ? updated : g
-                      );
-                      onSettingsChange({ ...settingsData, donorGroups: newGroups });
-                    }}
-                    onDelete={() => {
-                      if (!confirm('Удалить эту группу?')) return;
-                      const newGroups = settingsData.donorGroups.filter((g) => g.id !== group.id);
-                      onSettingsChange({ ...settingsData, donorGroups: newGroups });
-                    }}
-                    tr={tr}
-                    TrashIcon={TrashIcon}
-                    settingsData={settingsData}
-                  />
-                ))}
-            </div>
+            ) : (
+              <div className="skeleton-item skeleton h-400" />
+            )}
           </div>
         )
       }

@@ -388,6 +388,42 @@ const humanScroll = async (page, selector, direction = 'down', amount = 300) => 
 exports.humanScroll = humanScroll;
 
 /**
+ * Плавный скролл к верху страницы (колёсико мыши, с паузами)
+ */
+const humanScrollToTop = async (page) => {
+  try {
+    let scrollY = await page.evaluate(() => window.scrollY);
+    if (scrollY < 80) {
+      await (0, exports.wait)(120 + Math.random() * 180);
+      return;
+    }
+
+    let steps = 0;
+    while (scrollY > 60 && steps < 30) {
+      const chunk = Math.min(scrollY, 100 + Math.random() * 260);
+      await humanScroll(page, null, 'up', chunk);
+      await (0, exports.wait)(70 + Math.random() * 110);
+      if (Math.random() < 0.12) {
+        await (0, exports.wait)(180 + Math.random() * 350);
+      }
+      scrollY = await page.evaluate(() => window.scrollY);
+      steps++;
+    }
+
+    if (scrollY > 15) {
+      await humanScroll(page, null, 'up', scrollY);
+      await (0, exports.wait)(120 + Math.random() * 200);
+    }
+  } catch (e) {
+    await page
+      .evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+      .catch(() => {});
+    await (0, exports.wait)(450 + Math.random() * 350);
+  }
+};
+exports.humanScrollToTop = humanScrollToTop;
+
+/**
  * Возврат к началу страницы перед кликами по header.
  */
 const scrollToTop = async (page) => {
@@ -400,6 +436,22 @@ const scrollToTop = async (page) => {
   }
 };
 exports.scrollToTop = scrollToTop;
+
+/** Прокручивает элемент в центр viewport перед кликом */
+const scrollIntoView = async (locator, behavior = 'instant') => {
+  if (!locator) return false;
+  try {
+    await locator.evaluate((el, scrollBehavior) => {
+      el.scrollIntoView({ block: 'center', inline: 'center', behavior: scrollBehavior });
+    }, behavior);
+    await waitAfterEvent();
+    await wait(behavior === 'smooth' ? 280 + Math.random() * 220 : 80 + Math.random() * 120);
+    return true;
+  } catch {
+    return false;
+  }
+};
+exports.scrollIntoView = scrollIntoView;
 
 /**
  * Оверскролл: проскроллить дальше, а потом немного вернуться

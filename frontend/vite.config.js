@@ -1,6 +1,20 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+/** Не светим query (token) в консоли при ошибках proxy */
+function configureApiProxy(proxy) {
+  proxy.on('error', (err, req, res) => {
+    const path = (req.url || '').split('?')[0];
+    console.warn(`[vite] proxy ${path}: ${err.code || err.message}`);
+    if (res && !res.headersSent && typeof res.writeHead === 'function') {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Backend unavailable' }));
+    }
+  });
+}
+
+const apiTarget = process.env.VITE_API_URL || 'http://127.0.0.1:5000';
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -12,12 +26,13 @@ export default defineConfig({
         secure: false,
       },
       '/api': {
-        target: process.env.VITE_API_URL || 'http://127.0.0.1:5000',
+        target: apiTarget,
         changeOrigin: true,
         secure: false,
+        configure: configureApiProxy,
       },
       '/profile-photos': {
-        target: process.env.VITE_API_URL || 'http://127.0.0.1:5000',
+        target: apiTarget,
         changeOrigin: true,
         secure: false,
       },

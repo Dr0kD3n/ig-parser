@@ -49,6 +49,7 @@ const getDynamicConfig = async () => {
     target: {
       cityKeywords: await config_1.getList('cityKeywords.txt'),
       cityBlacklist: await config_1.getList('cityBlacklist.txt'),
+      wordsBlacklist: await config_1.getList('wordBlacklist.txt'),
       names: shuffledNames,
     },
   };
@@ -264,6 +265,10 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
 
   return Array.from(collectedUrls);
 };
+const matchesWordsBlacklist = (searchString, wordsBlacklist = []) =>
+  wordsBlacklist.length > 0 &&
+  wordsBlacklist.some((kw) => searchString.includes(String(kw).trim().toLowerCase()));
+
 const analyzeProfile = async (context, url, config, donor = '') => {
   if (state_1.StateManager.has(url)) return;
   await state_1.StateManager.add(url);
@@ -319,6 +324,12 @@ const analyzeProfile = async (context, url, config, donor = '') => {
     const searchString = `${extracted.fullSearchText} ${username}`.toLowerCase();
     const cityKeywords = config.target.cityKeywords || [];
     const cityBlacklist = config.target.cityBlacklist || [];
+    const wordsBlacklist = config.target.wordsBlacklist || [];
+
+    if (matchesWordsBlacklist(searchString, wordsBlacklist)) {
+      logger.info(`         🚫 Профиль исключён (чёрный список слов): ${username}`);
+      return;
+    }
 
     const matchesWhitelist = cityKeywords.length === 0 || cityKeywords.some((kw) =>
       searchString.includes(kw.toLowerCase())
@@ -488,6 +499,12 @@ const analyzeProfileFast = async (context, url, config, donor = '') => {
     const searchString = `${data.name} ${data.bio} ${username}`.toLowerCase();
     const cityKeywords = config.target.cityKeywords || [];
     const cityBlacklist = config.target.cityBlacklist || [];
+    const wordsBlacklist = config.target.wordsBlacklist || [];
+
+    if (matchesWordsBlacklist(searchString, wordsBlacklist)) {
+      logger.info(`         🚫 Профиль исключён (чёрный список слов): ${username}`);
+      return;
+    }
 
     const matchesWhitelist = cityKeywords.length === 0 || cityKeywords.some((kw) =>
       searchString.includes(kw.toLowerCase())
@@ -1027,8 +1044,18 @@ const run = async () => {
         // Sequential processing for human emulation
         for (const donor of unparsedDonors) {
           const donorUrl = typeof donor === 'object' ? donor.url : donor;
-          await processDonor(context, donorUrl, CONFIG, accounts.length);
-          await state_1.StateManager.addDonor(donorUrl);
+          try {
+            await processDonor(context, donorUrl, CONFIG, accounts.length);
+            await state_1.StateManager.addDonor(donorUrl);
+          } catch (err) {
+            if (err.name === 'RotateAccountError') throw err;
+            if (/Target page, context or browser has been closed|Page closed|Target closed/i.test(err.message || '')) {
+              logger.warn(`   ⚠️ Окно закрылось на доноре ${donorUrl}. Пропускаем и идем дальше.`);
+            } else {
+              logger.error(`   ❌ Ошибка обработки донора ${donorUrl}: ${err.message}`);
+            }
+            await state_1.StateManager.addDonor(donorUrl);
+          }
           donorIdx++;
           // Reset to full names list for next donor
           CONFIG.target.names = (0, utils_1.shuffleArray)(await (0, config_1.getList)('names.txt'));
