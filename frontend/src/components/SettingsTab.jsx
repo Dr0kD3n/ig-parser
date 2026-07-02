@@ -1,6 +1,9 @@
 import React, { useState, memo, useMemo, useCallback, useEffect, useRef, startTransition } from 'react';
 import { EditIcon, TrashIcon } from './Icons';
 import { toast } from 'react-hot-toast';
+import { CITIES_PRESETS } from '../constants/cities';
+import { normalizeDonorUrl } from '../utils/donor';
+import { plural } from '../utils/text';
 const SkeletonSettings = memo(function SkeletonSettings() {
   return (
     <div className="settings-wrap tab-content-fade">
@@ -26,50 +29,6 @@ const SkeletonSettings = memo(function SkeletonSettings() {
     </div>
   );
 });
-
-const plural = (n, one, two, many) => {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return many;
-  if (mod10 === 1) return one;
-  if (mod10 >= 2 && mod10 <= 4) return two;
-  return many;
-};
-
-const CITIES_PRESETS = [
-  { name: 'Москва', value: 'Москва\nMoscow\nМСК\nMsk' },
-  { name: 'Санкт-Петербург', value: 'Санкт-Петербург\nСанкт\nSaint\nСПб\nSpb' },
-  { name: 'Новосибирск', value: 'Новосибирск\nNovosibirsk\nНск\nNsk' },
-  { name: 'Екатеринбург', value: 'Екатеринбург\nYekaterinburg\nЕкб\nEkb' },
-  { name: 'Казань', value: 'Казань\nKazan\nКЗН\nKzn' },
-  { name: 'Нижний Новгород', value: 'Нижний Новгород\nNizhny Novgorod' },
-  { name: 'Челябинск', value: 'Челябинск\nChelyabinsk' },
-  { name: 'Красноярск', value: 'Красноярск\nKrasnoyarsk' },
-  { name: 'Самара', value: 'Самара\nSamara' },
-  { name: 'Уфа', value: 'Уфа\nUfa' },
-  { name: 'Ростов-на-Дону', value: 'Ростов-на-Дону\nRostov-on-Don\nРостов\nRostov' },
-  { name: 'Омск', value: 'Омск\nOmsk' },
-  { name: 'Краснодар', value: 'Краснодар\nKrasnodar' },
-  { name: 'Воронеж', value: 'Воронеж\nVoronezh' },
-  { name: 'Таганрог', value: 'Таганрог\nНиколаевка' },
-  { name: 'Пермь', value: 'Пермь' },
-  { name: 'Волгоград', value: 'Волгоград\nVolgograd' },
-  { name: 'Саратов', value: 'Саратов\nSaratov' },
-  { name: 'Тюмень', value: 'Тюмень\nTyumen' },
-  { name: 'Тольятти', value: 'Тольятти\nTolyatti' },
-  { name: 'Ижевск', value: 'Ижевск\nIzhevsk' },
-  { name: 'Барнаул', value: 'Барнаул\nBarnaul' },
-  { name: 'Иркутск', value: 'Иркутск\nIrkutsk' },
-  { name: 'Хабаровск', value: 'Хабаровск\nKhabarovsk' },
-  { name: 'Владивосток', value: 'Владивосток\nVladivostok' }
-];
-
-const normalizeDonorUrl = (u) =>
-  String(u || '')
-    .toLowerCase()
-    .replace(/https?:\/\/(www\.)?instagram\.com\//, '')
-    .replace(/[@/]/g, '')
-    .trim();
 
 const DONOR_PICKER_LIMIT = 60;
 
@@ -200,7 +159,6 @@ const DonorsSettingsSection = memo(function DonorsSettingsSection({
   settingsData,
   onSettingsChange,
   scrapedDonors,
-  tr,
   TrashIcon,
 }) {
   const checkedDonorsSet = useMemo(() => {
@@ -225,25 +183,25 @@ const DonorsSettingsSection = memo(function DonorsSettingsSection({
         if (exists) {
           newGroups = groups.map((g) => (g.id === groupId ? { ...g, ...patch } : g));
         } else if (groupId === 'all') {
-          newGroups = [{ id: 'all', name: tr('all_other_donors'), donors: [], messages: [], ...patch }, ...groups];
+          newGroups = [{ id: 'all', name: "Все остальные доноры", donors: [], messages: [], ...patch }, ...groups];
         } else {
           newGroups = groups;
         }
         return { donorGroups: newGroups };
       });
     },
-    [onSettingsChange, tr]
+    [onSettingsChange]
   );
 
   const allGroup = useMemo(
     () =>
       (settingsData.donorGroups || []).find((g) => g.id === 'all') || {
         id: 'all',
-        name: tr('all_other_donors'),
+        name: 'Все остальные доноры',
         donors: [],
         messages: [],
       },
-    [settingsData.donorGroups, tr]
+    [settingsData.donorGroups]
   );
 
   const otherDonorGroups = useMemo(
@@ -259,17 +217,17 @@ const DonorsSettingsSection = memo(function DonorsSettingsSection({
   return (
     <div className="donor-groups-manager">
       <div className="donors-raw-list mb-24">
-        <h4 className="mb-12 fs-16 color-accent">📋 {tr('tab_donors')} (Общий список)</h4>
+        <h4 className="mb-12 fs-16 color-accent">📋 {"Доноры"} (Общий список)</h4>
         <DonorsListEditor donors={settingsData.donors} onCommit={handleDonorsCommit} />
       </div>
 
       <div className="groups-header flex-between mb-20">
-        <h4 className="fs-18 font-bold">🧩 {tr('donor_groups')}</h4>
+        <h4 className="fs-18 font-bold">🧩 {"Группы доноров"}</h4>
         <button
           type="button"
           className="btn-primary btn-sm"
           onClick={() => {
-            const name = prompt(tr('add_group') + ':');
+            const name = prompt("Добавить группу" + ':');
             if (!name) return;
             onSettingsChange({
               donorGroups: [
@@ -279,7 +237,7 @@ const DonorsSettingsSection = memo(function DonorsSettingsSection({
             });
           }}
         >
-          + {tr('add_group')}
+          + {"Добавить группу"}
         </button>
       </div>
 
@@ -290,7 +248,6 @@ const DonorsSettingsSection = memo(function DonorsSettingsSection({
           onUpdate={handleDonorGroupUpdate}
           onDelete={() => {}}
           isAll={true}
-          tr={tr}
           TrashIcon={TrashIcon}
           checkedDonorsSet={checkedDonorsSet}
         />
@@ -306,7 +263,6 @@ const DonorsSettingsSection = memo(function DonorsSettingsSection({
                 donorGroups: (settingsData.donorGroups || []).filter((g) => g.id !== group.id),
               });
             }}
-            tr={tr}
             TrashIcon={TrashIcon}
             checkedDonorsSet={checkedDonorsSet}
           />
@@ -377,7 +333,6 @@ const DonorGroupCard = memo(function DonorGroupCard({
   onUpdate,
   onDelete,
   isAll,
-  tr,
   TrashIcon,
   checkedDonorsSet,
 }) {
@@ -403,7 +358,7 @@ const DonorGroupCard = memo(function DonorGroupCard({
 
   return (
     <div className={`donor-group-card ${isAll ? 'all-group' : ''}`}>
-      <div className="flex-between mb-12">nБрн
+      <div className="flex-between mb-12">
         <div className="flex align-center gap-10 m-0">
           {isAll ? (
             <h5 className="fs-16 font-bold m-0">
@@ -441,12 +396,12 @@ const DonorGroupCard = memo(function DonorGroupCard({
       )}
 
       <div className="group-messages">
-        <label className="fs-12 mb-4 block color-muted">{tr('modal_templates_title')}:</label>
+        <label className="fs-12 mb-4 block color-muted">{"Шаблоны рассылки"}:</label>
         <DebouncedLinesTextarea
           className="msg-textarea h-100 fs-13"
           lines={group.messages}
           onCommit={handleMessagesCommit}
-          placeholder={tr('one_msg_per_line')}
+          placeholder={"Одно сообщение на строку..."}
         />
       </div>
     </div>
@@ -456,7 +411,6 @@ const DonorGroupCard = memo(function DonorGroupCard({
 export default function SettingsTab({
   settingsData,
   onSettingsChange,
-  tr,
   isLoading,
   authFetch,
   failedUrls,
@@ -504,7 +458,7 @@ export default function SettingsTab({
     fingerprint: '',
   });
 
-  const setAccounts = (accounts) => onSettingsChange({ ...settingsData, accounts });
+  const setAccounts = (accounts) => onSettingsChange({ accounts });
   const handleAdd = () => {
     const nameEl = document.getElementById('new-acc-name');
     const proxyEl = document.getElementById('new-acc-proxy');
@@ -512,7 +466,7 @@ export default function SettingsTab({
     const name = nameEl.value.trim();
     const cookies = cookiesEl.value.trim();
     if (!name) {
-      toast.error(tr('name_placeholder'));
+      toast.error("Имя (напр. Аккаунт 1)");
       return;
     }
     setAccounts([
@@ -533,7 +487,6 @@ export default function SettingsTab({
       return arr;
     };
     onSettingsChange({
-      ...settingsData,
       accounts: newAccs,
       activeParserAccountIds: updateArr('activeParserAccountIds'),
       activeServerAccountIds: updateArr('activeServerAccountIds'),
@@ -544,7 +497,7 @@ export default function SettingsTab({
   const toggleAccountForTask = (field, id) => {
     const arr = settingsData[field] || [];
     const newArr = arr.includes(id) ? arr.filter((aid) => aid !== id) : [...arr, id];
-    onSettingsChange({ ...settingsData, [field]: newArr });
+    onSettingsChange({ [field]: newArr });
   };
   const handleStartEdit = (acc) => {
     setEditingAccount(acc.id);
@@ -584,9 +537,9 @@ export default function SettingsTab({
       const updatedAccounts = settingsData.accounts.map((a) =>
         a.id === id ? { ...a, ...data, fingerprint: data.fingerprint } : a
       );
-      onSettingsChange({ ...settingsData, accounts: updatedAccounts });
+      onSettingsChange({ accounts: updatedAccounts });
       setEditingAccount(null);
-      toast.success(tr('save_success') || 'Account updated');
+      toast.success('Аккаунт сохранен');
     } catch (e) {
       console.error('Error saving account:', e);
       toast.error('Error saving: ' + e.message);
@@ -596,7 +549,7 @@ export default function SettingsTab({
     try {
       const res = await authFetch(`/api/accounts/${id}/authorize/start`, { method: 'POST' });
       const data = await res.json();
-      if (data.success) toast.success(tr('login_success'));
+      if (data.success) toast.success("Браузер запущен для логина");
       else toast.error(data.error);
     } catch (e) {
       toast.error(e.message);
@@ -614,8 +567,8 @@ export default function SettingsTab({
       if (data.success)
         toast.success(
           forceRestore
-            ? tr('browser_restore_success') || 'Browser opened with auto-photo-load'
-            : tr('browser_success')
+            ? 'Браузер запущен (подгрузка фото)'
+            : 'Профиль открыт в браузере'
         );
       else toast.error(data.error);
     } catch (e) {
@@ -626,7 +579,7 @@ export default function SettingsTab({
     try {
       const res = await authFetch(`/api/accounts/${id}/warmup`, { method: 'POST' });
       const data = await res.json();
-      if (data.success) toast.success(tr('warmup_started'));
+      if (data.success) toast.success("Прогрев запущен");
       else toast.error(data.error);
     } catch (e) {
       toast.error(e.message);
@@ -636,7 +589,7 @@ export default function SettingsTab({
     try {
       const res = await authFetch(`/api/accounts/${id}/instagram-cooldown`, { method: 'POST' });
       const data = await res.json();
-      if (data.success) toast.success(tr('instagram_cooldown_started'));
+      if (data.success) toast.success("Охлаждение IG запущено");
       else toast.error(data.error);
     } catch (e) {
       toast.error(e.message);
@@ -653,7 +606,7 @@ export default function SettingsTab({
     const arr = [...settingsData[field]];
     const item = arr.splice(draggedItem.index, 1)[0];
     arr.splice(index, 0, item);
-    onSettingsChange({ ...settingsData, [field]: arr });
+      onSettingsChange({ [field]: arr });
     setDraggedItem({ ...draggedItem, index });
   };
   const renderTaskSection = (field, label) => {
@@ -666,7 +619,7 @@ export default function SettingsTab({
         <h4 className="task-section-title">{label}</h4>
         <div className="flex-v gap-8">
           {activeAccounts.length === 0 && (
-            <div className="no-accs-placeholder">{tr('no_accounts_selected')}</div>
+            <div className="no-accs-placeholder">{"Нет выбранных аккаунтов"}</div>
           )}
           {activeAccounts.map((acc, idx) => (
             <div
@@ -703,7 +656,7 @@ export default function SettingsTab({
               className={`tab-btn${settingsTab === tab ? ' active' : ''}`}
               onClick={() => handleSettingsTabChange(tab)}
             >
-              {tr(`tab_${tab}`)}
+              {({ accounts: 'Аккаунты', names: 'Имена', cities: 'Города', blacklist: 'Блеклист', niches: 'Ниши', donors: 'Доноры' })[tab]}
             </button>
           ))}
         </div>
@@ -712,22 +665,20 @@ export default function SettingsTab({
             <input
               type="checkbox"
               checked={settingsData.humanEmulation || false}
-              onChange={(e) =>
-                onSettingsChange({ ...settingsData, humanEmulation: e.target.checked })
-              }
+              onChange={(e) => onSettingsChange({ humanEmulation: e.target.checked })}
             />
-            {tr('human_emulation')}
+            {"Эмуляция человека"}
           </label>
           <label className="checkbox-label checkbox">
             <input
               type="checkbox"
               checked={settingsData.showBrowser || false}
-              onChange={(e) => onSettingsChange({ ...settingsData, showBrowser: e.target.checked })}
+              onChange={(e) => onSettingsChange({ showBrowser: e.target.checked })}
             />
-            {tr('show_browser')}
+            {"Показывать браузер"}
           </label>
           <label className="checkbox-label">
-            {tr('concurrent_profiles')}
+            {"Потоков:"}
             <input
               type="number"
               min="1"
@@ -735,27 +686,19 @@ export default function SettingsTab({
               value={settingsData.concurrentProfiles || 3}
               className="num-input-sm"
               onChange={(e) =>
-                onSettingsChange({
-                  ...settingsData,
-                  concurrentProfiles: parseInt(e.target.value) || 1,
-                })
+                onSettingsChange({ concurrentProfiles: parseInt(e.target.value, 10) || 1 })
               }
             />
           </label>
           <label className="checkbox-label">
-            {tr('dm_limit')}
+            {"Лимит DM:"}
             <input
               type="number"
               min="1"
               value={settingsData.dmLimit || 200}
               className="num-input-sm"
               style={{ width: '60px' }}
-              onChange={(e) =>
-                onSettingsChange({
-                  ...settingsData,
-                  dmLimit: parseInt(e.target.value) || 1,
-                })
-              }
+              onChange={(e) => onSettingsChange({ dmLimit: parseInt(e.target.value, 10) || 1 })}
             />
           </label>
         </div>
@@ -766,42 +709,42 @@ export default function SettingsTab({
           <div className="settings-grid">
             <div className="tasks-columns">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                {renderTaskSection('activeParserAccountIds', tr('task_parser'))}
-                {renderTaskSection('activeIndexAccountIds', tr('task_scraper'))}
+                {renderTaskSection('activeParserAccountIds', "Парсер")}
+                {renderTaskSection('activeIndexAccountIds', "Скрапер")}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                {renderTaskSection('activeServerAccountIds', tr('task_sender'))}
-                {renderTaskSection('activeProfilesAccountIds', tr('task_profiles'))}
+                {renderTaskSection('activeServerAccountIds', "Сендер")}
+                {renderTaskSection('activeProfilesAccountIds', "Профили")}
               </div>
               <div className="add-acc-card">
-                <h4 className="mb-20 fs-18">{tr('add_account')}</h4>
+                <h4 className="mb-20 fs-18">{"Добавить аккаунт"}</h4>
                 <div className="flex gap-16 mb-16">
                   <input
                     type="text"
                     id="new-acc-name"
-                    placeholder={tr('name_placeholder')}
+                    placeholder={"Имя (напр. Аккаунт 1)"}
                     className="search-input w-full"
                   />
                   <input
                     type="text"
                     id="new-acc-proxy"
-                    placeholder={tr('proxy_placeholder')}
+                    placeholder={"Прокси: IP:PORT:USER:PASS"}
                     className="search-input w-full"
                   />
                 </div>
                 <textarea
                   id="new-acc-cookies"
-                  placeholder={tr('cookies_placeholder')}
+                  placeholder={"Куки (raw text)"}
                   className="msg-textarea cookies h-100 mb-20"
                 />
                 <button className="btn-primary w-full" onClick={handleAdd}>
-                  {tr('btn_add')}
+                  {"Добавить"}
                 </button>
               </div>
             </div>
 
             <div className="all-accounts-column">
-              <h4 style={{ marginBottom: '20px', fontSize: '18px' }}>{tr('all_accounts')}</h4>
+              <h4 style={{ marginBottom: '20px', fontSize: '18px' }}>{"Все аккаунты"}</h4>
               <div className="flex-v gap-12">
                 {settingsData.accounts.map((acc) => (
                   <div key={acc.id} className="account-card">
@@ -810,14 +753,14 @@ export default function SettingsTab({
                         <input
                           type="text"
                           className="search-input"
-                          placeholder={tr('edit_name')}
+                          placeholder={"Имя"}
                           value={editForm.name}
                           onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                         />
                         <input
                           type="text"
                           className="search-input fs-13 font-mono"
-                          placeholder={tr('edit_proxy')}
+                          placeholder={"Прокси (host:port:user:pass)"}
                           value={editForm.proxy}
                           onChange={(e) => setEditForm({ ...editForm, proxy: e.target.value })}
                         />
@@ -836,7 +779,7 @@ export default function SettingsTab({
                         />
                         <textarea
                           className="msg-textarea cookies h-60 fs-12 font-mono"
-                          placeholder={tr('edit_cookies')}
+                          placeholder={"Куки"}
                           value={editForm.cookies}
                           onChange={(e) => setEditForm({ ...editForm, cookies: e.target.value })}
                         />
@@ -844,7 +787,7 @@ export default function SettingsTab({
                           <button
                             className="btn-primary btn-outline btn-sm flex-1 fs-11"
                             onClick={async () => {
-                              if (window.confirm('Regenerate System Data?')) {
+                              if (window.confirm('Обновить отпечаток?')) {
                                 try {
                                   const res = await authFetch(`/api/accounts/${acc.id}`, {
                                     method: 'PUT',
@@ -853,7 +796,7 @@ export default function SettingsTab({
                                   });
                                   const data = await res.json();
                                   if (data.success && data.fingerprint) {
-                                    toast.success(tr('regenerate_success'));
+                                    toast.success("Данные системы обновлены");
                                     let fp = {};
                                     try {
                                       fp = JSON.parse(data.fingerprint);
@@ -867,7 +810,7 @@ export default function SettingsTab({
                                     const updatedAccs = settingsData.accounts.map((a) =>
                                       a.id === acc.id ? { ...a, fingerprint: data.fingerprint } : a
                                     );
-                                    onSettingsChange({ ...settingsData, accounts: updatedAccs });
+                                    onSettingsChange({ accounts: updatedAccs });
                                   }
                                 } catch (e) {
                                   toast.error(e.message);
@@ -875,7 +818,7 @@ export default function SettingsTab({
                               }
                             }}
                           >
-                            🔄 {tr('regenerate_system_data') || 'Regenerate System Data'}
+                            🔄 Обновить отпечаток
                           </button>
                         </div>
                         <div className="flex gap-8">
@@ -883,13 +826,13 @@ export default function SettingsTab({
                             className="btn-primary btn-success btn-sm flex-1"
                             onClick={() => handleSaveEdit(acc.id)}
                           >
-                            {tr('save_changes')}
+                            {"Сохранить"}
                           </button>
                           <button
                             className="btn-primary btn-outline btn-sm btn-ghost flex-1 color-muted"
                             onClick={() => setEditingAccount(null)}
                           >
-                            {tr('cancel')}
+                            {"Отмена"}
                           </button>
                         </div>
                       </div>
@@ -910,27 +853,27 @@ export default function SettingsTab({
                           <button
                             className="editBtn"
                             onClick={() => handleStartEdit(acc)}
-                            title={tr('edit_title')}
+                            title={"Редактировать"}
                           >
                             <EditIcon />
                           </button>
                           <button
                             className="deleteBtn"
                             onClick={() => handleDelete(acc.id)}
-                            title={tr('delete_title')}
+                            title={"Удалить"}
                           >
                             <TrashIcon />
                           </button>
                         </div>
-                        <div className="acc-proxy-text">{acc.proxy || tr('direct_connection')}</div>
+                        <div className="acc-proxy-text">{acc.proxy || "Прямое соединение"}</div>
                         <div className="flex-between align-end">
                           <div className="flex-wrap gap-6 flex-1">
                             {[
-                              { field: 'activeParserAccountIds', label: tr('task_parser') },
-                              { field: 'activeIndexAccountIds', label: tr('task_scraper') },
-                              { field: 'activeServerAccountIds', label: tr('task_sender') },
-                              { field: 'activeProfilesAccountIds', label: tr('task_profiles') },
-                              { field: 'activeCheckerAccountIds', label: tr('task_checker') },
+                              { field: 'activeParserAccountIds', label: "Парсер" },
+                              { field: 'activeIndexAccountIds', label: "Скрапер" },
+                              { field: 'activeServerAccountIds', label: "Сендер" },
+                              { field: 'activeProfilesAccountIds', label: "Профили" },
+                              { field: 'activeCheckerAccountIds', label: "Чекер" },
                             ].map((t) => {
                               const isActive = (settingsData[t.field] || []).includes(acc.id);
                               return (
@@ -950,25 +893,25 @@ export default function SettingsTab({
                             onClick={() => handleLogin(acc.id)}
                             className="btn-acc-action btn-acc-login"
                           >
-                            {tr('btn_login')}
+                            {"Логин"}
                           </button>
                           <button
                             onClick={() => handleOpenBrowser(acc.id, true)}
                             className="btn-acc-action btn-acc-browser"
                           >
-                            {tr('btn_open_browser')}
+                            {"Браузер"}
                           </button>
                           <button
                             onClick={() => handleWarmup(acc.id)}
                             className="btn-acc-action btn-acc-warmup"
                           >
-                            {tr('btn_warmup')}
+                            {"Прогрев"}
                           </button>
                           <button
                             onClick={() => handleInstagramCooldown(acc.id)}
                             className="btn-acc-action btn-acc-warmup"
                           >
-                            {tr('btn_instagram_cooldown')}
+                            {"Отдохнуть"}
                           </button>
                         </div>
                       </>
@@ -987,7 +930,7 @@ export default function SettingsTab({
             className="msg-textarea"
             style={{ height: 500 }}
             value={(settingsData.names || []).join('\n')}
-            onChange={(e) => onSettingsChange({ ...settingsData, names: e.target.value.split('\n') })}
+            onChange={(e) => onSettingsChange({ names: e.target.value.split('\n') })}
           />
         )
       }
@@ -996,14 +939,14 @@ export default function SettingsTab({
           <div className="settings-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             <div className="flex-v gap-8">
               <div className="flex-between align-center">
-                <label className="fs-14 font-bold">{tr('city_whitelist')}</label>
+                <label className="fs-14 font-bold">{"Белый список (Обязательно)"}</label>
                 <select
                   className="search-input py-4 px-8 fs-12 w-auto"
                   value=""
                   onChange={(e) => {
                     const val = e.target.value;
                     if (!val) return;
-                    onSettingsChange({ ...settingsData, cities: val.split('\n') });
+                    onSettingsChange({ cities: val.split('\n') });
                   }}
                 >
                   <option value="" selected disabled>Выбрать город</option>
@@ -1014,15 +957,13 @@ export default function SettingsTab({
                 className="msg-textarea"
                 style={{ height: 500 }}
                 value={(settingsData.cities || []).join('\n')}
-                onChange={(e) =>
-                  onSettingsChange({ ...settingsData, cities: e.target.value.split('\n') })
-                }
+                onChange={(e) => onSettingsChange({ cities: e.target.value.split('\n') })}
                 placeholder="Москва\nПитер..."
               />
             </div>
             <div className="flex-v gap-8">
               <div className="flex-between align-center">
-                <label className="fs-14 font-bold">{tr('city_blacklist')}</label>
+                <label className="fs-14 font-bold">{"Черный список (Исключить)"}</label>
                 <select
                   className="search-input py-4 px-8 fs-12 w-auto"
                   value=""
@@ -1034,7 +975,7 @@ export default function SettingsTab({
                       .map(c => c.value)
                       .join('\n')
                       .split('\n');
-                    onSettingsChange({ ...settingsData, citiesBlacklist: allOthers });
+                    onSettingsChange({ citiesBlacklist: allOthers });
                   }}
                 >
                   <option value="" selected disabled>Выбрать город</option>
@@ -1045,9 +986,7 @@ export default function SettingsTab({
                 className="msg-textarea"
                 style={{ height: 500 }}
                 value={(settingsData.citiesBlacklist || []).join('\n')}
-                onChange={(e) =>
-                  onSettingsChange({ ...settingsData, citiesBlacklist: e.target.value.split('\n') })
-                }
+                onChange={(e) => onSettingsChange({ citiesBlacklist: e.target.value.split('\n') })}
                 placeholder="Лондон\nПариж..."
               />
             </div>
@@ -1057,15 +996,13 @@ export default function SettingsTab({
       {
         settingsTab === 'blacklist' && (
           <div className="flex-v gap-8">
-            <label className="fs-14 font-bold">{tr('words_blacklist')}</label>
-            <p className="fs-12 color-muted m-0">{tr('words_blacklist_hint')}</p>
+            <label className="fs-14 font-bold">{"Чёрный список слов"}</label>
+            <p className="fs-12 color-muted m-0">{"Профили с этими словами в имени, био или username будут исключены. Одно слово на строку."}</p>
             <textarea
               className="msg-textarea"
               style={{ height: 500 }}
               value={(settingsData.wordsBlacklist || []).join('\n')}
-              onChange={(e) =>
-                onSettingsChange({ ...settingsData, wordsBlacklist: e.target.value.split('\n') })
-              }
+              onChange={(e) => onSettingsChange({ wordsBlacklist: e.target.value.split('\n') })}
               placeholder={'магазин\nshop\ncrypto\nреклама...'}
             />
           </div>
@@ -1077,9 +1014,7 @@ export default function SettingsTab({
             className="msg-textarea"
             style={{ height: 500 }}
             value={(settingsData.niches || []).join('\n')}
-            onChange={(e) =>
-              onSettingsChange({ ...settingsData, niches: e.target.value.split('\n') })
-            }
+            onChange={(e) => onSettingsChange({ niches: e.target.value.split('\n') })}
           />
         )
       }
@@ -1091,7 +1026,6 @@ export default function SettingsTab({
                 settingsData={settingsData}
                 onSettingsChange={onSettingsChange}
                 scrapedDonors={scrapedDonors}
-                tr={tr}
                 TrashIcon={TrashIcon}
               />
             ) : (

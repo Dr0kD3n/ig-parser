@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, memo } from 'react';
+import { useEffect, useRef, useState, memo } from 'react';
 import {
   HeartIcon,
   XIcon,
@@ -9,38 +9,13 @@ import {
   TrashIcon,
   SaveIcon,
 } from './Icons';
-import { toast } from 'react-hot-toast';
-function parseSmartBio(text, username) {
-  if (!text) return { bio: ' ', stats: [] };
-  // 1. Remove mentions of the username and pipes
-  let clean = text.replace(new RegExp(`^${username}\\s*`, 'i'), '').replace(/\|/g, ' ');
-  // 2. Extract stats (followers/posts)
-  const stats = [];
-  const followersMatch = clean.match(/(\d[\d\s]*\s*подписчиков)/i);
-  const postsMatch = clean.match(/(\d[\d\s]*\s*публикаций)/i);
-  if (followersMatch) stats.push(followersMatch[0]);
-  if (postsMatch) stats.push(postsMatch[0]);
-  // 3. Remove "more", stats, and redundant pipes/junk
-  let bio = clean
-    .replace(/(\d[\d\s]*\s*(подписчиков|публикаций|подписок|посты))/gi, '')
-    .replace(/more\s*\|\s*\w+/gi, '')
-    .replace(/\.\.\.\s*more\s*\w*/gi, '')
-    .replace(new RegExp(`${username}$`, 'i'), '')
-    .replace(/\s+/g, ' ') // Collapse spaces
-    .trim();
-  // 4. Forceful Deduplication: split by common separators and check for repetitions
-  const segments = bio.split(/[\.!\?]\s+/);
-  if (segments.length > 2) {
-    const unique = [];
-    segments.forEach((s) => {
-      if (!unique.some((u) => u.includes(s.substring(0, 20)) || s.includes(u.substring(0, 20)))) {
-        unique.push(s);
-      }
-    });
-    bio = unique.join('. ');
-  }
-  return { bio: bio || ' ', stats };
-}
+import { plural } from '../utils/text';
+import { parseSmartBio, getProfilePhotoSrc, getDmErrorLabel } from '../utils/profile';
+import { filterProfiles } from '../utils/profileFilters';
+import { usePersistedFilters } from '../hooks/usePersistedFilters';
+
+const ITEMS_PER_PAGE = 60;
+
 const SkeletonCard = memo(function SkeletonCard() {
   return (
     <div className="card skeleton-card">
@@ -58,11 +33,7 @@ const SkeletonCard = memo(function SkeletonCard() {
     </div>
   );
 });
-function getProfilePhotoSrc(localPhoto, remotePhoto) {
-  if (localPhoto) return localPhoto;
-  if (!remotePhoto) return '';
-  return `https://images.weserv.nl/?url=${encodeURIComponent(remotePhoto)}`;
-}
+
 const ProfileCard = memo(function ProfileCard({
   g,
   votes,
@@ -74,11 +45,8 @@ const ProfileCard = memo(function ProfileCard({
   onDeleteProfile,
   onSaveAsDonor,
   onImageError,
-  useProxyImages,
-  tr,
   onTgCheck,
   authFetch,
-  token,
 }) {
   const { bio, stats } = parseSmartBio(g.bio, g.name);
   const isLiked = votes[g.url] === 'like';
@@ -86,27 +54,33 @@ const ProfileCard = memo(function ProfileCard({
   const [checkingTg, setCheckingTg] = useState(false);
   const photoSrc = getProfilePhotoSrc(g.photo_local, g.photo);
   const donorPhotoSrc = getProfilePhotoSrc(g.donor_photo_local, g.donor_photo);
+
   const handleTgClick = async (e) => {
     e.stopPropagation();
     const tgUrl = `https://t.me/${g.name}`;
+
     if (g.tg_status === 'valid') {
       window.open(tgUrl, '_blank');
       return;
     }
+
     const popup = window.open(tgUrl, '_blank', 'width=600,height=800');
     setCheckingTg(true);
+
     try {
       const resp = await authFetch(`/api/check-telegram?url=${encodeURIComponent(g.name)}`);
       const data = await resp.json();
       if (data.success) {
         if (data.status === 'invalid' && popup) popup.close();
-        if (onTgCheck) onTgCheck(g.url, data.status);
+        onTgCheck?.(g.url, data.status);
       }
-    } catch (err) {
+    } catch {
+      /* сеть — статус не меняем */
     } finally {
       setCheckingTg(false);
     }
   };
+
   return (
     <div className={`card ${isLiked ? 'status-like' : isDisliked ? 'status-dislike' : ''}`}>
       <div className="photoWrap">
@@ -120,20 +94,7 @@ const ProfileCard = memo(function ProfileCard({
             alt={g.name}
           />
         ) : (
-          <div
-            style={{
-              width: '100%',
-              height: '100%',
-              background: '#1a1a1e',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#333',
-              fontSize: 12,
-            }}
-          >
-            No Photo
-          </div>
+          <div className="no-photo-placeholder">No Photo</div>
         )}
         <div className="overlay" />
         <div className="statusStack">
@@ -142,22 +103,20 @@ const ProfileCard = memo(function ProfileCard({
               🎯 {g.matchScore}%
             </div>
           )}
-          {isLiked && <div className="badge likedTag">{tr('badge_like')}</div>}
-          {isDisliked && <div className="badge dislikedTag">{tr('badge_skip')}</div>}
-          {g.viewed && <div className="badge viewedTag">{tr('badge_viewed')}</div>}
-          {g.dmSent && !g.dmError && !g.dm_status && <div className="badge dmTag">{tr('badge_sent_dm')}</div>}
-          {g.dm_status === 'replied' && <div className="badge dmTag" style={{ background: 'hsl(var(--success))' }}>✨ {tr('badge_replied')}</div>}
-          {g.dm_status === 'liked' && <div className="badge likedTag">❤️ {tr('badge_liked')}</div>}
-          {g.tg_status === 'valid' && <div className="badge tgTag">{tr('badge_tg_tagged')}</div>}
+          {isLiked && <div className="badge likedTag">Лайк</div>}
+          {isDisliked && <div className="badge dislikedTag">Скип</div>}
+          {g.viewed && <div className="badge viewedTag">Чекалась</div>}
+          {g.dmSent && !g.dmError && !g.dm_status && <div className="badge dmTag">Написал</div>}
+          {g.dm_status === 'replied' && (
+            <div className="badge dmTag" style={{ background: 'hsl(var(--success))' }}>✨ Ответил</div>
+          )}
+          {g.dm_status === 'liked' && <div className="badge likedTag">❤️ Лайкнул</div>}
+          {g.tg_status === 'valid' && <div className="badge tgTag">Написал в тг</div>}
           {g.dmError && (
-            <div
-              className="badge tgNotSentTag"
-              title={tr(`reason_${g.dmError === 'chat_exists' ? 'history' : (g.dmError || 'error')}`)}
-            >
-              ⚠️ {tr('badge_tg_not_sent')}
+            <div className="badge tgNotSentTag" title={getDmErrorLabel(g.dmError)}>
+              ⚠️ Не написал в тг
             </div>
           )}
-
         </div>
         <div className="linksStack">
           {g.tg_status !== 'invalid' && (
@@ -181,6 +140,7 @@ const ProfileCard = memo(function ProfileCard({
 
         <div className="card-overlay-corner">
           <button
+            type="button"
             className="socialBtn mini-btn"
             onClick={() => onSaveAsDonor(g.url)}
             title="Save as Donor"
@@ -188,6 +148,7 @@ const ProfileCard = memo(function ProfileCard({
             <SaveIcon />
           </button>
           <button
+            type="button"
             className="socialBtn mini-btn mini-btn-danger"
             onClick={() => onDeleteProfile(g.url)}
             title="Delete Profile"
@@ -196,6 +157,7 @@ const ProfileCard = memo(function ProfileCard({
           </button>
         </div>
       </div>
+
       <div className="cardBody">
         <div className="name-row">
           <div className="name">
@@ -248,7 +210,6 @@ const ProfileCard = memo(function ProfileCard({
               <span className="followers-text">📸 {g.publications_count.toLocaleString()}</span>
             )}
             {!g.followers_count &&
-              stats.length > 0 &&
               stats.map((s, i) => (
                 <span key={i} className="followers-text">
                   {s}
@@ -256,50 +217,45 @@ const ProfileCard = memo(function ProfileCard({
               ))}
           </div>
         </div>
+
         <div className="actions">
           <button
+            type="button"
             className={`actionBtn likeBtn${isLiked ? ' active' : ''}`}
             onClick={() => onVote(g, 'like')}
-            title={tr('badge_like')}
+            title="Лайк"
           >
             <HeartIcon filled={isLiked} />
           </button>
           <button
+            type="button"
             className={`actionBtn dislikeBtn${isDisliked ? ' active' : ''}`}
             onClick={() => onVote(g, 'dislike')}
-            title={tr('badge_skip')}
+            title="Скип"
           >
             <XIcon />
           </button>
           <button
+            type="button"
             className={`actionBtn tgBtn${g.tgTagged === 1 ? ' active' : ''}`}
             onClick={() => onTagTg(g)}
-            title={tr('btn_tag_tg')}
+            title="Написал в тг"
           >
             <TelegramIcon />
           </button>
         </div>
-        <button className="btn-primary full-send-btn" onClick={() => onSendDM(g)}>
-          <SendIcon /> {tr('badge_send_dm')}
+
+        <button type="button" className="btn-primary full-send-btn" onClick={() => onSendDM(g)}>
+          <SendIcon /> Написать
         </button>
       </div>
     </div>
   );
 });
-const plural = (n, one, two, many) => {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return many;
-  if (mod10 === 1) return one;
-  if (mod10 >= 2 && mod10 <= 4) return two;
-  return many;
-};
 
 export default function ProfilesTab({
   girls,
   votes,
-  viewed,
-  sentDM,
   failedImages,
   onVote,
   onOpen,
@@ -308,53 +264,20 @@ export default function ProfilesTab({
   onDeleteProfile,
   onSaveAsDonor,
   onImageError,
-  onRefresh,
-  useProxyImages,
-  tr,
   onTgCheck,
   isLoading,
   authFetch,
-  token,
   cityOnly,
   setCityOnly,
   matchesProfileCity,
   matchesWordsBlacklist,
 }) {
-  const [filterText, setFilterText] = useState(() => localStorage.getItem('ig_filter_text') || '');
-  const [filterStatus, setFilterStatus] = useState(() => localStorage.getItem('ig_filter_status') || 'all');
-  const [filterTgStatus, setFilterTgStatus] = useState(() => localStorage.getItem('ig_filter_tg') || 'all');
-  const [sortOption, setSortOption] = useState(() => localStorage.getItem('ig_sort_option') || 'newest');
-  const [hideNoImage, setHideNoImage] = useState(() => localStorage.getItem('ig_hide_no_img') === 'true');
-  const [hideViewed, setHideViewed] = useState(() => localStorage.getItem('ig_hide_viewed') === 'true');
-  const [filterDonor, setFilterDonor] = useState(() => localStorage.getItem('ig_filter_donor') || 'all');
-  const [followersMin, setFollowersMin] = useState(() => localStorage.getItem('ig_followers_min') || '');
-  const [followersMax, setFollowersMax] = useState(() => localStorage.getItem('ig_followers_max') || '');
+  const filters = usePersistedFilters();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [checkingAllTg, setCheckingAllTg] = useState(false);
   const filtersRef = useRef(null);
 
-  React.useEffect(() => {
-    localStorage.setItem('ig_filter_text', filterText);
-    localStorage.setItem('ig_filter_status', filterStatus);
-    localStorage.setItem('ig_filter_tg', filterTgStatus);
-    localStorage.setItem('ig_sort_option', sortOption);
-    localStorage.setItem('ig_hide_no_img', String(hideNoImage));
-    localStorage.setItem('ig_hide_viewed', String(hideViewed));
-    localStorage.setItem('ig_filter_donor', filterDonor);
-    localStorage.setItem('ig_followers_min', followersMin);
-    localStorage.setItem('ig_followers_max', followersMax);
-  }, [
-    filterText,
-    filterStatus,
-    filterTgStatus,
-    sortOption,
-    hideNoImage,
-    hideViewed,
-    filterDonor,
-    followersMin,
-    followersMax,
-  ]);
+  const resetPage = () => setCurrentPage(1);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -365,129 +288,72 @@ export default function ProfilesTab({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const ITEMS_PER_PAGE = 60;
-  const handleCheckAllTg = async () => {
-    const toCheck = girls.filter((g) => !g.tg_status).map((g) => g.name);
-    if (toCheck.length === 0) {
-      toast.error('Нет профилей без статуса для проверки');
-      return;
-    }
-    if (!confirm(`Проверить ${toCheck.length} профилей? Это может занять время.`)) return;
-    setCheckingAllTg(true);
-    try {
-      const resp = await authFetch('/api/check-telegram-batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls: toCheck }),
-      });
-      const data = await resp.json();
-      if (data.success) {
-        if (onRefresh) await onRefresh();
-      }
-    } catch (err) {
-      console.error('Batch TG check failed', err);
-    } finally {
-      setCheckingAllTg(false);
-    }
-  };
   const uniqueDonors = Array.from(new Set(girls.map((g) => g.donor).filter(Boolean))).sort();
 
-  const filtered = girls
-    .filter((g) => !matchesWordsBlacklist || !matchesWordsBlacklist(g))
-    .filter((g) => {
-      const matchesName = g.name.toLowerCase().includes(filterText.toLowerCase());
-      let matchesStatus = false;
-      if (filterStatus === 'all') matchesStatus = true;
-      else if (filterStatus === 'unopened') matchesStatus = !g.viewed;
-      else if (filterStatus === 'like') matchesStatus = votes[g.url] === 'like';
-      else if (filterStatus === 'like_no_dm') matchesStatus = votes[g.url] === 'like' && !g.dmSent;
-      else if (filterStatus === 'dislike') matchesStatus = votes[g.url] === 'dislike';
-      else if (filterStatus === 'no_status') matchesStatus = !votes[g.url];
-      else if (filterStatus === 'active') matchesStatus = votes[g.url] !== 'dislike';
-      else if (filterStatus === 'dm_sent') matchesStatus = g.dmSent;
-      else if (filterStatus === 'replied') matchesStatus = g.dm_status === 'replied';
-      else if (filterStatus === 'liked') matchesStatus = g.dm_status === 'liked' || votes[g.url] === 'like';
-      let matchesTg = true;
-      if (filterTgStatus === 'yes') matchesTg = g.tg_status === 'valid';
-      else if (filterTgStatus === 'none') matchesTg = !g.tg_status;
-      const followersCount = Number(g.followers_count || 0);
-      const minFollowers = followersMin === '' ? null : Number(followersMin);
-      const maxFollowers = followersMax === '' ? null : Number(followersMax);
-      const matchesFollowers =
-        (minFollowers === null || followersCount >= minFollowers) &&
-        (maxFollowers === null || followersCount <= maxFollowers);
-      const matchesViewed = !hideViewed || !g.viewed;
-      const matchesCity = !cityOnly || (matchesProfileCity ? matchesProfileCity(g) : g.isInCity);
-      const imgOk = !hideNoImage || ((g.photo_local || g.photo) && !failedImages.has(g.url));
-      const matchesDonor = filterDonor === 'all' || g.donor === filterDonor;
-      return (
-        matchesName &&
-        matchesStatus &&
-        matchesTg &&
-        matchesFollowers &&
-        matchesViewed &&
-        matchesCity &&
-        imgOk &&
-        matchesDonor
-      );
-    })
+  const filtered = filterProfiles(girls, {
+    votes,
+    failedImages,
+    cityOnly,
+    matchesProfileCity,
+    matchesWordsBlacklist,
+    ...filters,
+  });
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const page = Math.min(currentPage, totalPages);
   const pageData = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+
   return (
     <div className="tab-content-fade">
       <div className="toolbar">
         <input
           className="search-input"
-          placeholder={tr('search_placeholder')}
-          value={filterText}
+          placeholder="Поиск профилей..."
+          value={filters.filterText}
           onChange={(e) => {
-            setFilterText(e.target.value);
-            setCurrentPage(1);
+            filters.setFilterText(e.target.value);
+            resetPage();
           }}
         />
         <select
           className="select-input"
-          value={filterStatus}
+          value={filters.filterStatus}
           onChange={(e) => {
-            setFilterStatus(e.target.value);
-            setCurrentPage(1);
+            filters.setFilterStatus(e.target.value);
+            resetPage();
           }}
         >
-          <option value="all">{tr('filter_all')}</option>
-          <option value="no_status">{tr('filter_no_status')}</option>
-          <option value="active">{tr('filter_active')}</option>
-          <option value="like">{tr('filter_like')}</option>
-          <option value="like_no_dm">{tr('filter_like_no_dm')}</option>
-          <option value="dislike">{tr('filter_dislike')}</option>
-          <option value="dm_sent">{tr('filter_dm_sent')}</option>
-          <option value="replied">{tr('filter_replied')}</option>
-          <option value="unopened">{tr('filter_unopened')}</option>
+          <option value="all">Все профили</option>
+          <option value="no_status">Без статуса</option>
+          <option value="active">Активные</option>
+          <option value="like">Лайкнутые</option>
+          <option value="like_no_dm">Лайкнутые (Без ЛС)</option>
+          <option value="dislike">Дизлайкнутые</option>
+          <option value="dm_sent">С отправленным ЛС</option>
+          <option value="replied">Ответившие</option>
+          <option value="unopened">Только скрытые</option>
         </select>
         <select
           className="select-input"
-          value={filterTgStatus}
+          value={filters.filterTgStatus}
           onChange={(e) => {
-            setFilterTgStatus(e.target.value);
-            setCurrentPage(1);
+            filters.setFilterTgStatus(e.target.value);
+            resetPage();
           }}
         >
-          <option value="all">{tr('filter_tg_all')}</option>
-          <option value="yes">{tr('filter_tg_yes')}</option>
-          <option value="none">{tr('filter_tg_none')}</option>
+          <option value="all">Все (TG)</option>
+          <option value="yes">Есть Telegram</option>
+          <option value="none">Непроверен</option>
         </select>
-
         <select
           className="select-input"
-          value={filterDonor}
+          value={filters.filterDonor}
           onChange={(e) => {
-            setFilterDonor(e.target.value);
-            setCurrentPage(1);
+            filters.setFilterDonor(e.target.value);
+            resetPage();
           }}
         >
-          <option value="all">
-            {tr('filter_donor')}: {tr('filter_all')}
-          </option>
+          <option value="all">Доноры: Все профили</option>
           {uniqueDonors.map((d) => (
             <option key={d} value={d}>
               @{d}
@@ -499,8 +365,8 @@ export default function ProfilesTab({
         </span>
         <div className="profile-filters-menu" ref={filtersRef}>
           <button
-            className={`profile-filters-btn${filtersOpen ? ' active' : ''}`}
             type="button"
+            className={`profile-filters-btn${filtersOpen ? ' active' : ''}`}
             onClick={() => setFiltersOpen((open) => !open)}
             aria-label="Открыть фильтры"
           >
@@ -517,10 +383,10 @@ export default function ProfilesTab({
                   <input
                     type="number"
                     min="0"
-                    value={followersMin}
+                    value={filters.followersMin}
                     onChange={(e) => {
-                      setFollowersMin(e.target.value);
-                      setCurrentPage(1);
+                      filters.setFollowersMin(e.target.value);
+                      resetPage();
                     }}
                     placeholder="0"
                   />
@@ -530,10 +396,10 @@ export default function ProfilesTab({
                   <input
                     type="number"
                     min="0"
-                    value={followersMax}
+                    value={filters.followersMax}
                     onChange={(e) => {
-                      setFollowersMax(e.target.value);
-                      setCurrentPage(1);
+                      filters.setFollowersMax(e.target.value);
+                      resetPage();
                     }}
                     placeholder="∞"
                   />
@@ -542,24 +408,24 @@ export default function ProfilesTab({
               <label className="checkbox-label">
                 <input
                   type="checkbox"
-                  checked={hideNoImage}
+                  checked={filters.hideNoImage}
                   onChange={(e) => {
-                    setHideNoImage(e.target.checked);
-                    setCurrentPage(1);
+                    filters.setHideNoImage(e.target.checked);
+                    resetPage();
                   }}
                 />
-                {tr('hide_no_photo')}
+                Скрыть без фото
               </label>
               <label className="checkbox-label">
                 <input
                   type="checkbox"
-                  checked={hideViewed}
+                  checked={filters.hideViewed}
                   onChange={(e) => {
-                    setHideViewed(e.target.checked);
-                    setCurrentPage(1);
+                    filters.setHideViewed(e.target.checked);
+                    resetPage();
                   }}
                 />
-                {tr('filter_viewed')}
+                Скрыть чекнутые
               </label>
               <label className="checkbox-label">
                 <input
@@ -567,10 +433,10 @@ export default function ProfilesTab({
                   checked={cityOnly}
                   onChange={(e) => {
                     setCityOnly(e.target.checked);
-                    setCurrentPage(1);
+                    resetPage();
                   }}
                 />
-                {tr('filter_city')}
+                Только город
               </label>
             </div>
           )}
@@ -581,25 +447,22 @@ export default function ProfilesTab({
         {isLoading
           ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
           : pageData.map((g) => (
-            <ProfileCard
-              key={g.url}
-              g={g}
-              votes={votes}
-              failedImages={failedImages}
-              onVote={onVote}
-              onOpen={onOpen}
-              onSendDM={onSendDM}
-              onTagTg={onTagTg}
-              onDeleteProfile={onDeleteProfile}
-              onSaveAsDonor={onSaveAsDonor}
-              onImageError={onImageError}
-              useProxyImages={useProxyImages}
-              tr={tr}
-              onTgCheck={onTgCheck}
-              authFetch={authFetch}
-              token={token}
-            />
-          ))}
+              <ProfileCard
+                key={g.url}
+                g={g}
+                votes={votes}
+                failedImages={failedImages}
+                onVote={onVote}
+                onOpen={onOpen}
+                onSendDM={onSendDM}
+                onTagTg={onTagTg}
+                onDeleteProfile={onDeleteProfile}
+                onSaveAsDonor={onSaveAsDonor}
+                onImageError={onImageError}
+                onTgCheck={onTgCheck}
+                authFetch={authFetch}
+              />
+            ))}
         {!isLoading && pageData.length === 0 && (
           <div className="empty-state-msg">Нет профилей по выбранным фильтрам</div>
         )}
@@ -608,23 +471,23 @@ export default function ProfilesTab({
       {totalPages > 1 && (
         <div className="pagination">
           <button
+            type="button"
             className="pageBtn"
             disabled={page === 1}
             onClick={() => setCurrentPage((p) => p - 1)}
           >
-            {tr('prev')}
+            ← Назад
           </button>
           <span className="page-info">
-            {tr('page_info')
-              .replace('{current}', String(page))
-              .replace('{total}', String(totalPages))}
+            Страница {page} из {totalPages}
           </span>
           <button
+            type="button"
             className="pageBtn"
             disabled={page === totalPages}
             onClick={() => setCurrentPage((p) => p + 1)}
           >
-            {tr('next')}
+            Вперед →
           </button>
         </div>
       )}

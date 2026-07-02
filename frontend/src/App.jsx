@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { t } from './i18n';
 import ProfilesTab from './components/ProfilesTab';
 import ControlsTab from './components/ControlsTab';
 import SettingsTab from './components/SettingsTab';
@@ -8,76 +7,12 @@ import AuthPage from './components/AuthPage';
 import { TelegramIcon } from './components/Icons';
 import { API_BASE, LOCAL_API_BASE } from './config';
 import { toast } from 'react-hot-toast';
-
-const LOG_BUFFER = 200;
-
-const normalizeKeyword = (value) => String(value || '').trim().toLowerCase();
-
-const createCityMatcher = (cities = [], citiesBlacklist = []) => {
-  const whitelist = cities.map(normalizeKeyword).filter(Boolean);
-  const blacklist = citiesBlacklist.map(normalizeKeyword).filter(Boolean);
-
-  return (profile) => {
-    const text = normalizeKeyword(`${profile?.name || ''} ${profile?.bio || ''} ${profile?.username || ''}`);
-    const matchesWhitelist = whitelist.length === 0 || whitelist.some((kw) => text.includes(kw));
-    const matchesBlacklist = blacklist.length > 0 && blacklist.some((kw) => text.includes(kw));
-    return matchesWhitelist && !matchesBlacklist;
-  };
-};
-
-const createWordsBlacklistMatcher = (wordsBlacklist = []) => {
-  const blacklist = wordsBlacklist.map(normalizeKeyword).filter(Boolean);
-  return (profile) => {
-    if (blacklist.length === 0) return false;
-    const text = normalizeKeyword(`${profile?.name || ''} ${profile?.bio || ''} ${profile?.username || ''}`);
-    return blacklist.some((kw) => text.includes(kw));
-  };
-};
-
-const safeStorage = {
-  getItem: (key, def) => {
-    try {
-      const val = localStorage.getItem(key);
-      if (val === null || val === 'null' || val === 'undefined') return def;
-      return val;
-    } catch (e) {
-      return def;
-    }
-  },
-  setItem: (key, val) => {
-    try {
-      if (val === null || val === undefined) {
-        localStorage.removeItem(key);
-      } else {
-        localStorage.setItem(key, val);
-      }
-    } catch (e) { }
-  },
-  removeItem: (key) => {
-    try {
-      localStorage.removeItem(key);
-    } catch (e) { }
-  },
-  parse: (key, def) => {
-    try {
-      const val = localStorage.getItem(key);
-      if (val === null || val === 'null' || val === 'undefined') return def;
-      return JSON.parse(val);
-    } catch (e) {
-      return def;
-    }
-  },
-};
+import { safeStorage } from './utils/storage';
+import { createCityMatcher, createWordsBlacklistMatcher } from './utils/profile';
+import { getDonorUsername } from './utils/donor';
+import { DEFAULT_SETTINGS, LOG_BUFFER, TABS } from './constants/settings';
 
 export default function App() {
-  const [lang, setLang] = useState(() => safeStorage.getItem('ig_lang', 'ru'));
-  const tr = (key) => t(lang, key);
-  const toggleLang = () => {
-    const next = lang === 'ru' ? 'en' : 'ru';
-    setLang(next);
-    safeStorage.setItem('ig_lang', next);
-  };
-
   const [user, setUser] = useState(() => safeStorage.parse('ig_user', null));
   const [token, setToken] = useState(() => safeStorage.getItem('ig_token', null));
 
@@ -87,27 +22,10 @@ export default function App() {
   const [sentDM, setSentDM] = useState(() => safeStorage.parse('ig_sent_dm', []));
   const [failedImages, setFailedImages] = useState(new Set());
 
-  const [settingsData, setSettingsData] = useState(() => {
-    const defaultState = {
-      accounts: [],
-      activeParserAccountIds: [],
-      activeServerAccountIds: [],
-      activeIndexAccountIds: [],
-      activeProfilesAccountIds: [],
-      names: [],
-      cities: [],
-      citiesBlacklist: [],
-      wordsBlacklist: [],
-      niches: [],
-      donors: [],
-      showBrowser: false,
-      humanEmulation: false,
-      concurrentProfiles: 3,
-      dmLimit: 20,
-      donorGroups: [],
-    };
-    return { ...defaultState, ...safeStorage.parse('ig_settings', {}) };
-  });
+  const [settingsData, setSettingsData] = useState(() => ({
+    ...DEFAULT_SETTINGS,
+    ...safeStorage.parse('ig_settings', {}),
+  }));
 
   const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false });
   const [logs, setLogs] = useState([]);
@@ -155,7 +73,7 @@ export default function App() {
     setUser(null);
     safeStorage.removeItem('ig_token');
     safeStorage.removeItem('ig_user');
-    toast.success('Logged out successfully');
+    toast.success("Вы вышли из системы");
   }, []);
 
   const authFetch = useCallback(
@@ -430,13 +348,9 @@ export default function App() {
     async (g) => {
       let msgs = [];
       if (g.donor && settingsData.donorGroups?.length > 0) {
-        const getUsername = (d) => {
-          const url = typeof d === 'string' ? d : d.url;
-          return url.replace('https://www.instagram.com/', '').replace(/[@/]/g, '').trim();
-        };
         const targetDonor = g.donor.replace('@', '').trim();
         const specificGroup = settingsData.donorGroups.find((grp) =>
-          (grp.donors || []).some(d => getUsername(d) === targetDonor)
+          (grp.donors || []).some((d) => getDonorUsername(d) === targetDonor)
         );
         if (specificGroup && specificGroup.messages?.length > 0) {
           msgs = specificGroup.messages;
@@ -499,7 +413,7 @@ export default function App() {
   );
 
   const handleDeleteProfile = async (url) => {
-    if (!confirm(tr('confirm_delete'))) return;
+    if (!confirm("Удалить этот профиль?")) return;
     try {
       const res = await authFetch('/api/profiles/delete', {
         method: 'POST',
@@ -508,10 +422,10 @@ export default function App() {
       });
       if (res.ok) {
         setGirls((prev) => prev.filter((g) => g.url !== url));
-        toast.success(tr('profile_deleted_success'));
+        toast.success("Профиль удален");
       }
     } catch (e) {
-      toast.error('Network error');
+      toast.error("Ошибка сети");
     }
   };
 
@@ -524,39 +438,42 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
-        toast.success(tr('preset_saved') || 'Saved as donor');
+        toast.success("Сохранено как донор");
         fetchSettings();
       } else {
-        toast.error(data.error || 'Error saving donor');
+        toast.error(data.error || "Ошибка сохранения донора");
       }
     } catch (e) {
-      toast.error('Network error');
+      toast.error("Ошибка сети");
     }
   };
 
-  const handleReportFailedImage = async (url) => {
-    // Если массив пустой, нет смысла делать запрос
-    if (!url || url.length === 0) return;
+  const handleReportFailedImage = useCallback(
+    async (url) => {
+      if (!url) return;
+      try {
+        await authFetch('/api/image-failed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+      } catch {
+        toast.error('Ошибка сети');
+      }
+    },
+    [authFetch]
+  );
 
-    try {
-      await authFetch('/api/image-failed', { // Укажите ваш эндпоинт для картинок
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }), // Передаем объект с массивом urls
-      });
-
-    } catch (e) {
-      toast.error('Network error');
-    }
-  };
+  const handleImageError = useCallback(
+    (url) => {
+      setFailedImages((prev) => new Set([...prev, url]));
+      handleReportFailedImage(url);
+    },
+    [handleReportFailedImage]
+  );
 
   const handleTgCheck = useCallback((url, status) => {
     setGirls((prev) => prev.map((p) => (p.url === url ? { ...p, tg_status: status } : p)));
-  }, []);
-
-  const handleImageError = useCallback((url) => {
-    setFailedImages((prev) => new Set([...prev, url]));
-    handleReportFailedImage(url);
   }, []);
 
   const handleBotControl = useCallback(
@@ -723,7 +640,7 @@ export default function App() {
       </div>
     );
 
-  if (!user) return <AuthPage onLoginSuccess={handleLoginSuccess} tr={tr} />;
+  if (!user) return <AuthPage onLoginSuccess={handleLoginSuccess} />;
 
   return (
     <div className="app">
@@ -731,17 +648,17 @@ export default function App() {
         <div className="header-left">
           <div className="stats">
             <span>
-              {tr('unopened')} <b>{unopenedCount}</b>
+              {"Ранее не открыты:"} <b>{unopenedCount}</b>
             </span>
             <span>
-              {tr('viewed')} <b>{viewed.length}</b>
+              {"Просмотрено:"} <b>{viewed.length}</b>
             </span>
             <span>
-              {tr('dm_sent')} <b className="color-accent">{dmSentCount}</b>
+              {"Отправлено ЛС:"} <b className="color-accent">{dmSentCount}</b>
             </span>
             <div className="stats-divider" />
             <span>
-              {tr('likes')} <b className="color-success">{likesCount}</b>
+              {"Лайков:"} <b className="color-success">{likesCount}</b>
             </span>
           </div>
         </div>
@@ -749,27 +666,19 @@ export default function App() {
           {saveStatus !== 'idle' && (
             <div className={`save-indicator ${saveStatus === 'error' ? 'error' : ''}`}>
               {saveStatus === 'saving' && <div className="loader-ring btn-xs" />}
-              {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : 'Error'}
+              {saveStatus === 'saving' ? "Сохранение..." : saveStatus === 'saved' ? "✓ Сохранено" : "Ошибка"}
             </div>
           )}
           <div className="user-badge-text">{user.email}</div>
-          <button className="btn-primary btn-icon-only btn-ghost" onClick={toggleLang}>
-            {lang.toUpperCase()}
-          </button>
           <button className="btn-primary btn-sm btn-danger" onClick={handleLogout}>
-            OUT
+            {"Выйти"}
           </button>
         </div>
       </header>
 
       <nav className="tabs-nav">
         <div className="tab-btn-wrapper">
-          {[
-            { id: 'profiles', label: tr('tab_profiles') },
-            { id: 'controls', label: tr('tab_execution') },
-            { id: 'settings', label: tr('tab_configuration') },
-            { id: 'stats', label: tr('tab_messages') },
-          ].map(({ id, label }) => (
+          {TABS.map(({ id, label }) => (
             <button
               key={id}
               className={`tab-btn${activeTab === id ? ' active' : ''}`}
@@ -787,7 +696,7 @@ export default function App() {
               style={{ backgroundColor: 'var(--color-primary-alt)' }}
               onClick={handleMassMessaging}
             >
-              {massMessagingStatus.running ? `Стоп ${massMessagingStatus.current}/${massMessagingStatus.total}` : `${tr('btn_mass_dm')} (${massMsgCount})`}
+              {massMessagingStatus.running ? `Стоп ${massMessagingStatus.current}/${massMessagingStatus.total}` : `${"Массовая рассылка"} (${massMsgCount})`}
             </button>
             <button
               className="btn-primary btn-tg btn-sm"
@@ -799,7 +708,7 @@ export default function App() {
               ) : (
                 <TelegramIcon className="mini-icon" />
               )}
-              {checkingAllTg ? 'Проверка...' : tr('btn_check_all_tg')}
+              {checkingAllTg ? 'Проверка...' : "Проверить все ТГ"}
             </button>
             <button
               className={`btn-primary btn-sm btn-restore ${restoreStatus.running ? 'running' : ''}`}
@@ -807,14 +716,14 @@ export default function App() {
             >
               {restoreStatus.running
                 ? `Остановить ${restoreStatus.current}/${restoreStatus.total}`
-                : tr('btn_restore_photos')}
+                : "Обновить профили"}
             </button>
             <button
               className="btn-primary btn-primary-alt btn-sm"
               onClick={fetchData}
-              title={tr('btn_update')}
+              title={"Обновить"}
             >
-              {tr('btn_update')}
+              {"Обновить"}
             </button>
           </div>
         )}
@@ -825,8 +734,6 @@ export default function App() {
           <ProfilesTab
             girls={girls}
             votes={votes}
-            viewed={viewed}
-            sentDM={sentDM}
             failedImages={failedImages}
             onVote={handleVote}
             onOpen={handleOpen}
@@ -835,13 +742,9 @@ export default function App() {
             onDeleteProfile={handleDeleteProfile}
             onSaveAsDonor={handleSaveAsDonor}
             onImageError={handleImageError}
-            onRefresh={fetchData}
-            useProxyImages={settingsData.showBrowser}
-            tr={tr}
             onTgCheck={handleTgCheck}
             isLoading={isLoading}
             authFetch={authFetch}
-            token={token}
             cityOnly={cityOnly}
             setCityOnly={setCityOnly}
             matchesProfileCity={matchesProfileCity}
@@ -855,7 +758,6 @@ export default function App() {
             onBotControl={handleBotControl}
             onClearLogs={handleClearLogs}
             logs={logs}
-            tr={tr}
             isLoading={isLoading}
             token={token}
           />
@@ -865,7 +767,6 @@ export default function App() {
           <SettingsTab
             settingsData={settingsData}
             onSettingsChange={onSettingsChange}
-            tr={tr}
             isLoading={isLoading}
             authFetch={authFetch}
             failedUrls={Array.from(failedImages)}
@@ -874,7 +775,7 @@ export default function App() {
         )}
 
         {activeTab === 'stats' && (
-          <StatisticsTab authFetch={authFetch} tr={tr} />
+          <StatisticsTab authFetch={authFetch} />
         )}
       </div>
     </div>
