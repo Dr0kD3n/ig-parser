@@ -220,7 +220,10 @@ const sendMessageToProfile = async (context, url, message) => {
     }
     if (!accessButton) {
       console.log(`⛔ [SKIP] Кнопки нет. Делаю скриншот...`);
-      await page.screenshot({ path: path.join(__dirname, 'debug_error.png'), fullPage: true });
+      await page.screenshot({
+        path: path.join(utils.getRootPath(), 'data', 'logs', 'debug_screenshot.png'),
+        fullPage: true,
+      });
       return false;
     }
     await accessButton.click();

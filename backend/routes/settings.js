@@ -69,11 +69,11 @@ app.post('/api/settings', async (req, res) => {
             return idx === -1 ? 0 : idx + 1;
           };
 
-          let fingerprint = a.fingerprint;
-          if (!fingerprint) {
-            fingerprint = JSON.stringify(fingerprint.generateFingerprint());
-          } else if (typeof fingerprint !== 'string') {
-            fingerprint = JSON.stringify(fingerprint);
+          let accountFingerprint = a.fingerprint;
+          if (!accountFingerprint) {
+            accountFingerprint = JSON.stringify(fingerprint.generateFingerprint());
+          } else if (typeof accountFingerprint !== 'string') {
+            accountFingerprint = JSON.stringify(accountFingerprint);
           }
 
           // [FIX] Protect existing cookies/localStorage from being overwritten by empty data
@@ -105,7 +105,7 @@ app.post('/api/settings', async (req, res) => {
               getPriority(req.body.activeIndexAccountIds, a.id),
               getPriority(req.body.activeProfilesAccountIds, a.id),
               getPriority(req.body.activeCheckerAccountIds, a.id),
-              fingerprint,
+              accountFingerprint,
               finalLocalStorage,
               a.warmup_score || 0,
               a.last_warmup || null,

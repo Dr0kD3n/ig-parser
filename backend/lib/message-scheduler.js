@@ -416,6 +416,40 @@ function buildSharedFields(data, existing) {
   };
 }
 
+async function listSeriesSlots(db, rootId) {
+  const rows = await db.all(
+    `SELECT * FROM message_schedule_slots WHERE id = ? OR series_id = ? ORDER BY start_at ASC`,
+    [rootId, rootId]
+  );
+  return rows.map(rowToSlot);
+}
+
+async function applySeriesChildUpdate(db, id, shared, startAt, endAt, now) {
+  await db.run(
+    `UPDATE message_schedule_slots SET
+      title = ?, start_at = ?, end_at = ?, count = ?,
+      city_only = ?, liked_only = ?, show_browser = ?, rest_after = ?, repeat_rule = ?, enabled = ?,
+      status = CASE WHEN status IN ('completed','cancelled','missed','failed') THEN 'pending' ELSE status END,
+      fail_reason = CASE WHEN status IN ('completed','cancelled','missed','failed') THEN NULL ELSE fail_reason END,
+      updated_at = ?
+     WHERE id = ? AND status != 'running'`,
+    [
+      shared.title,
+      startAt,
+      endAt,
+      shared.count,
+      shared.cityOnly,
+      shared.likedOnly,
+      shared.showBrowser,
+      shared.restAfter,
+      shared.repeatRule,
+      shared.enabled,
+      now,
+      id,
+    ]
+  );
+}
+
 async function applySharedUpdate(db, id, shared, now) {
   await db.run(
     `UPDATE message_schedule_slots SET
@@ -457,44 +491,32 @@ async function updateSlot(id, data, options = {}) {
 
   if (scope === 'series') {
     const rootId = existing.series_id || existing.id;
+    const oldStartMs = new Date(existing.start_at).getTime();
+    const newStartMs = new Date(startAt).getTime();
+    const deltaMs = newStartMs - oldStartMs;
     const targets = await db.all(
-      `SELECT id FROM message_schedule_slots WHERE (id = ? OR series_id = ?) AND status != 'running'`,
+      `SELECT id, start_at, end_at FROM message_schedule_slots WHERE (id = ? OR series_id = ?) AND status != 'running'`,
       [rootId, rootId]
     );
     for (const t of targets) {
       if (t.id === id) {
-        await db.run(
-          `UPDATE message_schedule_slots SET
-            title = ?, start_at = ?, end_at = ?, count = ?,
-            city_only = ?, liked_only = ?, show_browser = ?, rest_after = ?, repeat_rule = ?, enabled = ?,
-            status = CASE WHEN status IN ('completed','cancelled','missed','failed') THEN 'pending' ELSE status END,
-            fail_reason = CASE WHEN status IN ('completed','cancelled','missed','failed') THEN NULL ELSE fail_reason END,
-            updated_at = ?
-           WHERE id = ?`,
-          [
-            shared.title,
-            startAt,
-            endAt,
-            shared.count,
-            shared.cityOnly,
-            shared.likedOnly,
-            shared.showBrowser,
-            shared.restAfter,
-            shared.repeatRule,
-            shared.enabled,
-            now,
-            id,
-          ]
-        );
+        await applySeriesChildUpdate(db, id, shared, startAt, endAt, now);
       } else {
-        await applySharedUpdate(db, t.id, shared, now);
+        const childStart = new Date(new Date(t.start_at).getTime() + deltaMs).toISOString();
+        const childEnd = t.end_at
+          ? new Date(new Date(t.end_at).getTime() + deltaMs).toISOString()
+          : null;
+        await applySeriesChildUpdate(db, t.id, shared, childStart, childEnd, now);
       }
     }
     const root = await db.get('SELECT * FROM message_schedule_slots WHERE id = ?', rootId);
     if (root && normalizeRepeatRule(root.repeat_rule) !== 'none') {
       await materializeSeriesOccurrences(db, root);
     }
-    return rowToSlot(await db.get('SELECT * FROM message_schedule_slots WHERE id = ?', [id]));
+    return {
+      slot: rowToSlot(await db.get('SELECT * FROM message_schedule_slots WHERE id = ?', [id])),
+      seriesSlots: await listSeriesSlots(db, rootId),
+    };
   }
 
   await db.run(

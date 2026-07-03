@@ -52,9 +52,15 @@ module.exports = (app) => {
       const id = parseInt(req.params.id, 10);
       const scope = req.body?.scope === 'series' ? 'series' : 'one';
       const { scope: _s, ...data } = req.body || {};
-      const slot = await updateSlot(id, data, { scope });
-      if (!slot) return res.status(404).json({ success: false, error: 'Слот не найден' });
-      res.json({ success: true, slot, scope });
+      const result = await updateSlot(id, data, { scope });
+      if (!result) return res.status(404).json({ success: false, error: 'Слот не найден' });
+      const slot = result.seriesSlots ? result.slot : result;
+      res.json({
+        success: true,
+        slot,
+        seriesSlots: result.seriesSlots || null,
+        scope,
+      });
     } catch (e) {
       res.status(400).json({ success: false, error: e.message });
     }

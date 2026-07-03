@@ -1,4 +1,6 @@
 const jwt = require('jsonwebtoken');
+const http = require('http');
+const https = require('https');
 const { getDB } = require('./db');
 const { JWT_SECRET, JWT_PUBLIC_KEY, IS_ASYMMETRIC } = require('./auth-config');
 
@@ -19,7 +21,7 @@ function getAuthServerUrl() {
 /** valid | invalid | skip (remote недоступен — не разлогиниваем локальную панель) */
 function verifyRemoteToken(token, authUrl, strict) {
   return new Promise((resolve) => {
-    const httpModule = require(authUrl.startsWith('http://') ? 'http' : 'https');
+    const httpModule = authUrl.startsWith('http://') ? http : https;
     const verifyUrl = new URL('/api/auth/verify', authUrl).toString();
     const req = httpModule.get(
       verifyUrl,

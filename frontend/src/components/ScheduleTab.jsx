@@ -200,6 +200,26 @@ function replaceOptimisticSlots(prev, tempIds, serverSlots) {
   ];
 }
 
+function mergeSeriesSlotsIntoWeek(prev, rootId, serverWeekSlots) {
+  const serverIds = new Set(serverWeekSlots.map((s) => s.id));
+  const weekKeys = new Set(
+    serverWeekSlots.map((s) => toLocalDateInput(new Date(s.startAt)))
+  );
+  return [
+    ...prev.filter((s) => {
+      if (serverIds.has(s.id)) return false;
+      if (!rootId || (s.id !== rootId && s.seriesId !== rootId)) return true;
+      return !weekKeys.has(toLocalDateInput(new Date(s.startAt)));
+    }),
+    ...serverWeekSlots,
+  ];
+}
+
+function isSlotInSeries(s, rootId, slotId) {
+  if (!rootId) return s.id === slotId;
+  return s.id === slotId || s.id === rootId || s.seriesId === rootId;
+}
+
 function startOfWeek(date) {
   const d = new Date(date);
   const day = d.getDay();
@@ -282,6 +302,18 @@ function isValidDropDayAndTop(day, top, nowMs = Date.now()) {
   const clamped = clampTopForDay(day, top, nowMs);
   if (clamped === null) return false;
   return Math.abs(clamped - snapTopToMinutes(top)) < 0.01;
+}
+
+function seriesTimeDelta(originalStartIso, newStartIso) {
+  return new Date(newStartIso).getTime() - new Date(originalStartIso).getTime();
+}
+
+function shiftSlotTimes(slot, deltaMs) {
+  const start = new Date(new Date(slot.startAt).getTime() + deltaMs);
+  const end = slot.endAt
+    ? new Date(new Date(slot.endAt).getTime() + deltaMs)
+    : defaultEndTime(start);
+  return { startAt: start.toISOString(), endAt: end.toISOString() };
 }
 
 function applySlotMove(slots, slotId, day, top) {
@@ -593,6 +625,7 @@ export default function ScheduleTab({ authFetch }) {
   const [scheduleStatus, setScheduleStatus] = useState(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [dragState, setDragState] = useState(null);
+  const [dragSession, setDragSession] = useState(0);
   const gridRef = useRef(null);
   const daysGridRef = useRef(null);
   const dragStateRef = useRef(null);
@@ -712,10 +745,13 @@ export default function ScheduleTab({ authFetch }) {
     [choose, fetchSeriesInfo]
   );
 
-  const applySeriesOptimistic = (prev, slotId, payload, seriesInfo) => {
-    const relatedSet = new Set(seriesInfo?.relatedIds || []);
+  const applySeriesOptimistic = (prev, slotId, payload, seriesInfo, originalSlot) => {
     const rootId = seriesInfo?.rootId;
+    const deltaMs = originalSlot
+      ? seriesTimeDelta(originalSlot.startAt, payload.startAt)
+      : 0;
     return prev.map((s) => {
+      if (!isSlotInSeries(s, rootId, slotId)) return s;
       if (s.id === slotId) {
         return {
           ...s,
@@ -724,20 +760,20 @@ export default function ScheduleTab({ authFetch }) {
           endAt: payload.endAt,
         };
       }
-      if (relatedSet.has(s.id) || (rootId && s.id === rootId && slotId !== rootId)) {
-        return {
-          ...s,
-          title: payload.title,
-          count: payload.count,
-          cityOnly: payload.cityOnly,
-          likedOnly: payload.likedOnly,
-          showBrowser: payload.showBrowser,
-          restAfter: payload.restAfter,
-          repeatRule: payload.repeatRule,
-          enabled: payload.enabled,
-        };
-      }
-      return s;
+      const shifted = deltaMs ? shiftSlotTimes(s, deltaMs) : { startAt: s.startAt, endAt: s.endAt };
+      return {
+        ...s,
+        title: payload.title,
+        count: payload.count,
+        cityOnly: payload.cityOnly,
+        likedOnly: payload.likedOnly,
+        showBrowser: payload.showBrowser,
+        restAfter: payload.restAfter,
+        repeatRule: payload.repeatRule,
+        enabled: payload.enabled,
+        startAt: shifted.startAt,
+        endAt: shifted.endAt,
+      };
     });
   };
 
@@ -769,21 +805,26 @@ export default function ScheduleTab({ authFetch }) {
   );
 
   const persistSlotMove = useCallback(
-    async (slot, day, top, scope = 'one') => {
+    async (slot, day, top, scope = 'one', seriesInfo = null) => {
       const clampedTop = clampTopForDay(day, top);
       if (clampedTop === null || !isValidDropDayAndTop(day, top)) {
         toast.error('Нельзя перенести в прошлое');
         return;
       }
 
+      const movePayload = slotToMovePayload(slot, day, clampedTop);
       let snapshot = null;
       setSlots((prev) => {
         snapshot = prev;
+        if (scope === 'series' && seriesInfo?.rootId) {
+          const originalSlot = prev.find((s) => s.id === slot.id);
+          return applySeriesOptimistic(prev, slot.id, movePayload, seriesInfo, originalSlot);
+        }
         return applySlotMove(prev, slot.id, day, clampedTop);
       });
 
       try {
-        const payload = { ...slotToMovePayload(slot, day, clampedTop), scope };
+        const payload = { ...movePayload, scope };
         const res = await authFetch(`/api/schedule/slots/${slot.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -791,7 +832,10 @@ export default function ScheduleTab({ authFetch }) {
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Ошибка перемещения');
-        if (scope === 'series') {
+        if (scope === 'series' && data.seriesSlots?.length) {
+          const inWeek = slotsInWeek(data.seriesSlots, weekDays);
+          setSlots((prev) => mergeSeriesSlotsIntoWeek(prev, seriesInfo?.rootId, inWeek));
+        } else if (scope === 'series') {
           fetchSlots();
         } else if (data.slot) {
           setSlots((prev) => prev.map((s) => (s.id === slot.id ? data.slot : s)));
@@ -802,7 +846,7 @@ export default function ScheduleTab({ authFetch }) {
         toast.error(e.message || 'Не удалось перенести слот');
       }
     },
-    [authFetch, fetchSlots, fetchStatus]
+    [authFetch, fetchSlots, fetchStatus, weekDays]
   );
 
   const handleEventMouseDown = (e, slot, day, top) => {
@@ -810,6 +854,7 @@ export default function ScheduleTab({ authFetch }) {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    setDragSession((n) => n + 1);
     setDragState({
       slot,
       originDay: day,
@@ -847,36 +892,34 @@ export default function ScheduleTab({ authFetch }) {
       if (clamped !== null) nextTop = clamped;
 
       setDragState((prev) =>
-        prev
-          ? { ...prev, moved: true, day: validDay, currentTop: nextTop }
-          : null
+        prev ? { ...prev, moved: true, day: validDay, currentTop: nextTop } : null
       );
     };
 
     const onUp = (e) => {
+      if (e.button !== 0) return;
       const ds = dragStateRef.current;
-      setDragState(null);
       if (!ds) return;
       if (!ds.moved) {
+        setDragState(null);
         openEdit(ds.slot, e);
         return;
       }
-      const day = ds.day;
-      if (!isValidDropDayAndTop(day, ds.currentTop)) {
+      const { day, currentTop: top, slot } = ds;
+      if (!isValidDropDayAndTop(day, top)) {
+        setDragState(null);
         toast.error('Нельзя перенести в прошлое');
         return;
       }
+      setDragState(null);
       void (async () => {
-        let scope = 'one';
         try {
-          const picked = await askSeriesScope(ds.slot.id, 'save');
-          scope = picked.scope;
-          if (!scope) return;
+          const picked = await askSeriesScope(slot.id, 'save');
+          if (!picked.scope) return;
+          persistSlotMove(slot, day, top, picked.scope, picked.info);
         } catch (err) {
           toast.error(err.message || 'Ошибка');
-          return;
         }
-        persistSlotMove(ds.slot, day, ds.currentTop, scope);
       })();
     };
 
@@ -886,7 +929,7 @@ export default function ScheduleTab({ authFetch }) {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [dragState, getDayFromClientX, persistSlotMove, askSeriesScope]);
+  }, [dragSession, Boolean(dragState), getDayFromClientX, persistSlotMove, askSeriesScope]);
 
   const handleSave = async () => {
     if (!modal) return;
@@ -924,7 +967,8 @@ export default function ScheduleTab({ authFetch }) {
       snapshot = prev;
       if (isEdit) {
         if (scope === 'series' && seriesInfo) {
-          return applySeriesOptimistic(prev, modal.id, payload, seriesInfo);
+          const originalSlot = prev.find((s) => s.id === modal.id);
+          return applySeriesOptimistic(prev, modal.id, payload, seriesInfo, originalSlot);
         }
         return applySlotPayload(prev, modal.id, payload);
       }
@@ -945,6 +989,9 @@ export default function ScheduleTab({ authFetch }) {
       if (!isEdit && data.seriesSlots?.length) {
         const inWeek = slotsInWeek(data.seriesSlots, weekDays);
         setSlots((prev) => replaceOptimisticSlots(prev, tempIds, inWeek));
+      } else if (isEdit && scope === 'series' && data.seriesSlots?.length) {
+        const inWeek = slotsInWeek(data.seriesSlots, weekDays);
+        setSlots((prev) => mergeSeriesSlotsIntoWeek(prev, seriesInfo?.rootId, inWeek));
       } else if (scope === 'series') {
         await fetchSlots();
       } else if (data.slot) {

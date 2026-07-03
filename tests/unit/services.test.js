@@ -82,6 +82,7 @@ describe('Service Test Suite', () => {
     it('init should load history', async () => {
       mockDb.all.mockResolvedValueOnce([{ url: 'u1' }]);
       mockDb.all.mockResolvedValueOnce([]);
+      mockDb.all.mockResolvedValueOnce([]);
       await StateManager.init();
       expect(StateManager.processed.has('u1')).toBe(true);
     });
