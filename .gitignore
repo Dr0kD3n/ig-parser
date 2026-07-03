@@ -1,7 +1,11 @@
 node_modules
 .git
 data/
+data/profiles/
 config/profile-photos/
+config/*.sqlite-shm
+config/*.sqlite-wal
+*.pma
 dist/
 tmp/
 *.sqlite-shm

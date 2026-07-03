@@ -10,7 +10,7 @@ import {
   SaveIcon,
 } from './Icons';
 import { plural } from '../utils/text';
-import { parseSmartBio, getProfilePhotoSrc, getDmErrorLabel } from '../utils/profile';
+import { parseSmartBio, getProfilePhotoSrc, getDmErrorLabel, getTelegramUsername, getTelegramUrl, hasTelegram } from '../utils/profile';
 import { filterProfiles } from '../utils/profileFilters';
 import { usePersistedFilters } from '../hooks/usePersistedFilters';
 
@@ -57,9 +57,11 @@ const ProfileCard = memo(function ProfileCard({
 
   const handleTgClick = async (e) => {
     e.stopPropagation();
-    const tgUrl = `https://t.me/${g.name}`;
+    const tgUser = getTelegramUsername(g);
+    if (!tgUser) return;
+    const tgUrl = getTelegramUrl(g);
 
-    if (g.tg_status === 'valid') {
+    if (hasTelegram(g.tg_status)) {
       window.open(tgUrl, '_blank');
       return;
     }
@@ -68,7 +70,11 @@ const ProfileCard = memo(function ProfileCard({
     setCheckingTg(true);
 
     try {
-      const resp = await authFetch(`/api/check-telegram?url=${encodeURIComponent(g.name)}`);
+      const qs = new URLSearchParams({
+        username: tgUser,
+        profileUrl: g.url,
+      });
+      const resp = await authFetch(`/api/check-telegram?${qs}`);
       const data = await resp.json();
       if (data.success) {
         if (data.status === 'invalid' && popup) popup.close();
@@ -111,7 +117,8 @@ const ProfileCard = memo(function ProfileCard({
             <div className="badge dmTag" style={{ background: 'hsl(var(--success))' }}>✨ Ответил</div>
           )}
           {g.dm_status === 'liked' && <div className="badge likedTag">❤️ Лайкнул</div>}
-          {g.tg_status === 'valid' && <div className="badge tgTag">Написал в тг</div>}
+          {g.tg_status === 'valid' && <div className="badge tgTag">TG</div>}
+          {g.tg_status === 'channel' && <div className="badge tgChannelTag">TG канал</div>}
           {g.dmError && (
             <div className="badge tgNotSentTag" title={getDmErrorLabel(g.dmError)}>
               ⚠️ Не написал в тг
@@ -119,9 +126,9 @@ const ProfileCard = memo(function ProfileCard({
           )}
         </div>
         <div className="linksStack">
-          {g.tg_status !== 'invalid' && (
+          {getTelegramUsername(g) && g.tg_status !== 'invalid' && (
             <div
-              className={`socialBtn ${g.tg_status === 'valid' ? 'tg-valid' : ''} ${checkingTg ? 'loading' : ''}`}
+              className={`socialBtn ${g.tg_status === 'valid' ? 'tg-valid' : ''} ${g.tg_status === 'channel' ? 'tg-channel' : ''} ${checkingTg ? 'loading' : ''}`}
               title="Telegram"
               onClick={handleTgClick}
             >

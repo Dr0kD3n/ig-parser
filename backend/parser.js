@@ -235,7 +235,7 @@ const run = async () => {
 
               if (!collectedUrls.has(normLink) && !state_1.StateManager.has(normLink)) {
                 collectedUrls.add(normLink);
-                await state_1.StateManager.saveDonor(normLink, niche, city);
+                await state_1.StateManager.saveDonor(normLink, niche, city, keyword);
                 addedCount++;
               }
             }

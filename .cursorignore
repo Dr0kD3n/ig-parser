@@ -30,3 +30,9 @@ backend/public/assets/
 
 # Skills — читать только по запросу задачи
 .agents/
+config/database.sqlite*
+backend/public/
+*.pma
+USAGE_LOGIC.md
+TEST_GUIDE.md
+TODO.md

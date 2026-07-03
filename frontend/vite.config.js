@@ -13,12 +13,39 @@ function configureApiProxy(proxy) {
   });
 }
 
+/** Подсказка: с VPN открывать 127.0.0.1, не localhost (Windows → ::1) */
+function vpnLocalhostHint() {
+  return {
+    name: 'vpn-localhost-hint',
+    configureServer(server) {
+      server.httpServer?.once('listening', () => {
+        const port = server.config.server.port || 5173;
+        console.log('');
+        console.log('  ➜  Local:   http://127.0.0.1:' + port + '/  ← с VPN используй этот URL');
+        console.log('  ➜  Local:   http://localhost:' + port + '/');
+        console.log('');
+      });
+    },
+  };
+}
+
 const apiTarget = process.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), vpnLocalhostHint()],
   server: {
+    // 0.0.0.0 — не только loopback; localhost на Windows часто идёт в ::1, VPN ломает IPv6
+    host: '0.0.0.0',
     port: 5173,
+    strictPort: true,
+    allowedHosts: true,
+    hmr: {
+      // WebSocket HMR строго через IPv4 loopback — стабильнее с VPN
+      host: '127.0.0.1',
+      port: 5173,
+      clientPort: 5173,
+      protocol: 'ws',
+    },
     proxy: {
       '/api/auth': {
         target: process.env.VITE_AUTH_URL || 'https://botback-production-1011.up.railway.app',

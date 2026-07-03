@@ -220,16 +220,23 @@ exports.StateManager = {
   },
   async loadDonors() {
     const db = await (0, db_1.getDB)();
-    const rows = await db.all(`SELECT url, niche, city FROM urls WHERE type = 'donor' ORDER BY id DESC`);
-    return rows; // Now returns objects {url, niche, city}
+    const rows = await db.all(`SELECT url, niche, city, keyword FROM urls WHERE type = 'donor' ORDER BY id DESC`);
+    return rows;
   },
-  async saveDonor(url, niche = null, city = null) {
+  async saveDonor(url, niche = null, city = null, keyword = null) {
     const normUrl = (0, config_1.normalizeUrl)(url);
     const db = await (0, db_1.getDB)();
+    const kw = keyword || `${city || ''} ${niche || ''}`.trim() || null;
 
     try {
-      await db.run(`INSERT OR REPLACE INTO urls (type, url, niche, city) VALUES (?, ?, ?, ?)`, ['donor', normUrl, niche, city]);
-      console.log(`✅ Сохранен новый донор: ${normUrl} (${niche || ''} ${city || ''})`);
+      await db.run(`INSERT OR REPLACE INTO urls (type, url, niche, city, keyword) VALUES (?, ?, ?, ?, ?)`, [
+        'donor',
+        normUrl,
+        niche,
+        city,
+        kw,
+      ]);
+      console.log(`✅ Сохранен новый донор: ${normUrl} (${kw || ''})`);
     } catch (e) {
       // Ignore if already exists in donor table
     }
@@ -242,8 +249,15 @@ exports.StateManager = {
         const url = typeof donor === 'string' ? donor : donor.url;
         const niche = donor.niche || null;
         const city = donor.city || null;
+        const keyword = donor.keyword || `${city || ''} ${niche || ''}`.trim() || null;
         const normUrl = (0, config_1.normalizeUrl)(url);
-        await db.run(`INSERT OR REPLACE INTO urls (type, url, niche, city) VALUES (?, ?, ?, ?)`, ['donor', normUrl, niche, city]);
+        await db.run(`INSERT OR REPLACE INTO urls (type, url, niche, city, keyword) VALUES (?, ?, ?, ?, ?)`, [
+          'donor',
+          normUrl,
+          niche,
+          city,
+          keyword,
+        ]);
       }
     } catch (e) {
       console.error('Ошибка при сохранении списка доноров:', e);

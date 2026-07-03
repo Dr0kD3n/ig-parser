@@ -51,9 +51,10 @@ function pickDmStatus(a, b) {
 }
 
 function pickTgStatus(a, b) {
-  if (a === 'valid' || b === 'valid') return 'valid';
-  if (a === 'invalid' || b === 'invalid') return 'invalid';
-  return a || b || null;
+  const rank = { valid: 4, channel: 3, '': 2, invalid: 1 };
+  const left = String(a || '').toLowerCase();
+  const right = String(b || '').toLowerCase();
+  return (rank[left] || 0) >= (rank[right] || 0) ? left || null : right || null;
 }
 
 /** Слияние двух записей профиля в одну (canonical ← incoming) */

@@ -38,7 +38,7 @@ export function filterProfiles(girls, options) {
       else if (filterStatus === 'liked') matchesStatus = g.dm_status === 'liked' || votes[g.url] === 'like';
 
       let matchesTg = true;
-      if (filterTgStatus === 'yes') matchesTg = g.tg_status === 'valid';
+      if (filterTgStatus === 'yes') matchesTg = g.tg_status === 'valid' || g.tg_status === 'channel';
       else if (filterTgStatus === 'none') matchesTg = !g.tg_status;
 
       const followersCount = Number(g.followers_count || 0);

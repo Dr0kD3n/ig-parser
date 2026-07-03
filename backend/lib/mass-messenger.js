@@ -1,5 +1,7 @@
 'use strict';
 const { getDB } = require('./db');
+const logger = require('./logger');
+const IG = require('./ig-selectors');
 const { getAllAccounts, getSetting, getList } = require('./config');
 const { createBrowserContext, startLiveView, takeLiveScreenshot } = require('./browser');
 const { wait, humanType, humanClick, humanScrollToTop } = require('./utils');
@@ -22,8 +24,8 @@ const {
     PROFILE_GAP,
     waitWithActivity,
 } = require('./anti-fraud');
-const logger = require('./logger');
-const IG = require('./ig-selectors');
+const state_1 = require('./state');
+const { findCategoryMessages } = require('./donor-category-stats');
 const {
     dedupeProfilesForMessaging,
     markDmSentByUsername,
@@ -213,14 +215,18 @@ async function sendMessageToProfile(page, url, message, config, session) {
 
 
 async function startMassMessaging(onProgress, options = {}) {
-    if (massMessengerStatus.running) return;
+    if (massMessengerStatus.running) return { started: false, reason: 'already_running' };
 
     messengerStopRequested = false;
     const db = await getDB();
     const settings = await db.all(`SELECT * FROM settings`);
     const donorGroups = JSON.parse(settings.find(s => s.key === 'donorGroups')?.value || '[]');
-    const humanEmulation = settings.find(s => s.key === 'humanEmulation')?.value === 'true';
-    const dmLimit = parseInt(settings.find(s => s.key === 'dmLimit')?.value || '20');
+    const donorsList = await state_1.StateManager.loadDonors();
+    const humanEmulation =
+        settings.find(s => s.key === 'humanEmulation')?.value === 'true' || !!options.restAfter;
+    const dmLimit = options.dmLimit != null
+        ? parseInt(options.dmLimit, 10)
+        : parseInt(settings.find(s => s.key === 'dmLimit')?.value || '20');
 
     // 1. Selection with options
     // Using COLLATE NOCASE for vote to be safe, although it's usually lowercase
@@ -273,7 +279,7 @@ async function startMassMessaging(onProgress, options = {}) {
     if (profilesCount === 0) {
         massMessengerStatus = { running: false, status: 'No profiles to message', current: 0, total: 0, results: [] };
         if (onProgress) onProgress(massMessengerStatus);
-        return;
+        return { started: true, reason: 'no_profiles', sent: 0, stopped: false };
     }
 
     const accounts = await getAllAccounts('server');
@@ -281,7 +287,7 @@ async function startMassMessaging(onProgress, options = {}) {
         logger.error('❌ [MASS MESSENGER] No accounts found with "Sender" role. Please assign accounts in Settings.');
         massMessengerStatus = { running: false, status: 'No sender accounts assigned', current: 0, total: profilesCount, results: [] };
         if (onProgress) onProgress(massMessengerStatus);
-        return;
+        return { started: false, reason: 'no_accounts' };
     }
 
     massMessengerStatus = {
@@ -315,7 +321,10 @@ async function startMassMessaging(onProgress, options = {}) {
         timeouts: { pageLoad: 60000, typingDelayMin: 30, typingDelayMax: 90 },
     };
 
-    const skipBrowser = await getSetting('showBrowser') !== true;
+    const skipBrowser =
+        options.showBrowser != null
+            ? !options.showBrowser
+            : (await getSetting('showBrowser')) !== true;
     let browser, context, liveInterval, page;
 
     try {
@@ -376,13 +385,9 @@ async function startMassMessaging(onProgress, options = {}) {
                     .split(',')
                     .map((d) => d.replace('@', '').trim())
                     .filter(Boolean);
-                const group = donorGroups.find((g) =>
-                    (g.donors || []).some((d) => {
-                        const donorRef = typeof d === 'string' ? d : d.url;
-                        return donorNames.some((n) => donorRef.includes(n));
-                    })
-                );
-                let msgs = (group && group.messages?.length > 0) ? group.messages : [];
+                const primaryDonor = donorNames[0] || profile.donor || '';
+                const catMsgs = findCategoryMessages(donorGroups, donorsList, primaryDonor);
+                let msgs = catMsgs?.length ? catMsgs : [];
 
                 if (msgs.length === 0) {
                     const allGroup = donorGroups.find(g => g.id === 'all');
@@ -487,6 +492,12 @@ async function startMassMessaging(onProgress, options = {}) {
     const successfulTotal = results.filter(r => r.success).length;
     logger.info(`✅ Mass messaging session complete. Sent: ${successfulTotal}/${results.length}`);
     updateStatus({ running: false, status: messengerStopRequested ? 'Stopped' : 'Done' });
+    return {
+        started: true,
+        sent: successfulTotal,
+        stopped: !!messengerStopRequested,
+        total: results.length,
+    };
 }
 
 

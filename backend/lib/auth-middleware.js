@@ -1,7 +1,50 @@
 const jwt = require('jsonwebtoken');
 const { getDB } = require('./db');
 const { JWT_SECRET, JWT_PUBLIC_KEY, IS_ASYMMETRIC } = require('./auth-config');
-const https = require('https');
+
+const PROD_URL = 'https://botback-production-1011.up.railway.app';
+
+function isLocalRequest(req) {
+  const ip = req.ip || req.socket?.remoteAddress || '';
+  return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
+}
+
+function getAuthServerUrl() {
+  if (process.env.AUTH_SERVER_URL) return process.env.AUTH_SERVER_URL;
+  if (process.env.VITE_AUTH_URL) return process.env.VITE_AUTH_URL;
+  if (process.env.NODE_ENV === 'production') return PROD_URL;
+  return null;
+}
+
+/** valid | invalid | skip (remote недоступен — не разлогиниваем локальную панель) */
+function verifyRemoteToken(token, authUrl, strict) {
+  return new Promise((resolve) => {
+    const httpModule = require(authUrl.startsWith('http://') ? 'http' : 'https');
+    const verifyUrl = new URL('/api/auth/verify', authUrl).toString();
+    const req = httpModule.get(
+      verifyUrl,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 8000,
+      },
+      (response) => {
+        if (response.statusCode === 200) return resolve('valid');
+        if (response.statusCode === 401 || response.statusCode === 403) return resolve('invalid');
+        console.warn(`[AUTH] Remote verify HTTP ${response.statusCode}, fallback=${strict ? 'deny' : 'local'}`);
+        return resolve(strict ? 'invalid' : 'skip');
+      }
+    );
+    req.on('error', (err) => {
+      console.warn(`[AUTH] Remote auth unavailable (${err.code || err.message}), fallback=${strict ? 'deny' : 'local'}`);
+      resolve(strict ? 'invalid' : 'skip');
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      console.warn('[AUTH] Remote auth timeout, fallback=', strict ? 'deny' : 'local');
+      resolve(strict ? 'invalid' : 'skip');
+    });
+  });
+}
 
 exports.verifyToken = async (req, res, next) => {
   // console.log('[DEBUG] verifyToken called for', req.path, 'token =', req.header('Authorization'));
@@ -19,14 +62,12 @@ exports.verifyToken = async (req, res, next) => {
     return res.status(401).json({ error: 'Access denied. No token provided.' });
   }
 
-  const PROD_URL = 'https://botback-production-1011.up.railway.app';
-  const authUrl =
-    process.env.AUTH_SERVER_URL ||
-    process.env.VITE_AUTH_URL ||
-    (process.env.NODE_ENV === 'production' ? PROD_URL : PROD_URL); // Fallback to PROD_URL even in dev to verify remote tokens
-  const isRemote = !!authUrl;
-
-
+  const authUrl = getAuthServerUrl();
+  const skipRemote =
+    process.env.AUTH_SKIP_REMOTE_VERIFY === '1' ||
+    process.env.AUTH_SKIP_REMOTE_VERIFY === 'true';
+  const localPanel = isLocalRequest(req);
+  const useRemoteVerify = !!authUrl && !skipRemote && !localPanel;
 
   const key = IS_ASYMMETRIC ? JWT_PUBLIC_KEY : JWT_SECRET;
   let decoded;
@@ -36,14 +77,9 @@ exports.verifyToken = async (req, res, next) => {
       algorithms: IS_ASYMMETRIC ? ['RS256'] : ['HS256'],
     });
   } catch (error) {
-    // Fallback or retry if verification fails locally (e.g. different secrets)
-    if (isRemote) {
-      try {
-        decoded = jwt.decode(token);
-      } catch (e) {
-        return res.status(401).json({ error: 'Invalid token.' });
-      }
-    } else {
+    try {
+      decoded = jwt.decode(token);
+    } catch (e) {
       return res.status(401).json({ error: 'Invalid token.' });
     }
   }
@@ -51,37 +87,10 @@ exports.verifyToken = async (req, res, next) => {
   if (!decoded || typeof decoded === 'string')
     return res.status(401).json({ error: 'Invalid token payload' });
 
-  // Always perform remote validation if we have an auth server, to sync block/logout status
-  if (isRemote) {
-    try {
-      const httpModule = require(authUrl.startsWith('http://') ? 'http' : 'https');
-      const remoteValid = await new Promise((resolve) => {
-        // Use /api/auth/verify which exists on the auth server and is protected
-        const verifyUrl = new URL('/api/auth/verify', authUrl).toString();
-        httpModule
-          .get(
-            verifyUrl,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            },
-            (response) => {
-              // Only 200 means active and not blocked.
-              // Any other status (401, 403, 404, 500) treated as invalid.
-              resolve(response.statusCode === 200);
-            }
-          )
-          .on('error', (err) => {
-            console.error('[AUTH] Remote validation error:', err.message);
-            resolve(false);
-          });
-      });
-
-      if (!remoteValid) {
-        return res.status(401).json({ error: 'Session expired or account blocked.' });
-      }
-    } catch (e) {
-      console.error('[AUTH] Failed to reach auth server:', e.message);
-      return res.status(503).json({ error: 'Auth server unreachable' });
+  if (useRemoteVerify) {
+    const remoteResult = await verifyRemoteToken(token, authUrl, process.env.NODE_ENV === 'production');
+    if (remoteResult === 'invalid') {
+      return res.status(401).json({ error: 'Session expired or account blocked.' });
     }
   }
 
@@ -95,7 +104,7 @@ exports.verifyToken = async (req, res, next) => {
 
       // Critical check: Only 1 active session allowed (for local auth only)
       if (
-        !isRemote &&
+        !useRemoteVerify &&
         decoded.tokenVersion !== undefined &&
         decoded.tokenVersion !== user.token_version
       ) {

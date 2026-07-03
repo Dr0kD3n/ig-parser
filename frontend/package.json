@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "locale": "npx cross-env VITE_AUTH_URL=http://localhost:5000 vite",
+    "dev": "vite --host 0.0.0.0",
+    "locale": "npx cross-env VITE_AUTH_URL=http://127.0.0.1:5000 vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview"
   },

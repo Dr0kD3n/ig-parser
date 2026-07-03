@@ -25,7 +25,28 @@ export const createWordsBlacklistMatcher = (wordsBlacklist = []) => {
   };
 };
 
-/** Парсинг bio Instagram: отделение статистики от текста */
+/** IG username для проверки Telegram (без @, не display name) */
+export function getTelegramUsername(profile) {
+  const fromField = String(profile?.username || '')
+    .replace(/^@/, '')
+    .trim();
+  if (fromField) return fromField;
+  const match = String(profile?.url || '').match(/instagram\.com\/([^/?#]+)/i);
+  const slug = match?.[1]?.toLowerCase();
+  const skip = new Set(['p', 'reel', 'reels', 'stories', 'direct', 'explore', 'accounts']);
+  return slug && !skip.has(slug) ? slug : '';
+}
+
+export function getTelegramUrl(profile) {
+  const u = getTelegramUsername(profile);
+  return u ? `https://t.me/${u}` : '';
+}
+
+/** TG найден (личка или канал) */
+export function hasTelegram(status) {
+  return status === 'valid' || status === 'channel';
+}
+
 export function parseSmartBio(text, username) {
   if (!text) return { bio: ' ', stats: [] };
 

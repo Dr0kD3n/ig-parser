@@ -3,16 +3,20 @@ import ProfilesTab from './components/ProfilesTab';
 import ControlsTab from './components/ControlsTab';
 import SettingsTab from './components/SettingsTab';
 import StatisticsTab from './components/StatisticsTab';
+import ScheduleTab from './components/ScheduleTab';
 import AuthPage from './components/AuthPage';
 import { TelegramIcon } from './components/Icons';
 import { API_BASE, LOCAL_API_BASE } from './config';
 import { toast } from 'react-hot-toast';
 import { safeStorage } from './utils/storage';
-import { createCityMatcher, createWordsBlacklistMatcher } from './utils/profile';
+import { createCityMatcher, createWordsBlacklistMatcher, getTelegramUsername } from './utils/profile';
 import { getDonorUsername } from './utils/donor';
+import { resolveMessagesForDonor, ensureDefaultDonorGroups } from './utils/donorCategories';
 import { DEFAULT_SETTINGS, LOG_BUFFER, TABS } from './constants/settings';
+import { useDialog } from './context/DialogContext';
 
 export default function App() {
+  const { confirm } = useDialog();
   const [user, setUser] = useState(() => safeStorage.parse('ig_user', null));
   const [token, setToken] = useState(() => safeStorage.getItem('ig_token', null));
 
@@ -37,7 +41,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState('idle');
 
-  const [checkingAllTg, setCheckingAllTg] = useState(false);
+  const [tgCheckStatus, setTgCheckStatus] = useState({ running: false, current: 0, total: 0, status: 'Idle' });
   const [restoreStatus, setRestoreStatus] = useState({ running: false, current: 0, total: 0 });
   const [massMessagingStatus, setMassMessagingStatus] = useState({ running: false, current: 0, total: 0 });
 
@@ -101,7 +105,22 @@ export default function App() {
 
   const settingsLoaded = useRef(false);
   const pendingSave = useRef(false);
+  const donorsDirtyRef = useRef(false);
   const saveAbortRef = useRef(null);
+
+  const refreshDonorsFromServer = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await authFetch('/api/donors');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && Array.isArray(data.donors)) {
+        setSettingsData((prev) => ({ ...prev, donors: data.donors }));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [user, authFetch]);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -143,7 +162,10 @@ export default function App() {
   const fetchSettings = useCallback(
     async (force = false) => {
       if (!user) return;
-      if (!force && activeTab === 'settings') return;
+      if (!force && activeTab === 'settings') {
+        await refreshDonorsFromServer();
+        return;
+      }
       try {
         const res = await authFetch('/api/settings');
         if (!res.ok) return;
@@ -161,7 +183,7 @@ export default function App() {
           humanEmulation: data.humanEmulation || false,
           concurrentProfiles: data.concurrentProfiles || 3,
           dmLimit: data.dmLimit || 20,
-          donorGroups: Array.isArray(data.donorGroups) ? data.donorGroups : [],
+          donorGroups: ensureDefaultDonorGroups(Array.isArray(data.donorGroups) ? data.donorGroups : []),
         }));
         pendingSave.current = false; // Reset dirty flag after polling
         settingsLoaded.current = true;
@@ -171,7 +193,7 @@ export default function App() {
         console.error('Error fetching settings', e);
       }
     },
-    [user, authFetch, activeTab]
+    [user, authFetch, activeTab, refreshDonorsFromServer]
   );
 
   const fetchBotStatus = useCallback(async () => {
@@ -230,7 +252,37 @@ export default function App() {
   }, [massMessagingStatus.running, authFetch, fetchData]);
 
   useEffect(() => {
+    let interval;
+    if (tgCheckStatus.running) {
+      interval = setInterval(async () => {
+        try {
+          const res = await authFetch('/api/check-telegram-batch/status');
+          const data = await res.json();
+          setTgCheckStatus(data);
+          if (data.running) {
+            fetchData();
+          } else {
+            if (data.status === 'Done') toast.success(`TG проверено: ${data.current}/${data.total}`);
+            else if (data.stopped) toast('Проверка TG остановлена');
+            fetchData();
+          }
+        } catch (e) {
+          console.error('Error polling TG check status:', e);
+        }
+      }, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [tgCheckStatus.running, authFetch, fetchData]);
+
+  useEffect(() => {
     if (user) {
+      authFetch('/api/check-telegram-batch/status')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.running) setTgCheckStatus(data);
+        })
+        .catch(() => { });
+
       authFetch('/api/mass-messages/status')
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -270,15 +322,20 @@ export default function App() {
       if (saveAbortRef.current) saveAbortRef.current.abort();
       const controller = new AbortController();
       saveAbortRef.current = controller;
+      const payload = { ...settingsData };
+      if (!donorsDirtyRef.current) {
+        delete payload.donors;
+      }
       authFetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settingsData),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       })
         .then(() => {
           setSaveStatus('saved');
           pendingSave.current = false;
+          donorsDirtyRef.current = false;
           setTimeout(() => setSaveStatus('idle'), 2000);
           safeStorage.setItem('ig_settings', JSON.stringify(settingsData));
         })
@@ -297,6 +354,9 @@ export default function App() {
     pendingSave.current = true;
     setSettingsData((prev) => {
       const patch = typeof newSettingsOrFn === 'function' ? newSettingsOrFn(prev) : newSettingsOrFn;
+      if (patch && Object.prototype.hasOwnProperty.call(patch, 'donors')) {
+        donorsDirtyRef.current = true;
+      }
       return { ...prev, ...patch };
     });
   }, []);
@@ -346,22 +406,7 @@ export default function App() {
 
   const handleSendDM = useCallback(
     async (g) => {
-      let msgs = [];
-      if (g.donor && settingsData.donorGroups?.length > 0) {
-        const targetDonor = g.donor.replace('@', '').trim();
-        const specificGroup = settingsData.donorGroups.find((grp) =>
-          (grp.donors || []).some((d) => getDonorUsername(d) === targetDonor)
-        );
-        if (specificGroup && specificGroup.messages?.length > 0) {
-          msgs = specificGroup.messages;
-        } else {
-          const allGroup = settingsData.donorGroups.find((grp) => grp.id === 'all');
-          if (allGroup && allGroup.messages?.length > 0) msgs = allGroup.messages;
-        }
-      } else {
-        const allGroup = settingsData.donorGroups?.find((grp) => grp.id === 'all');
-        if (allGroup && allGroup.messages?.length > 0) msgs = allGroup.messages;
-      }
+      const msgs = resolveMessagesForDonor(settingsData.donorGroups, settingsData.donors, g.donor);
       const m = msgs[Math.floor(Math.random() * msgs.length)] || 'Hello!';
       try {
         const res = await authFetch('/api/dm', {
@@ -382,7 +427,7 @@ export default function App() {
         toast.error('Ошибка отправки');
       }
     },
-    [sentDM, authFetch, settingsData.donorGroups]
+    [sentDM, authFetch, settingsData.donorGroups, settingsData.donors]
   );
 
   const handleTagTg = useCallback(
@@ -413,7 +458,13 @@ export default function App() {
   );
 
   const handleDeleteProfile = async (url) => {
-    if (!confirm("Удалить этот профиль?")) return;
+    const ok = await confirm({
+      title: 'Удалить профиль?',
+      message: 'Профиль будет удалён из базы без возможности восстановления.',
+      confirmText: 'Удалить',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       const res = await authFetch('/api/profiles/delete', {
         method: 'POST',
@@ -526,27 +577,45 @@ export default function App() {
   };
 
   const handleCheckAllTg = async () => {
-    const toCheck = girls.filter((g) => !g.tg_status).map((g) => g.name);
+    if (tgCheckStatus.running) {
+      await authFetch('/api/check-telegram-batch/stop', { method: 'POST' });
+      return;
+    }
+
+    const toCheck = girls
+      .filter((g) => !g.tg_status && getTelegramUsername(g))
+      .map((g) => ({ profileUrl: g.url, username: getTelegramUsername(g) }));
     if (toCheck.length === 0) {
       toast.error('Нет профилей без статуса для проверки');
       return;
     }
-    if (!confirm(`Проверить ${toCheck.length} профилей? Это может занять время.`)) return;
-    setCheckingAllTg(true);
+    const ok = await confirm({
+      title: 'Массовая проверка Telegram',
+      message: `Проверить ${toCheck.length} профилей параллельно (${settingsData.concurrentProfiles || 3} потоков)?`,
+      confirmText: 'Проверить',
+    });
+    if (!ok) return;
+
     try {
-      const resp = await authFetch('/api/check-telegram-batch', {
+      const resp = await authFetch('/api/check-telegram-batch/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls: toCheck }),
+        body: JSON.stringify({ profiles: toCheck }),
       });
       const data = await resp.json();
       if (data.success) {
-        await fetchData();
+        setTgCheckStatus({
+          running: true,
+          current: 0,
+          total: data.total || toCheck.length,
+          status: 'Starting...',
+        });
+      } else {
+        toast.error(data.error || 'Не удалось запустить проверку');
       }
     } catch (err) {
       console.error('Batch TG check failed', err);
-    } finally {
-      setCheckingAllTg(false);
+      toast.error('Ошибка запуска проверки TG');
     }
   };
 
@@ -699,16 +768,17 @@ export default function App() {
               {massMessagingStatus.running ? `Стоп ${massMessagingStatus.current}/${massMessagingStatus.total}` : `${"Массовая рассылка"} (${massMsgCount})`}
             </button>
             <button
-              className="btn-primary btn-tg btn-sm"
+              className={`btn-primary btn-tg btn-sm ${tgCheckStatus.running ? 'running' : ''}`}
               onClick={handleCheckAllTg}
-              disabled={checkingAllTg}
             >
-              {checkingAllTg ? (
-                <div className="loader-ring btn-xs" />
+              {tgCheckStatus.running ? (
+                <>Стоп {tgCheckStatus.current}/{tgCheckStatus.total}</>
               ) : (
-                <TelegramIcon className="mini-icon" />
+                <>
+                  <TelegramIcon className="mini-icon" />
+                  {"Проверить все ТГ"}
+                </>
               )}
-              {checkingAllTg ? 'Проверка...' : "Проверить все ТГ"}
             </button>
             <button
               className={`btn-primary btn-sm btn-restore ${restoreStatus.running ? 'running' : ''}`}
@@ -767,6 +837,7 @@ export default function App() {
           <SettingsTab
             settingsData={settingsData}
             onSettingsChange={onSettingsChange}
+            onDonorsRefresh={refreshDonorsFromServer}
             isLoading={isLoading}
             authFetch={authFetch}
             failedUrls={Array.from(failedImages)}
@@ -776,6 +847,10 @@ export default function App() {
 
         {activeTab === 'stats' && (
           <StatisticsTab authFetch={authFetch} />
+        )}
+
+        {activeTab === 'schedule' && (
+          <ScheduleTab authFetch={authFetch} />
         )}
       </div>
     </div>

@@ -1,37 +1,29 @@
-# ANTIGRAVITY | mode:extreme-token-saver
+# ANTIGRAVITY | mode:token-saver
 
-# Strict machine-to-machine communication
-
-<gates label="HARD-LIMITS">
-RESPONSE: suppress-all-fluff | output=code-or-result-only | max-tokens=150
-BANNED: "I've", "Updated", "Sure", "Here", "Now", "Please", "Hope"
+<gates>
+OUTPUT: ru | diff-only | cite startLine:endLine:path | рутинный ответ ≤5 предложений
+SUMMARY: подробно | не пропускать важное | полнота > краткость
+FIX: root cause, не симптом | не патч поверх патча без понимания why
+PLAN: до кода — выбрать самый простой путь, который решает задачу; 2–3 варианта на этапе проектирования, не упрощать постфактум рефакторингом
+READ: max 400 строк/вызов; offset/limit если файл >300 строк
+SEARCH: grep -path first; SemanticSearch только после 2 неудачных grep
+EXPLORE: Task tool запрещён если символ есть в MAP.md или grep нашёл файл
+SKILLS: whitelist .agents/skills/{nodejs-backend-patterns,react-best-practices,javascript-pro,lint-and-validate,commit} — только по задаче
+COMMITS: только по явному запросу пользователя
 </gates>
 
 <rules>
-THINKING: hidden | logic-only
-TOOLS: multi-edit-only | no-root-list-dir
-CONTEXT: use-scoped-files-only | skip-root-claude-if-scoped-exists
+EXCLUSIONS: node_modules, .git, .gemini, dist, build, tmp, logs, data, exports, export-data, coverage, playwright-report, test-results, .memory, agent-transcripts, .agents (без запроса), backend/public, backend/logs.json, data/logs, logs.json, *.sqlite*, *.log, .env, USAGE_LOGIC.md, TEST_GUIDE.md, TODO.md
+EXCLUSIONS_RESPECT: .gitignore | .cursorignore | .prettierignore
 
-# Исключения: не читать, не grep, не list, не explore
-EXCLUSIONS: node_modules, .git, .gemini, dist, build, tmp, logs, data, exports, export-data, coverage, playwright-report, test-results, .memory, agent-transcripts, backend/public/assets, backend/logs.json, data/logs, logs.json, *.sqlite*, *.log, .env
-EXCLUSIONS_RESPECT: .gitignore | .cursorignore | .prettierignore — всегда; не обходить
+CONTEXT: только файлы задачи; MAP.md для навигации; scoped CLAUDE.md (frontend/, backend/); не листать корень
+READ: не re-read неизменённые; index.css целиком запрещён → frontend/src/styles/*.css
+READ_BANNED: full-repo-scan | read-all-skills | agent-transcripts | logs без запроса | бинарники/БД
 
-# Поиск и чтение
-SEARCH: grep-with-path-scope-first | semantic-only-if-unknown-symbol | head_limit-default
-READ: only-files-required-for-task | no-re-read-unchanged | large-files-use-offset-limit
-READ_BANNED: full-repo-scan | read-all-skills | read-agent-transcripts | read-logs-without-ask | read-binary-db-lock-assets
-
-# Skills и exploration
-SKILLS: read-SKILL-only-when-task-matches | never-prefetch-.agents-tree
-EXPLORE: Task-explore-for-broad-unknown | direct-grep-for-known-symbol
-
-# Тесты
-TESTS: no-run-by-default
-TESTS_RUN_ONLY_IF: user-explicitly-asks | fix-failing-tests-or-ci | commit-when-user-asks-commit
-TESTS_BANNED: npm-test-after-unrelated-edits | routine-full-suite-without-reason
-
-# Эффективность без лишних токенов
-PARALLEL: independent-tool-calls-in-one-batch
-DIFF: minimal-scope-edits-only | match-surrounding-style
-OUTPUT: cite-line-ranges-not-full-files | no-repeat-already-shown-code
+TESTS: npm test/vitest только по явной просьбе или CI/коммит
+PARALLEL: независимые tool-calls одним batch
+DIFF: минимальный scope | стиль окружения | исправлять причину, не симптом
+DESIGN: простота > cleverness; переиспользовать существующее; новая абстракция — только если без неё сложнее; «упростим потом» запрещено
+NAV: см. MAP.md | backend/CLAUDE.md (API) | frontend/CLAUDE.md (UI)
+SUMMARY: детальные итоги задач — все важные изменения, риски, что проверить; ничего существенного не опускать
 </rules>

@@ -162,13 +162,60 @@ async function getDB() {
             UNIQUE(donor_url, search_term)
         );
 
+        CREATE TABLE IF NOT EXISTS message_schedule_slots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            start_at TEXT NOT NULL,
+            end_at TEXT,
+            count INTEGER NOT NULL DEFAULT 20,
+            city_only INTEGER DEFAULT 0,
+            liked_only INTEGER DEFAULT 0,
+            show_browser INTEGER DEFAULT 0,
+            rest_after INTEGER DEFAULT 0,
+            repeat_rule TEXT DEFAULT 'none',
+            series_id INTEGER,
+            enabled INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'pending',
+            executed_at TEXT,
+            sent_count INTEGER DEFAULT 0,
+            fail_reason TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
     `);
+  try {
+    await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN show_browser INTEGER DEFAULT 0`);
+  } catch (e) { }
+  try {
+    await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN rest_after INTEGER DEFAULT 0`);
+  } catch (e) { }
+  try {
+    await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN repeat_rule TEXT DEFAULT 'none'`);
+  } catch (e) { }
+  try {
+    await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN series_id INTEGER`);
+  } catch (e) { }
   try {
     await dbInstance.exec(`ALTER TABLE urls ADD COLUMN niche TEXT`);
   } catch (e) { }
 
   try {
     await dbInstance.exec(`ALTER TABLE urls ADD COLUMN city TEXT`);
+  } catch (e) { }
+
+  try {
+    await dbInstance.exec(`ALTER TABLE urls ADD COLUMN keyword TEXT`);
+  } catch (e) { }
+
+  try {
+    await dbInstance.exec(`
+      UPDATE urls
+      SET keyword = TRIM(city || ' ' || niche)
+      WHERE type = 'donor'
+        AND (keyword IS NULL OR TRIM(keyword) = '')
+        AND (TRIM(COALESCE(city, '')) != '' OR TRIM(COALESCE(niche, '')) != '')
+    `);
   } catch (e) { }
 
   try {
