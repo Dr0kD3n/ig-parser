@@ -10,6 +10,7 @@ export function filterProfiles(girls, options) {
     hideViewed,
     hideNoImage,
     cityOnly,
+    exceptCity,
     filterDonor,
     failedImages,
     matchesProfileCity,
@@ -47,7 +48,8 @@ export function filterProfiles(girls, options) {
         (maxFollowers === null || followersCount <= maxFollowers);
 
       const matchesViewed = !hideViewed || !g.viewed;
-      const matchesCity = !cityOnly || (matchesProfileCity ? matchesProfileCity(g) : g.isInCity);
+      const inCity = matchesProfileCity ? matchesProfileCity(g) : !!g.isInCity;
+      const matchesCity = (!cityOnly || inCity) && (!exceptCity || !inCity);
       const imgOk = !hideNoImage || ((g.photo_local || g.photo) && !failedImages.has(g.url));
       const matchesDonor = filterDonor === 'all' || g.donor === filterDonor;
 

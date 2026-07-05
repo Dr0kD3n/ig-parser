@@ -1,7 +1,11 @@
 const { defineConfig, devices } = require('@playwright/test');
+const path = require('path');
+
+const e2eDatabase = path.join(__dirname, 'config', 'database_e2e.sqlite').replace(/\\/g, '/');
 
 module.exports = defineConfig({
   testDir: './tests/e2e',
+  testIgnore: '**/farm-flow.dist.spec.js',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -28,7 +32,7 @@ module.exports = defineConfig({
   ],
   webServer: [
     {
-      command: 'node backend/server.js',
+      command: `npx cross-env E2E_TEST=1 AUTH_SKIP_REMOTE_VERIFY=1 PORT=1337 DATABASE_URL=${e2eDatabase} node backend/server.js`,
       port: 1337,
       timeout: 120000,
       reuseExistingServer: !process.env.CI,
@@ -40,6 +44,7 @@ module.exports = defineConfig({
       reuseExistingServer: !process.env.CI,
       env: {
         VITE_PROXY_BACKEND: 'true',
+        VITE_API_URL: 'http://127.0.0.1:1337',
       },
     },
   ],

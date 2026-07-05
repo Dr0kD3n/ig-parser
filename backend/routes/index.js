@@ -3,6 +3,9 @@ module.exports = function mountRoutes(app, middleware) {
   app.use('/api', apiLimiter);
   require('./auth')(app, { authLimiter });
   require('./public')(app);
+  if (process.env.E2E_TEST === '1') {
+    require('./e2e')(app);
+  }
   app.use('/api', verifyToken);
   app.use('/api/bot/start', authLimiter);
   app.get('/api/admin/users', isAdmin, async (req, res) => {

@@ -1004,7 +1004,8 @@ const run = async () => {
     } else {
       logger.warn('⚠️ Нет выбранных аккаунтов для парсера. Прямое соединение без кук.');
     }
-    logger.info(`🌐 Запуск браузера (Фоновый режим / Headless)...`);
+    const showBrowser = await (0, config_1.isShowBrowserEnabled)();
+    logger.info(`🌐 Запуск браузера (${showBrowser ? 'видимый' : 'headless'})...`);
     logger.info(`📡 Прокси: ${proxy ? proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`);
     logger.info(`🍪 Загружено куки: ${cookies.length}`);
     if (fingerprint) {
@@ -1019,9 +1020,7 @@ const run = async () => {
       cookies,
       fingerprint,
     };
-    const showBrowserStr = await (0, config_1.getSetting)('showBrowser');
-    const showBrowser = showBrowserStr === 'true' || showBrowserStr === true;
-    const isHeadless = !showBrowser;
+    const isHeadless = !(await (0, config_1.isShowBrowserEnabled)());
     return await (0, browser_1.createBrowserContext)(configWithCreds, isHeadless);
   };
   let { browser, context } = await setupBrowser();

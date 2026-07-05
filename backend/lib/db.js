@@ -169,6 +169,7 @@ async function getDB() {
             end_at TEXT,
             count INTEGER NOT NULL DEFAULT 20,
             city_only INTEGER DEFAULT 0,
+            except_city INTEGER DEFAULT 0,
             liked_only INTEGER DEFAULT 0,
             show_browser INTEGER DEFAULT 0,
             rest_after INTEGER DEFAULT 0,
@@ -195,6 +196,9 @@ async function getDB() {
   } catch (e) { }
   try {
     await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN series_id INTEGER`);
+  } catch (e) { }
+  try {
+    await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN except_city INTEGER DEFAULT 0`);
   } catch (e) { }
   try {
     await dbInstance.exec(`ALTER TABLE urls ADD COLUMN niche TEXT`);

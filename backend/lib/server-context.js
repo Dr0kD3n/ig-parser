@@ -151,6 +151,7 @@ function refreshSession() {
 }
 
 const logEmitter = new events.EventEmitter();
+logEmitter.setMaxListeners(100);
 let historicalLogs = [];
 
 function debouncedSaveLogs(saveFn) {
@@ -161,16 +162,26 @@ function debouncedSaveLogs(saveFn) {
   }, 10000);
 }
 
-function broadcastLog(source, message, stripAnsiFn) {
+function broadcastLog(source, message, stripAnsiFn = utils.stripAnsi) {
+  let text;
+  try {
+    text = stripAnsiFn(message).trim();
+  } catch {
+    text = String(message ?? '').trim();
+  }
   const logEntry = {
     timestamp: new Date().toISOString(),
     source,
-    message: stripAnsiFn(message).trim(),
+    message: text,
     sessionId: currentSessionId,
   };
   historicalLogs.push(logEntry);
   if (historicalLogs.length > 1000) historicalLogs.shift();
-  logEmitter.emit('log', logEntry);
+  try {
+    logEmitter.emit('log', logEntry);
+  } catch (e) {
+    console.error('[LOG] emit error:', e.message);
+  }
   return logEntry;
 }
 

@@ -46,6 +46,7 @@ export default function App() {
   const [massMessagingStatus, setMassMessagingStatus] = useState({ running: false, current: 0, total: 0 });
 
   const [cityOnly, setCityOnly] = useState(() => safeStorage.getItem('ig_city_only', 'false') === 'true');
+  const [exceptCity, setExceptCity] = useState(() => safeStorage.getItem('ig_except_city', 'false') === 'true');
 
   useEffect(() => {
     safeStorage.setItem('ig_active_tab', activeTab);
@@ -54,6 +55,10 @@ export default function App() {
   useEffect(() => {
     safeStorage.setItem('ig_city_only', String(cityOnly));
   }, [cityOnly]);
+
+  useEffect(() => {
+    safeStorage.setItem('ig_except_city', String(exceptCity));
+  }, [exceptCity]);
 
   const matchesProfileCity = useMemo(
     () => createCityMatcher(settingsData.cities, settingsData.citiesBlacklist),
@@ -625,16 +630,17 @@ export default function App() {
       return;
     }
     const cityOnly = localStorage.getItem('ig_city_only') === 'true';
+    const exceptCity = localStorage.getItem('ig_except_city') === 'true';
     const likedOnly = localStorage.getItem('ig_filter_status') === 'like'
     try {
       const res = await authFetch('/api/mass-messages/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cityOnly, likedOnly })
+        body: JSON.stringify({ cityOnly, exceptCity, likedOnly })
       });
       if (res.ok) {
         setMassMessagingStatus({ running: true, current: 0, total: 0, status: 'Starting...' });
-        toast.success(`Запущена рассылка ${cityOnly && '(только город)'} ${likedOnly && '(только лайки)'}`);
+        toast.success(`Запущена рассылка ${cityOnly && '(только город)'} ${exceptCity && '(кроме города)'} ${likedOnly && '(только лайки)'}`);
       }
     } catch (e) { toast.error('Ошибка запуска'); }
   };
@@ -693,9 +699,10 @@ export default function App() {
           !g.dmSent &&
           votes[g.url] === 'like' &&
           !matchesWordsBlacklist(g) &&
-          (!cityOnly || matchesProfileCity(g))
+          (!cityOnly || matchesProfileCity(g)) &&
+          (!exceptCity || !matchesProfileCity(g))
       ).length,
-    [girls, votes, matchesWordsBlacklist, cityOnly, matchesProfileCity]
+    [girls, votes, matchesWordsBlacklist, cityOnly, exceptCity, matchesProfileCity]
   );
   const scrapedDonors = useMemo(
     () => Array.from(new Set(girls.map((g) => g.donor).filter(Boolean))).sort(),
@@ -817,6 +824,8 @@ export default function App() {
             authFetch={authFetch}
             cityOnly={cityOnly}
             setCityOnly={setCityOnly}
+            exceptCity={exceptCity}
+            setExceptCity={setExceptCity}
             matchesProfileCity={matchesProfileCity}
             matchesWordsBlacklist={matchesWordsBlacklist}
           />

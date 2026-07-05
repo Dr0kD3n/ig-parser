@@ -213,6 +213,75 @@ async function sendMessageToProfile(page, url, message, config, session) {
 }
 
 
+/** E2E: имитация рассылки без браузера */
+async function runE2eMassMessaging({ profiles, dmLimit, likedOnly, onProgress, db, account }) {
+    messengerStopRequested = false;
+
+    let candidates = profiles;
+    if (likedOnly) {
+        candidates = candidates.filter((p) => String(p.vote || '').toLowerCase() === 'like');
+    }
+
+    const limit = dmLimit && dmLimit > 0 ? dmLimit : 1;
+    const toSend = candidates.slice(0, limit);
+
+    if (toSend.length === 0) {
+        massMessengerStatus = {
+            running: false,
+            status: likedOnly ? 'No liked profiles to message' : 'No profiles to message',
+            current: 0,
+            total: 0,
+            results: [],
+        };
+        if (onProgress) onProgress(massMessengerStatus);
+        return { started: true, reason: 'no_profiles', sent: 0, stopped: false };
+    }
+
+    massMessengerStatus = {
+        running: true,
+        current: 0,
+        total: toSend.length,
+        status: 'Running',
+        results: [],
+    };
+    if (onProgress) onProgress(massMessengerStatus);
+
+    const results = [];
+    const message = 'E2E test message';
+
+    for (let i = 0; i < toSend.length && !messengerStopRequested; i++) {
+        const profile = toSend[i];
+        await markDmSentByUsername(db, profile.username || profile.name, { clearError: true, tgTagged: 0 });
+        await db.run(
+            `INSERT INTO messages_log (url, username, name, message_text, status, timestamp, account_id, sender_name) VALUES (?, ?, ?, ?, 'sent', ?, ?, ?)`,
+            [
+                profile.url,
+                profile.username || profile.name,
+                profile.name,
+                message,
+                new Date().toISOString(),
+                account.id,
+                account.name,
+            ]
+        );
+        logger.info(`🚀 [E2E-MASS] Отправлено: ${profile.url} (@${profile.username})`);
+        results.push({ url: profile.url, success: true });
+        if (onProgress) onProgress({ current: i + 1, results: [...results] });
+        await wait(30);
+    }
+
+    massMessengerStatus = {
+        ...massMessengerStatus,
+        running: false,
+        status: messengerStopRequested ? 'Stopped' : 'Done',
+        results,
+    };
+    if (onProgress) onProgress(massMessengerStatus);
+
+    const sent = results.filter((r) => r.success).length;
+    logger.info(`✅ [E2E-MASS] Рассылка завершена. Отправлено: ${sent}/${results.length}`);
+    return { started: true, sent, stopped: !!messengerStopRequested, total: results.length };
+}
 
 async function startMassMessaging(onProgress, options = {}) {
     if (massMessengerStatus.running) return { started: false, reason: 'already_running' };
@@ -238,6 +307,9 @@ async function startMassMessaging(onProgress, options = {}) {
 
     if (options.cityOnly) {
         query += ` AND isInCity = 1`;
+    }
+    if (options.exceptCity) {
+        query += ` AND (isInCity = 0 OR isInCity IS NULL)`;
     }
     if (options.likedOnly) {
         query += `  AND vote = 'like'`;
@@ -274,7 +346,7 @@ async function startMassMessaging(onProgress, options = {}) {
         })
     );
     const profilesCount = filteredProfiles.length;
-    logger.info(`🔍 Found ${profilesCount} profiles for mass messaging (cityOnly: ${!!options.cityOnly})`);
+    logger.info(`🔍 Found ${profilesCount} profiles for mass messaging (cityOnly: ${!!options.cityOnly}, exceptCity: ${!!options.exceptCity})`);
 
     if (profilesCount === 0) {
         massMessengerStatus = { running: false, status: 'No profiles to message', current: 0, total: 0, results: [] };
@@ -308,6 +380,18 @@ async function startMassMessaging(onProgress, options = {}) {
     if (accounts.length > 1) {
         logger.info(`👤 [MASS] ${accounts.length} sender-аккаунтов → ${account.name} (последовательный порядок)`);
     }
+
+    if (process.env.E2E_TEST === '1' || options.e2eSimulate) {
+        return runE2eMassMessaging({
+            profiles: filteredProfiles,
+            dmLimit,
+            likedOnly: !!options.likedOnly,
+            onProgress: updateStatus,
+            db,
+            account,
+        });
+    }
+
     updateStatus({ status: `Broadcasting with ${account.name}...` });
 
     let currentProcessed = 0;

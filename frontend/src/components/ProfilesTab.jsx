@@ -276,6 +276,8 @@ export default function ProfilesTab({
   authFetch,
   cityOnly,
   setCityOnly,
+  exceptCity,
+  setExceptCity,
   matchesProfileCity,
   matchesWordsBlacklist,
 }) {
@@ -301,6 +303,7 @@ export default function ProfilesTab({
     votes,
     failedImages,
     cityOnly,
+    exceptCity,
     matchesProfileCity,
     matchesWordsBlacklist,
     ...filters,
@@ -439,11 +442,26 @@ export default function ProfilesTab({
                   type="checkbox"
                   checked={cityOnly}
                   onChange={(e) => {
-                    setCityOnly(e.target.checked);
+                    const checked = e.target.checked;
+                    setCityOnly(checked);
+                    if (checked) setExceptCity(false);
                     resetPage();
                   }}
                 />
                 Только город
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={exceptCity}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setExceptCity(checked);
+                    if (checked) setCityOnly(false);
+                    resetPage();
+                  }}
+                />
+                Кроме города
               </label>
             </div>
           )}

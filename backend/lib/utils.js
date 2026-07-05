@@ -4,6 +4,9 @@ const getRootPath = () => {
   return process['pkg'] ? path.dirname(process.execPath) : path.resolve(__dirname, '..', '..');
 };
 exports.getRootPath = getRootPath;
+const stripAnsi = (value) =>
+  String(value || '').replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
+exports.stripAnsi = stripAnsi;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 exports.wait = wait;
 const randomDelay = (min = 200, max = 600) => (0, exports.wait)(min + Math.random() * (max - min));

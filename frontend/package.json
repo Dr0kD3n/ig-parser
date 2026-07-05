@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "locale": "npx cross-env VITE_AUTH_URL=http://127.0.0.1:5000 vite --host 0.0.0.0",
+    "locale": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview"
   },

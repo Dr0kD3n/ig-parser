@@ -99,9 +99,7 @@ const run = async () => {
 
   let browser, context, liveViewInterval;
   try {
-    const showBrowserStr = await (0, config_1.getSetting)('showBrowser');
-    const showBrowser = showBrowserStr === 'true' || showBrowserStr === true;
-    const isHeadless = !showBrowser;
+    const isHeadless = !(await (0, config_1.isShowBrowserEnabled)());
 
     // Pass complete account info including id and fingerprint
     const result = await (0, browser_1.createBrowserContext)(

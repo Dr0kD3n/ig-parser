@@ -1,6 +1,9 @@
 const fs = require('fs');
 const { getLocalPhotoPath } = require('../lib/photo-cache');
 module.exports = (app) => {
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true });
+});
 app.get('/profile-photos/:fileName', (req, res) => {
   const photoPath = getLocalPhotoPath(req.params.fileName);
   if (!photoPath || !fs.existsSync(photoPath)) {

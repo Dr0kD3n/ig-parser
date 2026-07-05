@@ -6,6 +6,7 @@ exports.getProxy = getProxy;
 exports.getCookies = getCookies;
 exports.getList = getList;
 exports.getSetting = getSetting;
+exports.isShowBrowserEnabled = isShowBrowserEnabled;
 exports.getAllAccounts = getAllAccounts;
 
 const db_1 = require('./db');
@@ -138,6 +139,10 @@ async function getSetting(key) {
   } catch (e) {
     return null;
   }
+}
+async function isShowBrowserEnabled() {
+  const value = await getSetting('showBrowser');
+  return value === true || value === 'true';
 }
 async function getAllAccounts(type = '') {
   try {

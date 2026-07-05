@@ -41,14 +41,26 @@ function expressErrorHandler(err, req, res, next) {
 }
 
 function setupProcessHandlers() {
+  const isBenignStreamError = (error) =>
+    error &&
+    ['ECONNRESET', 'EPIPE', 'ERR_STREAM_WRITE_AFTER_END', 'ECANCELED', 'ERR_STREAM_DESTROYED'].includes(
+      error.code
+    );
+
   process.on('uncaughtException', (error) => {
+    if (isBenignStreamError(error)) {
+      console.error('[WARN] Ошибка клиентского соединения (игнорируется):', error.message);
+      return;
+    }
     handleError(error);
-    // Best practice to exit after uncaughtException
     process.exit(1);
   });
 
   process.on('unhandledRejection', (reason) => {
-    // reason is usually the error object
+    if (isBenignStreamError(reason)) {
+      console.error('[WARN] Ошибка promise-соединения (игнорируется):', reason.message);
+      return;
+    }
     handleError(reason);
   });
 }

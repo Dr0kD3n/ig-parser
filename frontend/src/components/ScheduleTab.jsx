@@ -31,6 +31,7 @@ function loadSchedulePrefs() {
     return {
       count: Math.max(1, parseInt(p.count, 10) || 20),
       cityOnly: !!p.cityOnly,
+      exceptCity: !!p.exceptCity,
       likedOnly: !!p.likedOnly,
       showBrowser: !!p.showBrowser,
       restAfter: !!p.restAfter,
@@ -49,6 +50,7 @@ function saveSchedulePrefs(form) {
       JSON.stringify({
         count: Math.max(1, parseInt(form.count, 10) || 20),
         cityOnly: !!form.cityOnly,
+        exceptCity: !!form.exceptCity,
         likedOnly: !!form.likedOnly,
         showBrowser: !!form.showBrowser,
         restAfter: !!form.restAfter,
@@ -141,6 +143,7 @@ function buildOptimisticRepeatSeries(payload, rootTempId) {
     title: payload.title,
     count: payload.count,
     cityOnly: payload.cityOnly,
+    exceptCity: payload.exceptCity,
     likedOnly: payload.likedOnly,
     showBrowser: payload.showBrowser,
     restAfter: payload.restAfter,
@@ -263,6 +266,7 @@ function slotToMovePayload(slot, day, top) {
     endAt: endAt.toISOString(),
     count: slot.count,
     cityOnly: slot.cityOnly,
+    exceptCity: slot.exceptCity,
     likedOnly: slot.likedOnly,
     showBrowser: slot.showBrowser,
     restAfter: slot.restAfter,
@@ -335,6 +339,7 @@ function applySlotPayload(slots, slotId, payload, serverSlot) {
     endAt: payload.endAt,
     count: payload.count,
     cityOnly: payload.cityOnly,
+    exceptCity: payload.exceptCity,
     likedOnly: payload.likedOnly,
     showBrowser: payload.showBrowser,
     restAfter: payload.restAfter,
@@ -383,6 +388,7 @@ function emptyForm(date = new Date(), hour = 9) {
     startTime: toLocalTimeInput(start),
     count: prefs?.count ?? 20,
     cityOnly: prefs?.cityOnly ?? false,
+    exceptCity: prefs?.exceptCity ?? false,
     likedOnly: prefs?.likedOnly ?? false,
     showBrowser: prefs?.showBrowser ?? false,
     restAfter: prefs?.restAfter ?? false,
@@ -403,6 +409,7 @@ function formFromSlot(slot) {
     startTime: toLocalTimeInput(start),
     count: slot.count,
     cityOnly: slot.cityOnly,
+    exceptCity: slot.exceptCity,
     likedOnly: slot.likedOnly,
     showBrowser: !!slot.showBrowser,
     restAfter: !!slot.restAfter,
@@ -424,6 +431,7 @@ function formToPayload(form) {
     endAt: endAt.toISOString(),
     count: Math.max(1, parseInt(form.count, 10) || 1),
     cityOnly: form.cityOnly,
+    exceptCity: form.exceptCity,
     likedOnly: form.likedOnly,
     showBrowser: form.showBrowser,
     restAfter: form.restAfter,
@@ -550,9 +558,24 @@ function EventModal({ form, onChange, onSave, onDelete, onClose, saving, nowMs }
                 type="checkbox"
                 checked={form.cityOnly}
                 disabled={readOnly}
-                onChange={(e) => onChange({ ...form, cityOnly: e.target.checked })}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  onChange({ ...form, cityOnly: checked, exceptCity: checked ? false : form.exceptCity });
+                }}
               />
               Только город
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={form.exceptCity}
+                disabled={readOnly}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  onChange({ ...form, exceptCity: checked, cityOnly: checked ? false : form.cityOnly });
+                }}
+              />
+              Кроме города
             </label>
             <label className="checkbox-label">
               <input
@@ -766,6 +789,7 @@ export default function ScheduleTab({ authFetch }) {
         title: payload.title,
         count: payload.count,
         cityOnly: payload.cityOnly,
+        exceptCity: payload.exceptCity,
         likedOnly: payload.likedOnly,
         showBrowser: payload.showBrowser,
         restAfter: payload.restAfter,

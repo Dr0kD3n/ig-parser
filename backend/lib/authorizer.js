@@ -10,8 +10,36 @@ const { parseProxyString } = require('./utils');
 playwright_extra_1.chromium.use(stealth);
 
 const { createBrowserContext } = require('./browser');
+const { dismissBlockingModals, watchBlockingModals } = require('./instagram-overlays');
 
 let activeAuthorizers = new Map();
+
+function hasAccountCookies(cookies) {
+  if (!cookies) return false;
+  if (Array.isArray(cookies)) return cookies.length > 0;
+  if (typeof cookies === 'string') {
+    const raw = cookies.trim();
+    if (!raw) return false;
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.length > 0 : !!parsed;
+    } catch (_) {
+      return raw.length > 0;
+    }
+  }
+  return false;
+}
+
+async function openPageAndDismissModals(page) {
+  await waitForPageReady(page);
+  await dismissBlockingModals(page);
+  watchBlockingModals(page);
+}
+
+async function waitForPageReady(page) {
+  await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(800);
+}
 
 async function startAuthorization(
   accountId,
@@ -143,18 +171,24 @@ async function startAuthorization(
         waitUntil: 'domcontentloaded',
         timeout: 60000,
       });
+      await openPageAndDismissModals(page);
     } else {
       try {
-        if (context.pages().length === 0) {
+        if (hasAccountCookies(cookies)) {
+          if (!/instagram\.com/i.test(page.url())) {
+            await page.goto('https://www.instagram.com/', {
+              waitUntil: 'domcontentloaded',
+              timeout: 60000,
+            });
+          }
+          await openPageAndDismissModals(page);
+        } else if (context.pages().length === 0) {
           await context.newPage();
         } else {
-          await context
-            .pages()[0]
-            .goto('about:blank')
-            .catch(() => { });
+          await page.goto('about:blank').catch(() => {});
         }
       } catch (e) {
-        console.warn(`[Authorizer] Warning while opening blank page: ${e.message}`);
+        console.warn(`[Authorizer] Warning while opening browser page: ${e.message}`);
       }
     }
   } catch (error) {

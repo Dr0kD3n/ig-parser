@@ -130,10 +130,17 @@ app.use(expressErrorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
   const HOST = process.env.HOST || '127.0.0.1';
-  app.listen(PORT, HOST, async () => {
+  const server = app.listen(PORT, HOST, async () => {
     await state.StateManager.init();
     startMessageScheduler();
     console.log(`Сервер запущен: http://${HOST}:${PORT}`);
+  });
+  server.on('clientError', (err, socket) => {
+    if (['ECONNRESET', 'EPIPE', 'ERR_HTTP_REQUEST_TIMEOUT'].includes(err?.code)) {
+      socket.destroy();
+      return;
+    }
+    originalError('[HTTP] clientError:', err.message);
   });
 }
 

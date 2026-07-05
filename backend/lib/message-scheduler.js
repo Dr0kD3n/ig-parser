@@ -51,14 +51,15 @@ async function insertSeriesChild(db, templateRow, rootId, nextStart, nextEnd, no
   const repeatRule = normalizeRepeatRule(templateRow.repeat_rule);
   return db.run(
     `INSERT INTO message_schedule_slots
-     (title, start_at, end_at, count, city_only, liked_only, show_browser, rest_after, repeat_rule, series_id, enabled, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+     (title, start_at, end_at, count, city_only, except_city, liked_only, show_browser, rest_after, repeat_rule, series_id, enabled, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
     [
       templateRow.title || '',
       nextStart.toISOString(),
       nextEnd.toISOString(),
       templateRow.count || 20,
       templateRow.city_only ? 1 : 0,
+      templateRow.except_city ? 1 : 0,
       templateRow.liked_only ? 1 : 0,
       templateRow.show_browser ? 1 : 0,
       templateRow.rest_after ? 1 : 0,
@@ -143,6 +144,7 @@ function rowToSlot(row) {
     endAt: row.end_at,
     count: row.count,
     cityOnly: !!row.city_only,
+    exceptCity: !!row.except_city,
     likedOnly: !!row.liked_only,
     showBrowser: !!row.show_browser,
     restAfter: !!row.rest_after,
@@ -215,6 +217,7 @@ async function runDueSlot(slot) {
   try {
     const result = await startMassMessaging(null, {
       cityOnly: slot.cityOnly,
+      exceptCity: slot.exceptCity,
       likedOnly: slot.likedOnly,
       showBrowser: slot.showBrowser,
       restAfter: slot.restAfter,
@@ -288,8 +291,10 @@ async function tick() {
 
 function startMessageScheduler() {
   if (tickTimer) return;
-  tick();
-  tickTimer = setInterval(tick, TICK_MS);
+  tick().catch((err) => console.error('[SCHEDULER] tick error:', err.message));
+  tickTimer = setInterval(() => {
+    tick().catch((err) => console.error('[SCHEDULER] tick error:', err.message));
+  }, TICK_MS);
   console.log('[SCHEDULER] Планировщик рассылок запущен');
 }
 
@@ -335,14 +340,15 @@ async function createSlot(data) {
   const endAt = data.endAt ? normalizeInstant(data.endAt) : null;
   const result = await db.run(
     `INSERT INTO message_schedule_slots
-     (title, start_at, end_at, count, city_only, liked_only, show_browser, rest_after, repeat_rule, enabled, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+     (title, start_at, end_at, count, city_only, except_city, liked_only, show_browser, rest_after, repeat_rule, enabled, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
     [
       data.title || '',
       startAt,
       endAt,
       data.count || 20,
       data.cityOnly ? 1 : 0,
+      data.exceptCity ? 1 : 0,
       data.likedOnly ? 1 : 0,
       data.showBrowser ? 1 : 0,
       data.restAfter ? 1 : 0,
@@ -408,6 +414,7 @@ function buildSharedFields(data, existing) {
     title: data.title ?? existing.title ?? '',
     count: data.count ?? existing.count,
     cityOnly: (data.cityOnly ?? !!existing.city_only) ? 1 : 0,
+    exceptCity: (data.exceptCity ?? !!existing.except_city) ? 1 : 0,
     likedOnly: (data.likedOnly ?? !!existing.liked_only) ? 1 : 0,
     showBrowser: (data.showBrowser ?? !!existing.show_browser) ? 1 : 0,
     restAfter: (data.restAfter ?? !!existing.rest_after) ? 1 : 0,
@@ -428,7 +435,7 @@ async function applySeriesChildUpdate(db, id, shared, startAt, endAt, now) {
   await db.run(
     `UPDATE message_schedule_slots SET
       title = ?, start_at = ?, end_at = ?, count = ?,
-      city_only = ?, liked_only = ?, show_browser = ?, rest_after = ?, repeat_rule = ?, enabled = ?,
+      city_only = ?, except_city = ?, liked_only = ?, show_browser = ?, rest_after = ?, repeat_rule = ?, enabled = ?,
       status = CASE WHEN status IN ('completed','cancelled','missed','failed') THEN 'pending' ELSE status END,
       fail_reason = CASE WHEN status IN ('completed','cancelled','missed','failed') THEN NULL ELSE fail_reason END,
       updated_at = ?
@@ -439,6 +446,7 @@ async function applySeriesChildUpdate(db, id, shared, startAt, endAt, now) {
       endAt,
       shared.count,
       shared.cityOnly,
+      shared.exceptCity,
       shared.likedOnly,
       shared.showBrowser,
       shared.restAfter,
@@ -454,7 +462,7 @@ async function applySharedUpdate(db, id, shared, now) {
   await db.run(
     `UPDATE message_schedule_slots SET
       title = ?, count = ?,
-      city_only = ?, liked_only = ?, show_browser = ?, rest_after = ?, repeat_rule = ?, enabled = ?,
+      city_only = ?, except_city = ?, liked_only = ?, show_browser = ?, rest_after = ?, repeat_rule = ?, enabled = ?,
       status = CASE WHEN status IN ('completed','cancelled','missed','failed') THEN 'pending' ELSE status END,
       fail_reason = CASE WHEN status IN ('completed','cancelled','missed','failed') THEN NULL ELSE fail_reason END,
       updated_at = ?
@@ -463,6 +471,7 @@ async function applySharedUpdate(db, id, shared, now) {
       shared.title,
       shared.count,
       shared.cityOnly,
+      shared.exceptCity,
       shared.likedOnly,
       shared.showBrowser,
       shared.restAfter,
@@ -522,7 +531,7 @@ async function updateSlot(id, data, options = {}) {
   await db.run(
     `UPDATE message_schedule_slots SET
       title = ?, start_at = ?, end_at = ?, count = ?,
-      city_only = ?, liked_only = ?, show_browser = ?, rest_after = ?, repeat_rule = ?, enabled = ?,
+      city_only = ?, except_city = ?, liked_only = ?, show_browser = ?, rest_after = ?, repeat_rule = ?, enabled = ?,
       series_id = NULL,
       status = CASE WHEN status IN ('completed','cancelled','missed','failed') THEN 'pending' ELSE status END,
       fail_reason = CASE WHEN status IN ('completed','cancelled','missed','failed') THEN NULL ELSE fail_reason END,
@@ -534,6 +543,7 @@ async function updateSlot(id, data, options = {}) {
       endAt,
       shared.count,
       shared.cityOnly,
+      shared.exceptCity,
       shared.likedOnly,
       shared.showBrowser,
       shared.restAfter,

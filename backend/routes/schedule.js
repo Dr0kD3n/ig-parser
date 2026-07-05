@@ -21,7 +21,7 @@ module.exports = (app) => {
 
   app.post('/api/schedule/slots', async (req, res) => {
     try {
-      const { title, startAt, endAt, count, cityOnly, likedOnly, showBrowser, restAfter, repeatRule, enabled } = req.body || {};
+      const { title, startAt, endAt, count, cityOnly, exceptCity, likedOnly, showBrowser, restAfter, repeatRule, enabled } = req.body || {};
       if (!startAt) {
         return res.status(400).json({ success: false, error: 'startAt обязателен' });
       }
@@ -31,6 +31,7 @@ module.exports = (app) => {
         endAt,
         count: Math.max(1, parseInt(count, 10) || 20),
         cityOnly: !!cityOnly,
+        exceptCity: !!exceptCity,
         likedOnly: !!likedOnly,
         showBrowser: !!showBrowser,
         restAfter: !!restAfter,

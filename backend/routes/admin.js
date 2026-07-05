@@ -5,7 +5,7 @@ const child_process = require('child_process');
 const db = require('../lib/db');
 const utils = require('../lib/utils');
 const config = require('../lib/config');
-const browser = require('../lib/browser');
+const browserLib = require('../lib/browser');
 const ctx = require('../lib/server-context');
 module.exports = (app, { onClearLogs }) => {
   const { botProcesses, refreshSession, broadcastLog, logEmitter, sendMessageToProfile, markDmSentByUsername } = ctx;
@@ -70,18 +70,42 @@ app.get('/api/logs', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  // res.flushHeaders(); // Not available in some Express versions without compression middleware
-  // Send historical logs first
+
+  let closed = false;
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    logEmitter.off('log', onLog);
+  };
+
+  const safeWrite = (payload) => {
+    if (closed || res.writableEnded) return;
+    try {
+      res.write(payload);
+    } catch (_) {
+      cleanup();
+    }
+  };
+
+  res.on('error', cleanup);
+  req.on('close', cleanup);
+
+  const formatSse = (log) => {
+    try {
+      return `data: ${JSON.stringify(log)}\n\n`;
+    } catch {
+      return `data: ${JSON.stringify({ ...log, message: String(log?.message ?? '').slice(0, 2000) })}\n\n`;
+    }
+  };
+
   ctx.historicalLogs.forEach((log) => {
-    res.write(`data: ${JSON.stringify(log)}\n\n`);
+    safeWrite(formatSse(log));
   });
+
   const onLog = (log) => {
-    res.write(`data: ${JSON.stringify(log)}\n\n`);
+    safeWrite(formatSse(log));
   };
   logEmitter.on('log', onLog);
-  req.on('close', () => {
-    logEmitter.off('log', onLog);
-  });
 });
 app.get('/api/live-view', (req, res) => {
   const liveViewPath = path.join(utils.getRootPath(), 'data', 'screenshots', 'live_view.jpg');
@@ -107,15 +131,19 @@ app.post('/api/bot/start', (req, res) => {
   refreshSession();
   const isPkg = process['pkg'] !== undefined;
   const scriptExt = 'js';
-  const scriptPath = path.join(__dirname, `${type}.${scriptExt}`);
-  if (!fs.existsSync(scriptPath)) {
+  const backendDir = path.join(__dirname, '..');
+  const useE2eStub = process.env.E2E_TEST === '1';
+  const scriptPath = useE2eStub
+    ? path.join(backendDir, 'e2e', `${type}-stub.js`)
+    : path.join(backendDir, `${type}.${scriptExt}`);
+  if (!isPkg && !fs.existsSync(scriptPath)) {
     return res
       .status(404)
       .json({ success: false, error: `Script for ${type} not found at ${scriptPath}` });
   }
   const runner = isPkg ? process.execPath : 'node';
   const args = isPkg ? [scriptPath] : [scriptPath];
-  const cwdPath = isPkg ? path.dirname(process.execPath) : __dirname;
+  const cwdPath = isPkg ? path.dirname(process.execPath) : backendDir;
   const child = child_process.spawn(runner, args, {
     cwd: cwdPath,
     env: { ...process.env, FORCE_COLOR: '1' },
@@ -127,16 +155,37 @@ app.post('/api/bot/start', (req, res) => {
     broadcastLog(`${type}-error`, `Failed to start process: ${err.message}`);
     botProcesses[type] = null;
   });
-  child.stdout?.on('data', (data) => broadcastLog(type, data));
-  child.stderr?.on('data', (data) => broadcastLog(`${type}-error`, data));
+  child.stdout?.on('data', (data) => broadcastLog(type, data.toString()));
+  child.stderr?.on('data', (data) => broadcastLog(`${type}-error`, data.toString()));
   child.on('close', (code) => {
     broadcastLog('system', `${type} bot exited with code ${code}`);
     botProcesses[type] = null;
   });
   res.json({ success: true });
 });
+function killOrphanBotProcess(type) {
+  const scriptName = `${type}.js`;
+  if (process.platform === 'win32') {
+    child_process.spawn(
+      'powershell',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.CommandLine -match 'backend[\\\\/]${scriptName.replace('.', '\\.')}(\\s|"|$)' -and $_.CommandLine -notmatch 'server\\.js' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+      ],
+      { stdio: 'ignore', windowsHide: true }
+    );
+  } else {
+    child_process.spawn('pkill', ['-f', `backend/${scriptName}`], { stdio: 'ignore' });
+  }
+}
+
 app.post('/api/bot/stop', (req, res) => {
   const { type } = req.body;
+  if (!['index', 'parser', 'checker'].includes(type)) {
+    return res.status(400).json({ success: false, error: 'Invalid bot type' });
+  }
   const child = botProcesses[type];
   if (child) {
     let finished = false;
@@ -163,17 +212,29 @@ app.post('/api/bot/stop', (req, res) => {
     });
 
     if (process.platform === 'win32') {
-      child_process.exec(`taskkill /F /T /PID ${child.pid}`, (err) => {
-        if (err) {
-          console.error(`[SYSTEM] Error killing process ${child.pid}:`, err);
-          child.kill();
-        }
+      try {
+        child.kill();
+      } catch (_) {}
+      child_process.spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], {
+        stdio: 'ignore',
+        windowsHide: true,
       });
     } else {
-      child.kill();
+      child.kill('SIGTERM');
     }
   } else {
-    res.json({ success: false, error: 'Bot not running' });
+    killOrphanBotProcess(type);
+    res.json({ success: true, message: 'Процесс не отслеживался — отправлен сигнал остановки' });
+  }
+});
+app.post('/api/bot/skip-donor', async (req, res) => {
+  try {
+    console.log('📢 [API] Получен запрос на пропуск текущего донора...');
+    fs.writeFileSync(path.join(utils.getRootPath(), 'data', 'skip_donor.flag'), 'skip');
+    res.json({ success: true, message: 'Сигнал пропуска донора отправлен' });
+  } catch (e) {
+    console.error('❌ [API] Ошибка при создании skip_donor.flag:', e);
+    res.json({ success: false, error: 'Ошибка при отправке сигнала' });
   }
 });
 app.post('/api/skip-donor', async (req, res) => {
@@ -207,18 +268,18 @@ app.post('/api/dm', async (req, res) => {
       });
     }
 
-    const showBrowser = await config.getSetting('showBrowser');
+    const showBrowser = await config.isShowBrowserEnabled();
     refreshSession();
-    const { browser, context } = await browser.createBrowserContext(
+    const { browser, context } = await browserLib.createBrowserContext(
       reqConfig,
-      !(showBrowser === 'true' || showBrowser === true)
+      !showBrowser
     );
     console.log(
       `📡 [SENDER] Используется прокси: ${reqConfig.proxy ? reqConfig.proxy.server : 'ПРЯМОЕ СОЕДИНЕНИЕ'}`
     );
     console.log(`🍪 [SENDER] Загружено куки: ${reqConfig.cookies.length}`);
     currentContext = context;
-    const liveViewInterval = browser.startLiveView(context);
+    const liveViewInterval = browserLib.startLiveView(context);
     const isSent = await sendMessageToProfile(context, url, message);
     clearInterval(liveViewInterval);
     if (isSent) {
