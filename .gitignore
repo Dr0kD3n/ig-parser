@@ -7,6 +7,7 @@ config/*.sqlite-shm
 config/*.sqlite-wal
 *.pma
 dist/
+dist.rar
 tmp/
 *.sqlite-shm
 *.sqlite-wal
