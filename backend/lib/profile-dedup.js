@@ -44,7 +44,7 @@ function pickVote(a, b) {
 }
 
 function pickDmStatus(a, b) {
-  const rank = { replied: 3, liked: 2, '': 1 };
+  const rank = { replied: 5, liked: 4, drain: 3, ignored: 2, '': 1 };
   const left = String(a || '').toLowerCase();
   const right = String(b || '').toLowerCase();
   return (rank[left] || 0) >= (rank[right] || 0) ? left || null : right || null;

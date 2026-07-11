@@ -749,6 +749,143 @@ async function verifyMessageDelivered(page, message) {
   return { delivered: false, reason: 'not_verified' };
 }
 
+const HISTORY_BLACKLIST = [
+  'Instagram', 'Active now', 'Followed by', ' followers', ' posts',
+  'This is the beginning', 'Not for you', 'You followed',
+  'Отправить', 'Send', 'Type a message', 'Напишите', 'View profile',
+  'Search', 'Joined', 'Follow', 'Following', 'Message', 'Сообщение',
+  'Block', 'Report', 'Restrict', 'Смотреть профиль', 'View Profile',
+  'Начало переписки', 'начало вашей переписки',
+];
+
+/** Контейнер активного DM — dialog, presentation или /direct/ main */
+async function getActiveChatScope(page) {
+  const tb = 'div[role="textbox"][contenteditable="true"]';
+  const candidates = [
+    page.locator(`div[role="dialog"]:has(${tb})`).last(),
+    page.locator(`div[role="presentation"]:has(${tb})`).last(),
+    page.locator('section main').filter({ has: page.locator(tb) }),
+  ];
+
+  for (const locator of candidates) {
+    if ((await locator.count().catch(() => 0)) === 0) continue;
+    const el = locator.first();
+    if (await el.isVisible().catch(() => false)) return el;
+  }
+  return null;
+}
+
+/**
+ * Проверяет, есть ли в чате сообщения до отправки.
+ * @returns {{ hasHistory: boolean, source?: string, preview?: string, count?: number }}
+ */
+async function detectChatHistory(page, username) {
+  const uname = String(username || '').replace('@', '').trim();
+
+  const apiHistory = await page.evaluate(async (targetUname) => {
+    try {
+      const res = await fetch('/api/v1/direct_v2/visual_threads/', {
+        headers: { 'X-IG-App-ID': '936619743392459' },
+      });
+      if (!res.ok) return null;
+
+      const json = await res.json();
+      const threads = json.threads || [];
+      const thread = threads.find(
+        (t) => t.users && t.users.some((u) => String(u.username || '').toLowerCase() === targetUname.toLowerCase())
+      );
+      if (!thread) return null;
+
+      const item = thread.last_permanent_item;
+      if (!item) return null;
+
+      const itemType = String(item.item_type || '').toLowerCase();
+      if (itemType === 'placeholder' || itemType === 'profile') return null;
+
+      const text = String(item.text || '').trim();
+      if (text && /^(view profile|смотреть профиль)$/i.test(text)) return null;
+
+      return {
+        hasHistory: true,
+        lastMsg: text || `[${item.item_type || 'message'}]`,
+      };
+    } catch (_e) {
+      return null;
+    }
+  }, uname);
+
+  if (apiHistory?.hasHistory) {
+    return {
+      hasHistory: true,
+      source: 'api',
+      preview: apiHistory.lastMsg,
+      count: 1,
+    };
+  }
+
+  const scope = await getActiveChatScope(page);
+  if (!scope) {
+    return { hasHistory: false };
+  }
+
+  const domResult = await scope.evaluate((chatRoot, blacklist) => {
+    const isBlacklisted = (text) => blacklist.some((b) => text.includes(b));
+
+    const selectors = [
+      'div[role="none"]',
+      'div[id^="mid."]',
+      '[role="row"]',
+      '[aria-label*="Double tap"]',
+      '[aria-label*="двойное нажатие"]',
+      '[aria-label*="нравится"]',
+    ];
+
+    const roots = [
+      chatRoot.querySelector('[role="group"]'),
+      chatRoot.querySelector('[aria-label*="Conversation"]'),
+      chatRoot.querySelector('[aria-label*="Диалог"]'),
+      chatRoot.querySelector('[aria-label*="Dialog"]'),
+      chatRoot,
+    ].filter(Boolean);
+
+    const seen = new Set();
+    let count = 0;
+    const texts = [];
+
+    for (const root of roots) {
+      for (const sel of selectors) {
+        root.querySelectorAll(sel).forEach((node) => {
+          if (seen.has(node)) return;
+          seen.add(node);
+
+          const text = (node.innerText || node.textContent || '').trim();
+          if (!text || text.length <= 1) return;
+          if (isBlacklisted(text)) return;
+
+          count++;
+          if (texts.length < 5) {
+            texts.push(text.slice(0, 100).replace(/\n/g, ' '));
+          }
+        });
+      }
+      if (count > 0) break;
+    }
+
+    return { count, texts };
+  }, HISTORY_BLACKLIST);
+
+  if (domResult.count > 0) {
+    return {
+      hasHistory: true,
+      source: 'dom',
+      preview: domResult.texts.join(' | '),
+      count: domResult.count,
+    };
+  }
+
+  return { hasHistory: false };
+}
+
 /** Инициализация сессии одной вкладки */
 function createMessengerSession() {
   return {
@@ -782,6 +919,8 @@ module.exports = {
   submitMessage,
   verifyMessageDelivered,
   verifyMessageDeliveredOnce,
+  detectChatHistory,
+  getActiveChatScope,
   createMessengerSession,
   isOnHomeFeed,
   findProfileLink,

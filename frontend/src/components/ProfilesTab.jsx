@@ -11,6 +11,7 @@ import {
 } from './Icons';
 import { plural } from '../utils/text';
 import { parseSmartBio, getProfilePhotoSrc, getDmErrorLabel, getTelegramUsername, getTelegramUrl, hasTelegram } from '../utils/profile';
+import DonorInfo from './DonorInfo';
 import { filterProfiles } from '../utils/profileFilters';
 import { usePersistedFilters } from '../hooks/usePersistedFilters';
 
@@ -53,7 +54,6 @@ const ProfileCard = memo(function ProfileCard({
   const isDisliked = votes[g.url] === 'dislike';
   const [checkingTg, setCheckingTg] = useState(false);
   const photoSrc = getProfilePhotoSrc(g.photo_local, g.photo);
-  const donorPhotoSrc = getProfilePhotoSrc(g.donor_photo_local, g.donor_photo);
 
   const handleTgClick = async (e) => {
     e.stopPropagation();
@@ -117,6 +117,8 @@ const ProfileCard = memo(function ProfileCard({
             <div className="badge dmTag" style={{ background: 'hsl(var(--success))' }}>✨ Ответил</div>
           )}
           {g.dm_status === 'liked' && <div className="badge likedTag">❤️ Лайкнул</div>}
+          {g.dm_status === 'ignored' && <div className="badge ignoredTag">Игнор</div>}
+          {g.dm_status === 'drain' && <div className="badge drainTag">Слив</div>}
           {g.tg_status === 'valid' && <div className="badge tgTag">TG</div>}
           {g.tg_status === 'channel' && <div className="badge tgChannelTag">TG канал</div>}
           {g.dmError && (
@@ -174,33 +176,15 @@ const ProfileCard = memo(function ProfileCard({
           {g.username && g.username !== g.name && <div className="username-sub">@{g.username}</div>}
         </div>
 
-        {g.donor && (
-          <div className="donor-info">
-            <span className="donor-label">донор:</span>
-            <span className="donor-value">@{g.donor}</span>
-            <div className="donor-popover">
-              <div className="donor-popover-header">
-                {donorPhotoSrc && <img src={donorPhotoSrc} className="donor-popover-img" alt="" />}
-                <div>
-                  <div className="donor-popover-name">{g.donor_name || g.donor}</div>
-                  <div className="donor-popover-username">@{g.donor}</div>
-                </div>
-              </div>
-              <div className="donor-popover-stats">
-                {g.donor_followers_count > 0 && (
-                  <span>👥 {g.donor_followers_count.toLocaleString()}</span>
-                )}
-                {(g.donor_posts_count > 0 && (
-                  <span>📸 {g.donor_posts_count.toLocaleString()}</span>
-                )) ||
-                  (g.donor_publications_count > 0 && (
-                    <span>📸 {g.donor_publications_count.toLocaleString()}</span>
-                  ))}
-              </div>
-              {g.donor_bio && <div className="donor-popover-bio">{g.donor_bio}</div>}
-            </div>
-          </div>
-        )}
+        <DonorInfo
+          donor={g.donor}
+          donorName={g.donor_name}
+          donorPhoto={g.donor_photo}
+          donorPhotoLocal={g.donor_photo_local}
+          donorBio={g.donor_bio}
+          donorFollowersCount={g.donor_followers_count}
+          donorPostsCount={g.donor_posts_count || g.donor_publications_count}
+        />
 
         <div className="bio-container">
           <div className="bio-text" title={g.bio}>

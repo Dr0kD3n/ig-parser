@@ -30,7 +30,8 @@ async function checkFeedback() {
         SELECT m.id, m.url, p.name, p.username 
         FROM messages_log m
         JOIN profiles p ON m.url = p.url
-        WHERE m.status NOT IN ('replied', 'liked')
+        WHERE m.status NOT IN ('replied', 'liked', 'ignored', 'drain')
+          AND COALESCE(m.status_manual, 0) = 0
     `);
 
     if (targets.length === 0) {

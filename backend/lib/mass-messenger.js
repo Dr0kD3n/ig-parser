@@ -20,12 +20,13 @@ const {
     isChatForUsername,
     openProfileDM,
     waitForChatComposer,
+    detectChatHistory,
     CLICK_OPTS,
     PROFILE_GAP,
     waitWithActivity,
 } = require('./anti-fraud');
 const state_1 = require('./state');
-const { findCategoryMessages } = require('./donor-category-stats');
+const { findCategoryMessages, extractPrimaryDonor } = require('./donor-category-stats');
 const {
     dedupeProfilesForMessaging,
     markDmSentByUsername,
@@ -106,63 +107,16 @@ async function sendMessageToProfile(page, url, message, config, session) {
             return { success: false, reason: 'wrong_chat' };
         }
 
-        // HISTORY DETECTION — только в активном диалоге текущего пользователя
-        const chatInputShort = 'div[role="textbox"][contenteditable="true"]';
-        const activeChat = page
-            .locator(`div[role="dialog"]:has(${chatInputShort})`)
-            .last()
-            .or(page.locator('section main').filter({ has: page.locator(chatInputShort) }));
+        await wait(600 + Math.random() * 900);
 
-        const BLACKLIST = [
-            'Instagram', 'Active now', 'Followed by', ' followers', ' posts',
-            'This is the beginning', 'Not for you', 'You followed',
-            'Отправить', 'Send', 'Type a message', 'Напишите', 'View profile',
-            'Search', 'Joined', 'Follow', 'Following', 'Message', 'Сообщение',
-            'Block', 'Report', 'Restrict', 'Смотреть профиль', 'View Profile',
-        ];
-
-        let totalMessages = 0;
-        let detectedTexts = [];
-
-        // [HYBRID OPTIMIZATION] Быстрая проверка истории через API — только если есть реальный текст
-        const apiHistory = await page.evaluate(async (uname) => {
-            try {
-                const res = await fetch(`/api/v1/direct_v2/visual_threads/`, {
-                    headers: { 'X-IG-App-ID': '936619743392459' }
-                });
-                if (res.ok) {
-                    const json = await res.json();
-                    const threads = json.threads || [];
-                    const thread = threads.find(t => t.users && t.users.some(u => u.username === uname));
-                    const lastText = thread?.last_permanent_item?.text?.trim();
-                    if (thread && lastText) {
-                        return { hasHistory: true, lastMsg: lastText };
-                    }
-                }
-            } catch (e) { }
-            return null;
-        }, username);
-
-        if (apiHistory?.hasHistory) {
-            logger.info(`⛔ [SKIP] API History detected: "${apiHistory.lastMsg}" for ${url}`);
-            return { success: false, reason: 'history' };
-        }
-
-        if ((await activeChat.count()) > 0) {
-            const bubbles = activeChat.locator('div[role="none"], div[id^="mid."]');
-            const bubbleCount = await bubbles.count();
-            for (let i = 0; i < Math.min(bubbleCount, 20); i++) {
-                const text = ((await bubbles.nth(i).innerText().catch(() => '')) || '').trim();
-                if (!text || text.length <= 1) continue;
-                if (BLACKLIST.some((b) => text.includes(b))) continue;
-                totalMessages++;
-                detectedTexts.push(text.slice(0, 100).replace(/\n/g, ' '));
-            }
-        }
-
-        if (totalMessages > 0) {
-            const preview = detectedTexts.length > 0 ? ` | Content: [${detectedTexts.join(' | ')}]` : '';
-            logger.info(`⛔ [SKIP] Chat history detected (${totalMessages} msgs).${preview} for ${url}`);
+        const history = await detectChatHistory(page, username);
+        if (history.hasHistory) {
+            const preview = history.preview ? ` | Content: [${history.preview}]` : '';
+            logger.info(
+                `⛔ [SKIP] Chat history detected (${history.count || '?'} msgs, ${history.source}).${preview} for ${url}`
+            );
+            await closeDirectModal(page, session);
+            session.lastOpenedDM = null;
             return { success: false, reason: 'history' };
         }
 
@@ -253,7 +207,7 @@ async function runE2eMassMessaging({ profiles, dmLimit, likedOnly, onProgress, d
         const profile = toSend[i];
         await markDmSentByUsername(db, profile.username || profile.name, { clearError: true, tgTagged: 0 });
         await db.run(
-            `INSERT INTO messages_log (url, username, name, message_text, status, timestamp, account_id, sender_name) VALUES (?, ?, ?, ?, 'sent', ?, ?, ?)`,
+            `INSERT INTO messages_log (url, username, name, message_text, status, timestamp, account_id, sender_name, donor) VALUES (?, ?, ?, ?, 'sent', ?, ?, ?, ?)`,
             [
                 profile.url,
                 profile.username || profile.name,
@@ -262,6 +216,7 @@ async function runE2eMassMessaging({ profiles, dmLimit, likedOnly, onProgress, d
                 new Date().toISOString(),
                 account.id,
                 account.name,
+                extractPrimaryDonor(profile.donor),
             ]
         );
         logger.info(`🚀 [E2E-MASS] Отправлено: ${profile.url} (@${profile.username})`);
@@ -465,11 +420,7 @@ async function startMassMessaging(onProgress, options = {}) {
             logger.info(`🧵 [${i + 1}/${profilesCount}] ${profile.url}`);
 
             try {
-                const donorNames = String(profile.donor || '')
-                    .split(',')
-                    .map((d) => d.replace('@', '').trim())
-                    .filter(Boolean);
-                const primaryDonor = donorNames[0] || profile.donor || '';
+                const primaryDonor = extractPrimaryDonor(profile.donor);
                 const catMsgs = findCategoryMessages(donorGroups, donorsList, primaryDonor);
                 let msgs = catMsgs?.length ? catMsgs : [];
 
@@ -509,8 +460,8 @@ async function startMassMessaging(onProgress, options = {}) {
                     await markDmSentByUsername(db, profile.username || profile.name, { clearError: true, tgTagged: 0 });
                     if (profile.username) dmSentUsernames.add(normalizeUsername(profile.username));
                     await db.run(
-                        `INSERT INTO messages_log (url, username, name, message_text, status, timestamp, account_id, sender_name) VALUES (?, ?, ?, ?, 'sent', ?, ?, ?)`,
-                        [profile.url, profile.username || profile.name, profile.name, message, new Date().toISOString(), account.id, account.name]
+                        `INSERT INTO messages_log (url, username, name, message_text, status, timestamp, account_id, sender_name, donor) VALUES (?, ?, ?, ?, 'sent', ?, ?, ?, ?)`,
+                        [profile.url, profile.username || profile.name, profile.name, message, new Date().toISOString(), account.id, account.name, primaryDonor]
                     );
                     logger.info(`🚀 [ACC: ${account.name} SENT] ${profile.url} (@${profile.username})`);
                 } else {

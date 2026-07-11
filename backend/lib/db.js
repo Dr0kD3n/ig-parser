@@ -366,6 +366,33 @@ async function getDB() {
     // Ignore
   }
 
+  try {
+    await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN donor TEXT`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
+    await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN status_manual INTEGER DEFAULT 0`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
+    await dbInstance.exec(`
+      UPDATE messages_log SET donor = (
+        SELECT LOWER(TRIM(REPLACE(
+          SUBSTR(p.donor || ',', 1, INSTR(p.donor || ',', ',') - 1),
+          '@', ''
+        )))
+        FROM profiles p WHERE p.url = messages_log.url
+      )
+      WHERE donor IS NULL OR donor = ''
+    `);
+  } catch (e) {
+    // Ignore
+  }
+
   for (const table of ['profiles', 'donors']) {
     for (const column of ['photo_local TEXT', 'photo_cached_at TEXT', 'photo_status TEXT']) {
       try {
@@ -379,6 +406,18 @@ async function getDB() {
 
   try {
     await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_profiles_username ON profiles(username)`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
+    await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_messages_log_timestamp ON messages_log(timestamp DESC)`);
+  } catch (e) {
+    // Ignore
+  }
+
+  try {
+    await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_messages_log_donor ON messages_log(donor)`);
   } catch (e) {
     // Ignore
   }

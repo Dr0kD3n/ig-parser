@@ -102,7 +102,9 @@ async function checkFeedback() {
                     const logUpdate = await db.run(
                         `UPDATE messages_log 
                          SET status = 'replied' 
-                         WHERE LOWER(url) LIKE ? AND status NOT IN ('replied', 'liked')`,
+                         WHERE LOWER(url) LIKE ? 
+                           AND status NOT IN ('replied', 'liked', 'ignored', 'drain')
+                           AND COALESCE(status_manual, 0) = 0`,
                         [`%${usernameFromFolder}%`]
                     );
 

@@ -762,14 +762,118 @@
   border-radius: 12px;
   padding: 20px;
   border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: visible;
 }
 
-.stats-container h3 {
-  margin-top: 0;
-  margin-bottom: 15px;
+.stats-container h3,
+.stats-section-header {
+  margin: 0 0 15px;
   font-size: 16px;
+  font-weight: 600;
   color: hsl(var(--text-muted));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stats-section-header {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.stats-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stats-sent-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.stats-sent-filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
   font-weight: 500;
+  color: hsl(var(--text-dim));
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.stats-sent-filter-input {
+  width: 64px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--text-main));
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+}
+
+.stats-sent-filter-input:focus {
+  outline: none;
+  border-color: hsla(var(--accent), 0.5);
+}
+
+.donor-info-stats {
+  max-width: 100%;
+}
+
+.donor-stats-main {
+  display: inline;
+  line-height: 1.4;
+}
+
+.donor-stats-meta {
+  font-size: 11px;
+  color: hsl(var(--text-dim));
+  font-weight: 500;
+}
+
+.donor-popover-search {
+  font-size: 12px;
+  color: hsl(var(--text-muted));
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  background: hsl(var(--bg-card));
+  border-radius: 6px;
+  border: 1px solid hsl(var(--border));
+}
+
+.donor-info-stats .donor-popover {
+  left: 0;
+  right: auto;
+}
+
+.stats-table-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: hsl(var(--text-dim));
+}
+
+.stats-pagination {
+  padding: 16px 0 4px;
+  margin-top: 0;
+}
+
+.stats-pagination .pageBtn {
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+.stats-pagination .page-info {
+  font-size: 13px;
+}
+
+.stats-inline-loader {
+  margin: 20px auto;
 }
 
 .stats-table {
@@ -822,6 +926,17 @@
   font-size: 14px;
 }
 
+.stats-table td.donor-stats-cell {
+  overflow: visible;
+  white-space: normal;
+  min-width: 220px;
+}
+
+.stats-table tbody tr:has(.donor-info:hover) {
+  position: relative;
+  z-index: 30;
+}
+
 .msg-cell {
   color: hsl(var(--text-main));
   line-height: 1.4;
@@ -844,6 +959,22 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 15px;
+}
+
+.stats-header-grid-6 {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+@media (max-width: 1100px) {
+  .stats-header-grid-6 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .stats-header-grid-6 {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .header-stat-card {
@@ -878,6 +1009,75 @@
 
 .color-sent {
   color: hsl(217 91% 68%);
+}
+
+.color-ignored {
+  color: hsl(45 90% 55%);
+}
+
+.color-drain {
+  color: hsl(var(--danger));
+}
+
+.status-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-select {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: hsl(var(--text-main));
+  cursor: pointer;
+  max-width: 120px;
+}
+
+.status-select:focus {
+  outline: none;
+  border-color: hsla(var(--accent), 0.5);
+}
+
+.status-select-manual {
+  border-color: hsla(var(--accent), 0.4);
+}
+
+.status-select-replied {
+  color: hsl(var(--success));
+}
+
+.status-select-liked {
+  color: hsl(var(--accent));
+}
+
+.status-select-ignored {
+  color: hsl(45 90% 55%);
+}
+
+.status-select-drain {
+  color: hsl(var(--danger));
+}
+
+.status-select-sent {
+  color: hsl(var(--text-dim));
+}
+
+.status-manual-mark {
+  font-size: 10px;
+  color: hsl(var(--text-dim));
+  cursor: help;
+}
+
+.ignoredTag {
+  background: hsla(45, 90%, 45%, 0.8);
+}
+
+.drainTag {
+  background: hsla(var(--danger), 0.8);
 }
 
 .checker-banner {

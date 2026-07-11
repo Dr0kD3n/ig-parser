@@ -3,6 +3,7 @@ const path = require('path');
 const http = require('http');
 const child_process = require('child_process');
 const db = require('../lib/db');
+const { extractPrimaryDonor } = require('../lib/donor-category-stats');
 const utils = require('../lib/utils');
 const config = require('../lib/config');
 const browserLib = require('../lib/browser');
@@ -285,11 +286,12 @@ app.post('/api/dm', async (req, res) => {
     if (isSent) {
       try {
         const database = await db.getDB();
-        const profile = await database.get(`SELECT username, name FROM profiles WHERE url = ?`, [url]);
+        const profile = await database.get(`SELECT username, name, donor FROM profiles WHERE url = ?`, [url]);
         const username = profile ? (profile.username || profile.name) : url.split('/').pop();
+        const donor = extractPrimaryDonor(profile?.donor);
         await database.run(
-          `INSERT INTO messages_log (url, username, message_text, status, timestamp) VALUES (?, ?, ?, ?, ?)`,
-          [url, username, message, 'sent', new Date().toISOString()]
+          `INSERT INTO messages_log (url, username, message_text, status, timestamp, donor) VALUES (?, ?, ?, ?, ?, ?)`,
+          [url, username, message, 'sent', new Date().toISOString(), donor || null]
         );
         await markDmSentByUsername(db, profile?.username || username, { clearError: true, tgTagged: 0 });
       } catch (dbErr) {
@@ -319,20 +321,99 @@ app.get('/api/stats', async (req, res) => {
       GROUP BY message_text
     `);
 
-    // Detailed breakdown
+    const { getDonorMessageStats } = require('../lib/donor-category-stats');
+    const donorSummary = await getDonorMessageStats(database);
+
     const details = await database.get(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN status = 'replied' THEN 1 ELSE 0 END) as replied,
         SUM(CASE WHEN status = 'liked' THEN 1 ELSE 0 END) as liked,
+        SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END) as ignored,
+        SUM(CASE WHEN status = 'drain' THEN 1 ELSE 0 END) as drain,
         SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent
       FROM messages_log
     `);
 
-    const records = await database.all(`SELECT * FROM messages_log ORDER BY timestamp DESC LIMIT 100`);
-    res.json({ success: true, summary, records, details });
+    res.json({ success: true, summary, donorSummary, details });
   } catch (err) {
     console.error('Ошибка получения статистики:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
+const HISTORY_SORT_COLUMNS = {
+  timestamp: 'timestamp',
+  username: 'username',
+  donor: 'donor',
+  message_text: 'message_text',
+  status: 'status',
+};
+
+app.get('/api/stats/messages', async (req, res) => {
+  try {
+    const database = await db.getDB();
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const sortKey = HISTORY_SORT_COLUMNS[req.query.sort] || 'timestamp';
+    const dir = req.query.dir === 'asc' ? 'ASC' : 'DESC';
+    const offset = (page - 1) * limit;
+
+    const totalRow = await database.get(`SELECT COUNT(*) AS total FROM messages_log`);
+    const total = totalRow?.total || 0;
+
+    const records = await database.all(
+      `SELECT * FROM messages_log ORDER BY ${sortKey} ${dir} LIMIT ? OFFSET ?`,
+      [limit, offset]
+    );
+
+    res.json({
+      success: true,
+      records,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
+  } catch (err) {
+    console.error('Ошибка получения истории сообщений:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+});
+
+const MANUAL_DM_STATUSES = new Set(['replied', 'liked', 'ignored', 'drain']);
+
+app.patch('/api/stats/messages/:id', async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    if (!MANUAL_DM_STATUSES.has(status)) {
+      return res.status(400).json({ success: false, error: 'Недопустимый статус' });
+    }
+
+    const database = await db.getDB();
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ success: false, error: 'Некорректный id' });
+    }
+
+    const existing = await database.get(`SELECT * FROM messages_log WHERE id = ?`, [id]);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Запись не найдена' });
+    }
+
+    await database.run(
+      `UPDATE messages_log SET status = ?, status_manual = 1 WHERE id = ?`,
+      [status, id]
+    );
+
+    if (existing.url) {
+      await database.run(`UPDATE profiles SET dm_status = ? WHERE url = ?`, [status, existing.url]);
+    }
+
+    const record = await database.get(`SELECT * FROM messages_log WHERE id = ?`, [id]);
+    res.json({ success: true, record });
+  } catch (err) {
+    console.error('Ошибка обновления статуса:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 });

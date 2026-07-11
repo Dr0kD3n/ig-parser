@@ -60,6 +60,49 @@ async function getLikesByCategory(db) {
   }));
 }
 
+async function getDonorMessageStats(db) {
+  const rows = await db.all(`
+    SELECT
+      m.donor,
+      COUNT(*) AS total_sent,
+      SUM(CASE WHEN m.status = 'replied' THEN 1 ELSE 0 END) AS replied_count,
+      SUM(CASE WHEN m.status = 'liked' THEN 1 ELSE 0 END) AS liked_count,
+      SUM(CASE WHEN m.status = 'ignored' THEN 1 ELSE 0 END) AS ignored_count,
+      SUM(CASE WHEN m.status = 'drain' THEN 1 ELSE 0 END) AS drain_count,
+      SUM(CASE WHEN m.status = 'sent' THEN 1 ELSE 0 END) AS pending_count,
+      MAX(u.city) AS city,
+      MAX(u.niche) AS niche,
+      MAX(u.keyword) AS keyword,
+      MAX(d.name) AS donor_name,
+      MAX(d.bio) AS donor_bio,
+      MAX(d.photo) AS donor_photo,
+      MAX(d.photo_local) AS donor_photo_local,
+      MAX(d.followers_count) AS donor_followers_count,
+      MAX(d.posts_count) AS donor_posts_count
+    FROM messages_log m
+    LEFT JOIN urls u ON u.type = 'donor' AND LOWER(TRIM(REPLACE(REPLACE(REPLACE(
+      u.url, 'https://www.instagram.com/', ''), 'https://instagram.com/', ''), '/', ''
+    ))) = LOWER(m.donor)
+    LEFT JOIN donors d ON LOWER(d.username) = LOWER(m.donor)
+    WHERE m.donor IS NOT NULL AND m.donor != ''
+    GROUP BY m.donor
+  `);
+
+  return rows.map((row) => ({
+    ...row,
+    keyword: deriveDonorKeyword(row) || row.keyword || '',
+  }));
+}
+
+/** Первый донор из строки profiles.donor (через запятую) */
+function extractPrimaryDonor(donorStr) {
+  const first = String(donorStr || '')
+    .split(',')
+    .map((d) => d.replace('@', '').trim())
+    .filter(Boolean)[0];
+  return first ? first.toLowerCase() : '';
+}
+
 function findDonorMeta(donors, donorUsername) {
   const norm = String(donorUsername || '')
     .replace(/^@/, '')
@@ -100,6 +143,8 @@ module.exports = {
   deriveDonorKeyword,
   keywordCategoryId,
   getLikesByCategory,
+  getDonorMessageStats,
+  extractPrimaryDonor,
   findDonorMeta,
   findCategoryMessages,
 };
