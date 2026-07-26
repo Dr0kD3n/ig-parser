@@ -5,6 +5,11 @@ const { checkFeedback, getCheckerStatus, stopChecker } = require('../lib/feedbac
 const ctx = require('../lib/server-context');
 const utils = require('../lib/utils');
 const { getInstagramActivity } = require('../lib/instagram-activity');
+const {
+  startTgBatchCheck,
+  stopTgBatchCheck,
+  getTgBatchStatus,
+} = require('../lib/tg-batch-checker');
 module.exports = (app) => {
   const { CONFIG, invalidateGirlsCache, broadcastLog } = ctx;
 async function checkTelegramProfile(url) {
@@ -107,6 +112,36 @@ app.post('/api/check-telegram-batch', async (req, res) => {
   }
   invalidateGirlsCache();
   res.json({ success: true, results });
+});
+
+app.post('/api/check-telegram-batch/start', async (req, res) => {
+  const profiles = req.body?.profiles;
+  if (!Array.isArray(profiles) || profiles.length === 0) {
+    return res.status(400).json({ success: false, error: 'profiles must be a non-empty array' });
+  }
+  const items = profiles
+    .map((profile) => ({
+      profileUrl: typeof profile?.profileUrl === 'string' ? profile.profileUrl : '',
+      username: typeof profile?.username === 'string' ? profile.username : '',
+    }))
+    .filter((profile) => profile.username);
+  if (items.length === 0) {
+    return res.status(400).json({ success: false, error: 'No valid Telegram usernames' });
+  }
+
+  const status = await startTgBatchCheck(items, CONFIG.userAgent, invalidateGirlsCache);
+  if (status.alreadyRunning) {
+    return res.status(409).json({ success: false, ...status });
+  }
+  res.status(202).json({ success: true, ...status });
+});
+
+app.post('/api/check-telegram-batch/stop', (req, res) => {
+  res.json({ success: true, ...stopTgBatchCheck() });
+});
+
+app.get('/api/check-telegram-batch/status', (req, res) => {
+  res.json(getTgBatchStatus());
 });
 
 app.post('/api/mass-messages/start', async (req, res) => {

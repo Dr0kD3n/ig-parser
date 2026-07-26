@@ -9,7 +9,7 @@ const {
   getInstagramActivity,
 } = require('../lib/instagram-activity');
 module.exports = (app) => {
-  const { encrypt, decrypt, encryptSafe, restorePhotos, stopRestorePhotos, invalidateGirlsCache } = ctx;
+  const { decrypt, encryptSafe, restorePhotos, stopRestorePhotos, invalidateGirlsCache } = ctx;
 function getActiveInstagramActivity() {
   return getInstagramActivity()?.type || null;
 }
@@ -205,7 +205,13 @@ app.get('/api/profiles/restore-photos/status', (req, res) => {
 
 app.put('/api/accounts/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, proxy, cookies, fingerprint, regenerateFingerprint } = req.body;
+  const {
+    name,
+    proxy,
+    cookies,
+    fingerprint: requestedFingerprint,
+    regenerateFingerprint,
+  } = req.body;
   try {
     const database = await db.getDB();
     const existing = await database.get('SELECT id FROM accounts WHERE id = ?', [id]);
@@ -227,15 +233,18 @@ app.put('/api/accounts/:id', async (req, res) => {
       values.push(encryptSafe(cookies));
     }
     let updatedFingerprint = null;
-    if (fingerprint !== undefined) {
+    if (requestedFingerprint !== undefined) {
       updates.push('fingerprint = ?');
-      const fpVal = typeof fingerprint === 'object' ? JSON.stringify(fingerprint) : fingerprint;
+      const fpVal =
+        typeof requestedFingerprint === 'object'
+          ? JSON.stringify(requestedFingerprint)
+          : requestedFingerprint;
       values.push(fpVal);
       updatedFingerprint = fpVal;
     }
     if (regenerateFingerprint) {
       updates.push('fingerprint = ?');
-      const fpVal = JSON.stringify(fingerprint.generateFingerprint());
+      const fpVal = JSON.stringify(fingerprintLib.generateFingerprint());
       values.push(fpVal);
       updatedFingerprint = fpVal;
     }

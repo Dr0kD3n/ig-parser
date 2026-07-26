@@ -110,10 +110,9 @@ exports.verifyToken = async (req, res, next) => {
   }
 
   const authHeader = req.header('Authorization');
-  const queryToken = req.query.token;
-  const token = authHeader?.split(' ')[1] || queryToken;
+  const [scheme, token] = authHeader?.trim().split(/\s+/, 2) || [];
 
-  if (!token || token === 'null' || token === 'undefined') {
+  if (scheme?.toLowerCase() !== 'bearer' || !token || token === 'null' || token === 'undefined') {
     return res.status(401).json({ error: 'Access denied. No token provided.' });
   }
 

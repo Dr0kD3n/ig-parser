@@ -33,6 +33,7 @@ app.get('/api/settings', async (req, res) => {
     activeServerAccountIds: settings.activeServerAccountIds,
     activeIndexAccountIds: settings.activeIndexAccountIds,
     activeProfilesAccountIds: settings.activeProfilesAccountIds,
+    activeCheckerAccountIds: settings.activeCheckerAccountIds,
     names,
     cities,
     citiesBlacklist,
@@ -42,6 +43,7 @@ app.get('/api/settings', async (req, res) => {
     checkedDonors,
     showBrowser: settings.showBrowser,
     concurrentProfiles: settings.concurrentProfiles,
+    dmLimit: settings.dmLimit,
     humanEmulation: settings.humanEmulation,
     dolphinToken: settings.dolphinToken,
     donorGroups: settings.donorGroups,
@@ -55,7 +57,7 @@ app.post('/api/settings', async (req, res) => {
     await database.run('BEGIN TRANSACTION');
     console.log(`[DEBUG] Transaction started`);
     try {
-      if (req.body.hasOwnProperty('accounts')) {
+      if (Object.hasOwn(req.body, 'accounts')) {
         const incomingIds = (accounts || []).map((a) => a.id);
         if (incomingIds.length > 0) {
           const placeholders = incomingIds.map(() => '?').join(',');
@@ -117,7 +119,7 @@ app.post('/api/settings', async (req, res) => {
       }
       // Only update keywords if they are explicitly provided in the request
       const updateList = async (type, requestKey, items) => {
-        if (!req.body.hasOwnProperty(requestKey)) return;
+        if (!Object.hasOwn(req.body, requestKey)) return;
         const cleanItems = (items || []).map((i) => String(i).trim()).filter(Boolean);
         const existing = await database.get(`SELECT count(*) as c FROM keywords WHERE type = ?`, [type]);
         if (existing.c > 5 && cleanItems.length === 0 && !req.body.forceEmpty) return;
@@ -132,7 +134,7 @@ app.post('/api/settings', async (req, res) => {
       await updateList('city_blacklist', 'citiesBlacklist', citiesBlacklist);
       await updateList('word_blacklist', 'wordsBlacklist', wordsBlacklist);
       await updateList('niche', 'niches', niches);
-      if (req.body.hasOwnProperty('donors')) {
+      if (Object.hasOwn(req.body, 'donors')) {
         const processedDonorsInReq = (donors || []).map((d) => {
           if (typeof d === 'string') return d.trim();
           if (d && typeof d === 'object' && d.url) return { ...d, url: d.url.trim() };
@@ -144,37 +146,37 @@ app.post('/api/settings', async (req, res) => {
           await state.StateManager.saveDonors(processedDonorsInReq);
         }
       }
-      if (req.body.hasOwnProperty('showBrowser')) {
+      if (Object.hasOwn(req.body, 'showBrowser')) {
         await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'showBrowser',
           showBrowser ? 'true' : 'false',
         ]);
       }
-      if (req.body.hasOwnProperty('concurrentProfiles')) {
+      if (Object.hasOwn(req.body, 'concurrentProfiles')) {
         await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'concurrentProfiles',
           req.body.concurrentProfiles.toString(),
         ]);
       }
-      if (req.body.hasOwnProperty('dmLimit')) {
+      if (Object.hasOwn(req.body, 'dmLimit')) {
         await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'dmLimit',
           req.body.dmLimit.toString(),
         ]);
       }
-      if (req.body.hasOwnProperty('humanEmulation')) {
+      if (Object.hasOwn(req.body, 'humanEmulation')) {
         await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'humanEmulation',
           req.body.humanEmulation ? 'true' : 'false',
         ]);
       }
-      if (req.body.hasOwnProperty('dolphinToken')) {
+      if (Object.hasOwn(req.body, 'dolphinToken')) {
         await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'dolphinToken',
           req.body.dolphinToken || '',
         ]);
       }
-      if (req.body.hasOwnProperty('donorGroups')) {
+      if (Object.hasOwn(req.body, 'donorGroups')) {
         await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'donorGroups',
           JSON.stringify(req.body.donorGroups || []),

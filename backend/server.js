@@ -29,8 +29,11 @@ try {
 
 setupProcessHandlers();
 
-const stripAnsi = (value) =>
-  String(value || '').replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
+const ANSI_ESCAPE_PATTERN = new RegExp(
+  `${String.fromCharCode(27)}(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])`,
+  'g'
+);
+const stripAnsi = (value) => String(value || '').replace(ANSI_ESCAPE_PATTERN, '');
 
 try {
   if (fs.existsSync(LOGS_FILE)) {
@@ -82,6 +85,16 @@ const PORT = process.env.PORT || 5000;
 const isLocal = (ip) =>
   ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1' || ip === 'localhost';
 
+const isAllowedBrowserOrigin = (origin) => {
+  if (!origin) return true;
+  try {
+    const { protocol, hostname } = new URL(origin);
+    return protocol === 'http:' && ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(hostname);
+  } catch {
+    return false;
+  }
+};
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -97,10 +110,16 @@ const apiLimiter = rateLimit({
 });
 
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  const origin = req.get('Origin');
+  if (origin && isAllowedBrowserOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  if (req.method === 'OPTIONS') {
+    return isAllowedBrowserOrigin(origin) ? res.sendStatus(204) : res.sendStatus(403);
+  }
   next();
 });
 app.use(express.json({ limit: '10mb' }));

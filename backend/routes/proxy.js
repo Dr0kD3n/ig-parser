@@ -3,6 +3,23 @@ const https = require('https');
 const config = require('../lib/config');
 const utils = require('../lib/utils');
 const ctx = require('../lib/server-context');
+
+const IMAGE_HOST_SUFFIXES = ['instagram.com', 'cdninstagram.com', 'fbcdn.net'];
+
+function parseAllowedImageUrl(value) {
+  const parsed = new URL(value);
+  const hostname = parsed.hostname.toLowerCase();
+  const allowedHost = IMAGE_HOST_SUFFIXES.some(
+    (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`)
+  );
+  if (!allowedHost || !['http:', 'https:'].includes(parsed.protocol)) {
+    const error = new Error('Image host is not allowed');
+    error.statusCode = 403;
+    throw error;
+  }
+  return parsed;
+}
+
 module.exports = (app) => {
   const { CONFIG } = ctx;
 app.get('/api/proxy-image', async (req, res) => {
@@ -11,8 +28,8 @@ app.get('/api/proxy-image', async (req, res) => {
     return res.status(400).send('Missing or invalid url parameter');
   try {
     const proxy = await config.getProxy('donors');
-    const parsedUrl = new URL(imageUrl);
-    const transport = parsedUrl.protocol === 'https:' ? https_1 : http_1;
+    const parsedUrl = parseAllowedImageUrl(imageUrl);
+    const transport = parsedUrl.protocol === 'https:' ? https : http;
     const fetchOptions = {
       hostname: parsedUrl.hostname,
       path: parsedUrl.pathname + parsedUrl.search,
@@ -67,7 +84,7 @@ app.get('/api/proxy-image', async (req, res) => {
           if (_res.statusCode !== 200) {
             return res.status(502).send('Proxy CONNECT failed');
           }
-          const connector = parsedUrl.protocol === 'https:' ? https_1 : http_1;
+          const connector = parsedUrl.protocol === 'https:' ? https : http;
           const proxyReqOptions = {
             ...fetchOptions,
             socket: socket,
@@ -96,7 +113,7 @@ app.get('/api/proxy-image', async (req, res) => {
           },
         };
         try {
-          const imgRes = await fetchWithRetry(imageUrl, proxyReqOptions, http_1);
+          const imgRes = await fetchWithRetry(imageUrl, proxyReqOptions, http);
           handleImageResponse(imgRes);
         } catch (e) {
           console.error('Proxy HTTP error after retries:', e);
@@ -117,9 +134,17 @@ app.get('/api/proxy-image', async (req, res) => {
       // Follow redirects (Instagram CDN does 301/302)
       if ([301, 302, 307, 308].includes(imgRes.statusCode) && imgRes.headers.location) {
         // Redirect — fetch again without proxy (CDN URLs are public)
-        const redirectTransport = imgRes.headers.location.startsWith('https') ? https_1 : http_1;
+        let redirectUrl;
+        try {
+          redirectUrl = parseAllowedImageUrl(
+            new URL(imgRes.headers.location, parsedUrl).toString()
+          );
+        } catch {
+          return res.status(403).send('Redirect image host is not allowed');
+        }
+        const redirectTransport = redirectUrl.protocol === 'https:' ? https : http;
         redirectTransport
-          .get(imgRes.headers.location, (redirRes) => {
+          .get(redirectUrl, (redirRes) => {
             res.setHeader('Content-Type', redirRes.headers['content-type'] || 'image/jpeg');
             res.setHeader('Cache-Control', 'public, max-age=86400');
             redirRes.pipe(res);
@@ -136,9 +161,11 @@ app.get('/api/proxy-image', async (req, res) => {
     }
   } catch (e) {
     console.error('Image proxy error:', e);
-    res.status(500).send('Internal server error');
+    res.status(e.statusCode || 500).send(e.statusCode ? e.message : 'Internal server error');
   }
 });
 
 // --- Presets API ---
 };
+
+module.exports.parseAllowedImageUrl = parseAllowedImageUrl;

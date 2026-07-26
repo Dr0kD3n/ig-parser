@@ -13,6 +13,8 @@ tmp/
 *.sqlite-wal
 .env
 config/.telegram-bot.key
+config/.encryption-key
+config/.auth-key
 # Allowing the main config data as per user's "save these data" request
 !config/database.sqlite
 !backend/config/database.sqlite

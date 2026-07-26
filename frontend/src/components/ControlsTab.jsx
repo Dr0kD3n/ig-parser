@@ -82,24 +82,61 @@ export default function ControlsTab({
   onClearLogs,
   logs,
   isLoading,
-  token,
+  authFetch,
 }) {
   const logBoxRef = useRef(null);
+  const liveViewUrlRef = useRef('');
   const [scraperCollapsed, toggleScraper] = useCollapsed('ig_scraper_collapsed', false);
   const [parserCollapsed, toggleParser] = useCollapsed('ig_parser_collapsed', false);
   const [logsCollapsed, toggleLogs] = useCollapsed('ig_logs_collapsed', false);
   const [streamCollapsed, toggleStream] = useCollapsed('ig_stream_collapsed', false);
-  const [liveViewTimestamp, setLiveViewTimestamp] = useState(Date.now());
+  const [liveViewSrc, setLiveViewSrc] = useState('');
   const [isZoomed, setIsZoomed] = useState(false);
 
   const botsRunning = botStatus.index || botStatus.parser;
   const groups = groupLogs(logs);
-  const liveViewSrc = `/api/live-view?t=${liveViewTimestamp}&token=${token}`;
-
   useEffect(() => {
-    const interval = setInterval(() => setLiveViewTimestamp(Date.now()), 2000);
-    return () => clearInterval(interval);
-  }, []);
+    if (!botsRunning) return undefined;
+    const controller = new AbortController();
+    let inFlight = false;
+
+    const loadLiveView = async () => {
+      if (inFlight || controller.signal.aborted) return;
+      inFlight = true;
+      try {
+        const response = await authFetch(`/api/live-view?t=${Date.now()}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const nextUrl = URL.createObjectURL(await response.blob());
+        if (controller.signal.aborted) {
+          URL.revokeObjectURL(nextUrl);
+          return;
+        }
+        const previousUrl = liveViewUrlRef.current;
+        liveViewUrlRef.current = nextUrl;
+        setLiveViewSrc(nextUrl);
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          // Next interval retries.
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    loadLiveView();
+    const interval = setInterval(loadLiveView, 2000);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+      if (liveViewUrlRef.current) {
+        URL.revokeObjectURL(liveViewUrlRef.current);
+        liveViewUrlRef.current = '';
+      }
+    };
+  }, [authFetch, botsRunning]);
 
   useEffect(() => {
     const el = logBoxRef.current;
@@ -256,7 +293,7 @@ export default function ControlsTab({
           <div className="stream-container" onClick={() => setIsZoomed(true)}>
             <img
               src={liveViewSrc}
-              className={botsRunning ? 'block' : 'hidden'}
+              className={botsRunning && liveViewSrc ? 'block' : 'hidden'}
               alt="Live View"
               onError={(e) => {
                 e.target.style.display = 'none';

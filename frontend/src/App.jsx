@@ -10,10 +10,11 @@ import { API_BASE, LOCAL_API_BASE } from './config';
 import { toast } from 'react-hot-toast';
 import { safeStorage } from './utils/storage';
 import { createCityMatcher, createWordsBlacklistMatcher, getTelegramUsername } from './utils/profile';
-import { getDonorUsername } from './utils/donor';
 import { resolveMessagesForDonor, ensureDefaultDonorGroups } from './utils/donorCategories';
 import { DEFAULT_SETTINGS, LOG_BUFFER, TABS } from './constants/settings';
 import { useDialog } from './context/DialogContext';
+import { useLogStream } from './hooks/useLogStream';
+import { useOperationStatuses } from './hooks/useOperationStatuses';
 
 export default function App() {
   const { confirm } = useDialog();
@@ -32,7 +33,6 @@ export default function App() {
   }));
 
   const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false });
-  const [logs, setLogs] = useState([]);
   const [activeTab, setActiveTab] = useState(() => safeStorage.getItem('ig_active_tab', 'profiles'));
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -40,10 +40,6 @@ export default function App() {
   };
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState('idle');
-
-  const [tgCheckStatus, setTgCheckStatus] = useState({ running: false, current: 0, total: 0, status: 'Idle' });
-  const [restoreStatus, setRestoreStatus] = useState({ running: false, current: 0, total: 0 });
-  const [massMessagingStatus, setMassMessagingStatus] = useState({ running: false, current: 0, total: 0 });
 
   const [cityOnly, setCityOnly] = useState(() => safeStorage.getItem('ig_city_only', 'false') === 'true');
   const [exceptCity, setExceptCity] = useState(() => safeStorage.getItem('ig_except_city', 'false') === 'true');
@@ -125,6 +121,7 @@ export default function App() {
     },
     [clearSession]
   );
+  const [logs, setLogs] = useLogStream(Boolean(user && token), authFetch, LOG_BUFFER);
 
   useEffect(() => {
     if (!token) return;
@@ -198,6 +195,19 @@ export default function App() {
     }
   }, [user, authFetch]);
 
+  const {
+    tgCheckStatus,
+    setTgCheckStatus,
+    restoreStatus,
+    setRestoreStatus,
+    massMessagingStatus,
+    setMassMessagingStatus,
+  } = useOperationStatuses({
+    enabled: Boolean(user),
+    authFetch,
+    onProfilesChange: fetchData,
+  });
+
   const fetchSettings = useCallback(
     async (force = false) => {
       if (!user) return;
@@ -243,98 +253,8 @@ export default function App() {
         const data = await res.json();
         setBotStatus(data);
       }
-    } catch (e) { }
-  }, [user, authFetch]);
-
-  useEffect(() => {
-    let interval;
-    if (restoreStatus.running) {
-      interval = setInterval(async () => {
-        try {
-          const res = await authFetch('/api/profiles/restore-photos/status');
-          const data = await res.json();
-          setRestoreStatus(data);
-
-          if (data.error) {
-            toast.error(`Ошибка восстановления: ${data.error}`);
-            setRestoreStatus({ running: false, error: data.error });
-          } else if (data.running) {
-            fetchData();
-          } else if (data.done) {
-            toast.success(`Обновлено профилей: ${data.result?.updatedCount || 0}`);
-            fetchData();
-          }
-        } catch (e) {
-          console.error('Error polling restore status:', e);
-        }
-      }, 3000);
-    }
-    return () => clearInterval(interval);
-  }, [restoreStatus.running, authFetch, fetchData]);
-
-  useEffect(() => {
-    let interval;
-    if (massMessagingStatus.running) {
-      interval = setInterval(async () => {
-        try {
-          const res = await authFetch('/api/mass-messages/status');
-          const data = await res.json();
-          setMassMessagingStatus(data);
-          if (!data.running) {
-            if (data.status === 'Done') toast.success('Рассылка завершена');
-            fetchData();
-          }
-        } catch (e) { }
-      }, 3000);
-    }
-    return () => clearInterval(interval);
-  }, [massMessagingStatus.running, authFetch, fetchData]);
-
-  useEffect(() => {
-    let interval;
-    if (tgCheckStatus.running) {
-      interval = setInterval(async () => {
-        try {
-          const res = await authFetch('/api/check-telegram-batch/status');
-          const data = await res.json();
-          setTgCheckStatus(data);
-          if (data.running) {
-            fetchData();
-          } else {
-            if (data.status === 'Done') toast.success(`TG проверено: ${data.current}/${data.total}`);
-            else if (data.stopped) toast('Проверка TG остановлена');
-            fetchData();
-          }
-        } catch (e) {
-          console.error('Error polling TG check status:', e);
-        }
-      }, 2000);
-    }
-    return () => clearInterval(interval);
-  }, [tgCheckStatus.running, authFetch, fetchData]);
-
-  useEffect(() => {
-    if (user) {
-      authFetch('/api/check-telegram-batch/status')
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data?.running) setTgCheckStatus(data);
-        })
-        .catch(() => { });
-
-      authFetch('/api/mass-messages/status')
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data && data.running) setMassMessagingStatus(data);
-        })
-        .catch(() => { });
-
-      authFetch('/api/profiles/restore-photos/status')
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data && data.running) setRestoreStatus(data);
-        })
-        .catch(() => { });
+    } catch {
+      // Periodic status refresh retries automatically.
     }
   }, [user, authFetch]);
 
@@ -462,7 +382,7 @@ export default function App() {
         } else {
           toast.error(data.message || 'Не отправлено');
         }
-      } catch (e) {
+      } catch {
         toast.error('Ошибка отправки');
       }
     },
@@ -514,7 +434,7 @@ export default function App() {
         setGirls((prev) => prev.filter((g) => g.url !== url));
         toast.success("Профиль удален");
       }
-    } catch (e) {
+    } catch {
       toast.error("Ошибка сети");
     }
   };
@@ -533,7 +453,7 @@ export default function App() {
       } else {
         toast.error(data.error || "Ошибка сохранения донора");
       }
-    } catch (e) {
+    } catch {
       toast.error("Ошибка сети");
     }
   };
@@ -582,15 +502,19 @@ export default function App() {
     setLogs([]);
     try {
       await authFetch('/api/logs/clear', { method: 'POST' });
-    } catch (e) { }
-  }, [authFetch]);
+    } catch {
+      // Local state is already cleared; next stream event reconciles logs.
+    }
+  }, [authFetch, setLogs]);
 
   const handleRestorePhotos = async () => {
     if (restoreStatus.running) {
       try {
         await authFetch('/api/profiles/restore-photos/stop', { method: 'POST' });
         setRestoreStatus((prev) => ({ ...prev, status: 'Stopping...' }));
-      } catch (err) { }
+      } catch {
+        // Polling reflects stop state on next tick.
+      }
       return;
     }
     try {
@@ -610,7 +534,7 @@ export default function App() {
       } else {
         toast.error(data.error || 'Ошибка при запуске');
       }
-    } catch (err) {
+    } catch {
       toast.error('Ошибка сети или сервера');
     }
   };
@@ -676,52 +600,10 @@ export default function App() {
         setMassMessagingStatus({ running: true, current: 0, total: 0, status: 'Starting...' });
         toast.success(`Запущена рассылка ${cityOnly && '(только город)'} ${exceptCity && '(кроме города)'} ${likedOnly && '(только лайки)'}`);
       }
-    } catch (e) { toast.error('Ошибка запуска'); }
+    } catch {
+      toast.error('Ошибка запуска');
+    }
   };
-
-  useEffect(() => {
-    if (!user || !token) return;
-    const normalizedToken = token === 'null' ? null : token;
-    if (!normalizedToken) return;
-
-    let es;
-    let cancelled = false;
-    let retryTimer;
-
-    const connectLogs = () => {
-      if (cancelled) return;
-      es = new EventSource(`/api/logs?token=${encodeURIComponent(normalizedToken)}`);
-      es.onmessage = (ev) => {
-        const log = JSON.parse(ev.data);
-        setLogs((prev) => [...prev, log].slice(-LOG_BUFFER));
-      };
-      es.onerror = () => {
-        es?.close();
-        if (!cancelled) retryTimer = setTimeout(connectLogs, 3000);
-      };
-    };
-
-    // Ждём backend — иначе vite proxy падает с ECONNREFUSED и светит token в URL
-    (async () => {
-      for (let i = 0; i < 15 && !cancelled; i++) {
-        try {
-          const res = await authFetch('/api/bot/status');
-          if (res.ok) {
-            connectLogs();
-            return;
-          }
-        } catch (_) { /* backend ещё не поднялся */ }
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-      if (!cancelled) connectLogs();
-    })();
-
-    return () => {
-      cancelled = true;
-      clearTimeout(retryTimer);
-      es?.close();
-    };
-  }, [user, token, authFetch]);
 
   const unopenedCount = useMemo(() => girls.filter((g) => !g.viewed).length, [girls]);
   const likesCount = useMemo(() => Object.values(votes).filter((v) => v === 'like').length, [votes]);
@@ -872,7 +754,7 @@ export default function App() {
             onClearLogs={handleClearLogs}
             logs={logs}
             isLoading={isLoading}
-            token={token}
+            authFetch={authFetch}
           />
         )}
 

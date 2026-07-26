@@ -43,12 +43,35 @@ async function getDB() {
   }
 }
 
+function quoteIdentifier(identifier) {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(identifier)) {
+    throw new Error(`Unsafe SQLite identifier: ${identifier}`);
+  }
+  return `"${identifier}"`;
+}
+
+async function ensureColumns(database, table, definitions) {
+  const quotedTable = quoteIdentifier(table);
+  const existing = new Set(
+    (await database.all(`PRAGMA table_info(${quotedTable})`)).map((column) => column.name)
+  );
+  for (const definition of definitions) {
+    const column = definition.trim().split(/\s+/, 1)[0];
+    if (existing.has(column)) continue;
+    await database.exec(
+      `ALTER TABLE ${quotedTable} ADD COLUMN ${quoteIdentifier(column)} ${definition
+        .trim()
+        .slice(column.length)
+        .trim()}`
+    );
+    existing.add(column);
+  }
+}
+
 async function initializeDB() {
   // Обеспечиваем существование папки config если это не :memory:
   if (DB_PATH !== ':memory:') {
-    try {
-      await promises_1.mkdir(CONFIG_DIR, { recursive: true });
-    } catch (e) { }
+    await promises_1.mkdir(CONFIG_DIR, { recursive: true });
   }
   dbInstance = await (0, sqlite_1.open)({
     filename: DB_PATH,
@@ -217,242 +240,83 @@ async function initializeDB() {
         );
 
     `);
-  try {
-    await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN show_browser INTEGER DEFAULT 0`);
-  } catch (e) { }
-  try {
-    await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN rest_after INTEGER DEFAULT 0`);
-  } catch (e) { }
-  try {
-    await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN repeat_rule TEXT DEFAULT 'none'`);
-  } catch (e) { }
-  try {
-    await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN series_id INTEGER`);
-  } catch (e) { }
-  try {
-    await dbInstance.exec(`ALTER TABLE message_schedule_slots ADD COLUMN except_city INTEGER DEFAULT 0`);
-  } catch (e) { }
-  try {
-    await dbInstance.exec(`ALTER TABLE urls ADD COLUMN niche TEXT`);
-  } catch (e) { }
+  await ensureColumns(dbInstance, 'message_schedule_slots', [
+    'show_browser INTEGER DEFAULT 0',
+    'rest_after INTEGER DEFAULT 0',
+    "repeat_rule TEXT DEFAULT 'none'",
+    'series_id INTEGER',
+    'except_city INTEGER DEFAULT 0',
+  ]);
+  await ensureColumns(dbInstance, 'urls', ['niche TEXT', 'city TEXT', 'keyword TEXT']);
+  await dbInstance.exec(`
+    UPDATE urls
+    SET keyword = TRIM(city || ' ' || niche)
+    WHERE type = 'donor'
+      AND (keyword IS NULL OR TRIM(keyword) = '')
+      AND (TRIM(COALESCE(city, '')) != '' OR TRIM(COALESCE(niche, '')) != '')
+  `);
+  await dbInstance.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_urls_type_url ON urls(type, url)`);
 
-  try {
-    await dbInstance.exec(`ALTER TABLE urls ADD COLUMN city TEXT`);
-  } catch (e) { }
+  await ensureColumns(dbInstance, 'profiles', [
+    'tg_status TEXT',
+    'username TEXT',
+    'followers_count INTEGER DEFAULT 0',
+    'publications_count INTEGER DEFAULT 0',
+    'donor TEXT',
+    'following_count INTEGER DEFAULT 0',
+    'posts_count INTEGER DEFAULT 0',
+    'isInCity INTEGER DEFAULT 0',
+    'dmSent INTEGER DEFAULT 0',
+    'tgTagged INTEGER DEFAULT 0',
+    'dmError TEXT',
+    'dm_status TEXT',
+  ]);
+  await ensureColumns(dbInstance, 'donors', [
+    'posts_count INTEGER DEFAULT 0',
+    'publications_count INTEGER DEFAULT 0',
+  ]);
+  await ensureColumns(dbInstance, 'accounts', [
+    'fingerprint TEXT',
+    'local_storage TEXT',
+    'warmup_score INTEGER DEFAULT 0',
+    'last_warmup TEXT',
+    'active_checker INTEGER DEFAULT 0',
+    'warmup_progress INTEGER DEFAULT 0',
+    'warmup_running INTEGER DEFAULT 0',
+  ]);
+  await ensureColumns(dbInstance, 'users', ['token_version INTEGER DEFAULT 0']);
+  await ensureColumns(dbInstance, 'messages_log', [
+    'username TEXT',
+    'account_id TEXT',
+    'sender_name TEXT',
+    'donor TEXT',
+    'status_manual INTEGER DEFAULT 0',
+  ]);
 
-  try {
-    await dbInstance.exec(`ALTER TABLE urls ADD COLUMN keyword TEXT`);
-  } catch (e) { }
-
-  try {
-    await dbInstance.exec(`
-      UPDATE urls
-      SET keyword = TRIM(city || ' ' || niche)
-      WHERE type = 'donor'
-        AND (keyword IS NULL OR TRIM(keyword) = '')
-        AND (TRIM(COALESCE(city, '')) != '' OR TRIM(COALESCE(niche, '')) != '')
-    `);
-  } catch (e) { }
-
-  try {
-    // Try to drop the former index/constraint if possible, but SQLite doesn't easily drop constraints.
-    // We will just try to create a new unique index.
-    await dbInstance.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_urls_type_url ON urls(type, url)`);
-  } catch (e) { }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN tg_status TEXT`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN username TEXT`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN followers_count INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN publications_count INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN donor TEXT`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN following_count INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN posts_count INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN isInCity INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE donors ADD COLUMN posts_count INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN fingerprint TEXT`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN local_storage TEXT`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN warmup_score INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-  try {
-    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN last_warmup TEXT`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN active_checker INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN warmup_progress INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN warmup_running INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE donors ADD COLUMN publications_count INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore if column already exists
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN dmSent INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN tgTagged INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN dmError TEXT`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN username TEXT`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN account_id TEXT`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN sender_name TEXT`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE profiles ADD COLUMN dm_status TEXT`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN donor TEXT`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`ALTER TABLE messages_log ADD COLUMN status_manual INTEGER DEFAULT 0`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`
-      UPDATE messages_log SET donor = (
-        SELECT LOWER(TRIM(REPLACE(
-          SUBSTR(p.donor || ',', 1, INSTR(p.donor || ',', ',') - 1),
-          '@', ''
-        )))
-        FROM profiles p WHERE p.url = messages_log.url
-      )
-      WHERE donor IS NULL OR donor = ''
-    `);
-  } catch (e) {
-    // Ignore
-  }
-
+  await dbInstance.exec(`
+    UPDATE messages_log SET donor = (
+      SELECT LOWER(TRIM(REPLACE(
+        SUBSTR(p.donor || ',', 1, INSTR(p.donor || ',', ',') - 1),
+        '@', ''
+      )))
+      FROM profiles p WHERE p.url = messages_log.url
+    )
+    WHERE donor IS NULL OR donor = ''
+  `);
   for (const table of ['profiles', 'donors']) {
-    for (const column of ['photo_local TEXT', 'photo_cached_at TEXT', 'photo_status TEXT']) {
-      try {
-        await dbInstance.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`);
-      } catch (e) {
-        // Ignore
-      }
-    }
+    await ensureColumns(dbInstance, table, [
+      'photo_local TEXT',
+      'photo_cached_at TEXT',
+      'photo_status TEXT',
+    ]);
   }
 
-
-  try {
-    await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_profiles_username ON profiles(username)`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_messages_log_timestamp ON messages_log(timestamp DESC)`);
-  } catch (e) {
-    // Ignore
-  }
-
-  try {
-    await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_messages_log_donor ON messages_log(donor)`);
-  } catch (e) {
-    // Ignore
-  }
+  await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_profiles_username ON profiles(username)`);
+  await dbInstance.exec(
+    `CREATE INDEX IF NOT EXISTS idx_messages_log_timestamp ON messages_log(timestamp DESC)`
+  );
+  await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_messages_log_donor ON messages_log(donor)`);
+  await importLegacyData(dbInstance);
 
   try {
     const { mergeDuplicateProfiles } = require('./profile-dedup');

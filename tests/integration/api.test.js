@@ -1,11 +1,8 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-const path = require('path');
+import { describe, it, expect, beforeEach } from 'vitest';
 // process.env.APP_ROOT = path.resolve(__dirname, '../../');
 const request = require('supertest');
 const app = require('../../backend/server');
 const { getDB, resetDB } = require('../../backend/lib/db');
-
-const { getRootPath } = require('../../backend/lib/utils');
 
 describe('API Integration Tests', () => {
   let db;
@@ -21,6 +18,7 @@ describe('API Integration Tests', () => {
       const testSettings = {
         showBrowser: true,
         concurrentProfiles: 5,
+        dmLimit: 42,
         humanEmulation: true,
         dolphinToken: uniqueToken,
       };
@@ -38,6 +36,7 @@ describe('API Integration Tests', () => {
       expect(getRes.status).toBe(200);
       expect(getRes.body.showBrowser).toBe(true);
       expect(getRes.body.concurrentProfiles).toBe(5);
+      expect(getRes.body.dmLimit).toBe(42);
       expect(getRes.body.humanEmulation).toBe(true);
       expect(getRes.body.dolphinToken).toBe(uniqueToken);
     });
@@ -111,8 +110,32 @@ describe('API Integration Tests', () => {
       expect(createdAcc).toBeDefined();
       expect(createdAcc.name).toBe('Integration Test Acc');
 
+      const regenerateRes = await request(app)
+        .put(`/api/accounts/${accountId}`)
+        .send({ regenerateFingerprint: true });
+      expect(regenerateRes.status).toBe(200);
+      expect(regenerateRes.body.success).toBe(true);
+      expect(JSON.parse(regenerateRes.body.fingerprint)).toBeTypeOf('object');
+
       // Cleanup
       await db.run('DELETE FROM accounts WHERE id = ?', [accountId]);
+    });
+  });
+
+  describe('Telegram batch contract', () => {
+    it('exposes start, stop and status endpoints', async () => {
+      const statusRes = await request(app).get('/api/check-telegram-batch/status');
+      expect(statusRes.status).toBe(200);
+      expect(statusRes.body.running).toBeTypeOf('boolean');
+
+      const invalidStartRes = await request(app)
+        .post('/api/check-telegram-batch/start')
+        .send({ profiles: [] });
+      expect(invalidStartRes.status).toBe(400);
+
+      const stopRes = await request(app).post('/api/check-telegram-batch/stop');
+      expect(stopRes.status).toBe(200);
+      expect(stopRes.body.success).toBe(true);
     });
   });
 });
