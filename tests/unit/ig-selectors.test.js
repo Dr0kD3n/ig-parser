@@ -8,6 +8,9 @@ describe('ig-selectors', () => {
     expect(IG.MESSAGE_BTN).toContain('main header section');
     expect(IG.SEND_BTN).toContain('textbox');
     expect(IG.POST_LINKS).toContain('main article');
+    expect(IG.DIRECT_NEW_MESSAGE).toContain('New message');
+    expect(IG.DIRECT_RECIPIENT_INPUT).toContain('queryBox');
+    expect(IG.DIRECT_NEXT_BTN).toContain('Next');
   });
 
   it('findFirstVisible возвращает первый видимый элемент', async () => {

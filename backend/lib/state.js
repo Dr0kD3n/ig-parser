@@ -10,6 +10,48 @@ const {
   mergeProfileRecords,
   mergeDonors,
 } = require('./profile-dedup');
+
+const deferredPhotoQueue = [];
+let activePhotoDownloads = 0;
+const PHOTO_DOWNLOAD_CONCURRENCY = 3;
+
+function pumpDeferredPhotoQueue() {
+  while (activePhotoDownloads < PHOTO_DOWNLOAD_CONCURRENCY && deferredPhotoQueue.length > 0) {
+    const job = deferredPhotoQueue.shift();
+    activePhotoDownloads++;
+    Promise.resolve()
+      .then(() => cacheProfilePhoto(job.photoUrl))
+      .then(async (result) => {
+        const database = await (0, db_1.getDB)();
+        await database.run(
+          `UPDATE profiles
+           SET photo_local = ?, photo_cached_at = ?, photo_status = ?
+           WHERE url = ? AND photo = ?`,
+          [
+            result.localPath || '',
+            result.cachedAt || null,
+            result.success ? 'cached' : (result.status || 'failed'),
+            job.profileUrl,
+            job.photoUrl,
+          ]
+        );
+      })
+      .catch((e) => {
+        console.warn(`⚠️ [PHOTO CACHE] Фоновая загрузка ${job.profileUrl}: ${e.message}`);
+      })
+      .finally(() => {
+        activePhotoDownloads--;
+        pumpDeferredPhotoQueue();
+      });
+  }
+}
+
+function enqueueDeferredProfilePhoto(profileUrl, photoUrl) {
+  if (!profileUrl || !photoUrl) return;
+  deferredPhotoQueue.push({ profileUrl, photoUrl });
+  pumpDeferredPhotoQueue();
+}
+
 exports.StateManager = {
   processed: new Set(),
   processedDonors: new Set(),
@@ -24,9 +66,20 @@ exports.StateManager = {
     const historyRows = await db.all(`SELECT url FROM urls WHERE type = 'history'`);
     this.processed = new Set(historyRows.map((r) => r.url));
     console.log(`🗄️ [ИСТОРИЯ] Загружено проверенных профилей/доноров: ${this.processed.size}`);
-    // processDonors tracks which donors have been fully scanned during the current session
-    // or loaded from history (type='history').
-    this.processedDonors = new Set(historyRows.map((r) => r.url));
+    // История профилей и завершённые доноры — разные множества.
+    // Иначе профиль, однажды найденный у другого донора, ошибочно считается
+    // полностью обработанным донором.
+    await db.run(`
+      INSERT OR IGNORE INTO urls (type, url)
+      SELECT DISTINCT 'processed_donor', h.url
+      FROM urls h
+      INNER JOIN checked_searches c ON c.donor_url = h.url
+      WHERE h.type = 'history'
+    `);
+    const processedDonorRows = await db.all(
+      `SELECT url FROM urls WHERE type = 'processed_donor'`
+    );
+    this.processedDonors = new Set(processedDonorRows.map((r) => r.url));
 
     // Load checked searches
     const checkedRows = await db.all(`SELECT donor_url, search_term FROM checked_searches`);
@@ -95,15 +148,18 @@ exports.StateManager = {
   },
   async addDonor(url) {
     const urlStr = typeof url === 'object' && url !== null ? url.url : url;
-    await this.add(urlStr);
     const normUrl = (0, config_1.normalizeUrl)(urlStr);
+    if (!normUrl || this.processedDonors.has(normUrl)) return;
     this.processedDonors.add(normUrl);
-    // We now delete from 'donor' type to keep the list clean after processing
     const db = await (0, db_1.getDB)();
     try {
-      // [MARK] Donors are no longer deleted from the list after processing to allow visual marking in UI
+      await db.run(
+        `INSERT OR IGNORE INTO urls (type, url) VALUES (?, ?)`,
+        ['processed_donor', normUrl]
+      );
     } catch (e) {
-      console.error('Ошибка при удалении отработанного донора:', e);
+      this.processedDonors.delete(normUrl);
+      throw e;
     }
   },
   async saveResult(profileData) {
@@ -155,6 +211,15 @@ exports.StateManager = {
         localPath: profileData.photo_local,
         cachedAt: profileData.photo_cached_at || ts,
       }
+      : existing?.photo_local && existing.photo === photoUrl
+        ? {
+          success: true,
+          status: existing.photo_status || 'cached',
+          localPath: existing.photo_local,
+          cachedAt: existing.photo_cached_at || ts,
+        }
+      : profileData.deferPhotoCache && photoUrl
+        ? { success: false, status: 'pending', deferred: true }
       : photoUrl
         ? await cacheProfilePhoto(photoUrl).catch((e) => ({
         success: false,
@@ -162,7 +227,7 @@ exports.StateManager = {
         error: e.message,
       }))
         : { success: false, status: 'missing' };
-    if (photoUrl && !photoCache.success) {
+    if (photoUrl && !photoCache.success && !photoCache.deferred) {
       console.warn(`⚠️ [PHOTO CACHE] Не удалось сохранить фото профиля ${profileData.username || profileData.url}: ${photoCache.error || photoCache.status}`);
     }
     const pubCount =
@@ -214,6 +279,9 @@ exports.StateManager = {
         ]
       );
     }
+    if (photoCache.deferred) {
+      enqueueDeferredProfilePhoto(profileData.url, photoUrl);
+    }
     console.log(
       `   ${profileData.isInCity ? "✅" : "🏆"} [НАЙДЕНА] ${profileData.name || profileData.url} (от ${profileData.donor || '?'}) -> сохранена в базу!`
     );
@@ -239,6 +307,27 @@ exports.StateManager = {
       console.log(`✅ Сохранен новый донор: ${normUrl} (${kw || ''})`);
     } catch (e) {
       // Ignore if already exists in donor table
+    }
+  },
+  async saveDiscoveredDonors(donors) {
+    if (!Array.isArray(donors) || donors.length === 0) return;
+    const db = await (0, db_1.getDB)();
+    await db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const donor of donors) {
+        const normUrl = (0, config_1.normalizeUrl)(donor.url);
+        const keyword =
+          donor.keyword || `${donor.city || ''} ${donor.niche || ''}`.trim() || null;
+        await db.run(
+          `INSERT OR REPLACE INTO urls (type, url, niche, city, keyword)
+           VALUES (?, ?, ?, ?, ?)`,
+          ['donor', normUrl, donor.niche || null, donor.city || null, keyword]
+        );
+      }
+      await db.exec('COMMIT');
+    } catch (e) {
+      await db.exec('ROLLBACK').catch(() => {});
+      throw e;
     }
   },
   async saveDonors(donors) {

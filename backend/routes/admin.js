@@ -1,15 +1,14 @@
-const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const child_process = require('child_process');
 const db = require('../lib/db');
 const { extractPrimaryDonor } = require('../lib/donor-category-stats');
 const utils = require('../lib/utils');
 const config = require('../lib/config');
 const browserLib = require('../lib/browser');
 const ctx = require('../lib/server-context');
+const { instagramWorkerService } = require('../lib/instagram-worker-service');
 module.exports = (app, { onClearLogs }) => {
-  const { botProcesses, refreshSession, broadcastLog, logEmitter, sendMessageToProfile, markDmSentByUsername } = ctx;
+  const { refreshSession, logEmitter, sendMessageToProfile, markDmSentByUsername } = ctx;
 app.post('/api/logs/clear', (req, res) => {
   ctx.historicalLogs = [];
   onClearLogs?.();
@@ -115,138 +114,30 @@ app.get('/api/live-view', (req, res) => {
   });
 });
 app.get('/api/bot/status', (req, res) => {
-  res.json({
-    index: !!botProcesses.index,
-    parser: !!botProcesses.parser,
-    checker: !!botProcesses.checker,
-  });
+  res.json(instagramWorkerService.getStatus());
 });
 app.post('/api/bot/start', (req, res) => {
-  const { type } = req.body;
-  if (!['index', 'parser', 'checker'].includes(type)) {
-    return res.status(400).json({ success: false, error: 'Invalid bot type' });
+  try {
+    const result = instagramWorkerService.start(req.body?.type);
+    const { statusCode = 200, ...body } = result;
+    res.status(statusCode).json(body);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
   }
-  if (botProcesses[type]) {
-    return res.json({ success: false, error: 'Bot already running' });
-  }
-  refreshSession();
-  const isPkg = process['pkg'] !== undefined;
-  const scriptExt = 'js';
-  const backendDir = path.join(__dirname, '..');
-  const useE2eStub = process.env.E2E_TEST === '1';
-  const scriptPath = useE2eStub
-    ? path.join(backendDir, 'e2e', `${type}-stub.js`)
-    : path.join(backendDir, `${type}.${scriptExt}`);
-  if (!isPkg && !fs.existsSync(scriptPath)) {
-    return res
-      .status(404)
-      .json({ success: false, error: `Script for ${type} not found at ${scriptPath}` });
-  }
-  const runner = isPkg ? process.execPath : 'node';
-  const args = isPkg ? [scriptPath] : [scriptPath];
-  const cwdPath = isPkg ? path.dirname(process.execPath) : backendDir;
-  const child = child_process.spawn(runner, args, {
-    cwd: cwdPath,
-    env: { ...process.env, FORCE_COLOR: '1' },
-    shell: false,
-  });
-  botProcesses[type] = child;
-  // Обработка ошибки запуска самого процесса
-  child.on('error', (err) => {
-    broadcastLog(`${type}-error`, `Failed to start process: ${err.message}`);
-    botProcesses[type] = null;
-  });
-  child.stdout?.on('data', (data) => broadcastLog(type, data.toString()));
-  child.stderr?.on('data', (data) => broadcastLog(`${type}-error`, data.toString()));
-  child.on('close', (code) => {
-    broadcastLog('system', `${type} bot exited with code ${code}`);
-    botProcesses[type] = null;
-  });
-  res.json({ success: true });
 });
-function killOrphanBotProcess(type) {
-  const scriptName = `${type}.js`;
-  if (process.platform === 'win32') {
-    child_process.spawn(
-      'powershell',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        `Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.CommandLine -match 'backend[\\\\/]${scriptName.replace('.', '\\.')}(\\s|"|$)' -and $_.CommandLine -notmatch 'server\\.js' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
-      ],
-      { stdio: 'ignore', windowsHide: true }
-    );
-  } else {
-    child_process.spawn('pkill', ['-f', `backend/${scriptName}`], { stdio: 'ignore' });
-  }
-}
 
-app.post('/api/bot/stop', (req, res) => {
-  const { type } = req.body;
-  if (!['index', 'parser', 'checker'].includes(type)) {
-    return res.status(400).json({ success: false, error: 'Invalid bot type' });
-  }
-  const child = botProcesses[type];
-  if (child) {
-    let finished = false;
-    const timeout = setTimeout(() => {
-      if (!finished) {
-        finished = true;
-        if (botProcesses[type] === child) {
-          botProcesses[type] = null;
-        }
-        if (!res.headersSent) {
-          res.json({ success: true, message: 'Stop timeout' });
-        }
-      }
-    }, 5000);
-
-    child.once('close', () => {
-      if (!finished) {
-        finished = true;
-        clearTimeout(timeout);
-        if (!res.headersSent) {
-          res.json({ success: true });
-        }
-      }
-    });
-
-    if (process.platform === 'win32') {
-      try {
-        child.kill();
-      } catch (_) {}
-      child_process.spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], {
-        stdio: 'ignore',
-        windowsHide: true,
-      });
-    } else {
-      child.kill('SIGTERM');
-    }
-  } else {
-    killOrphanBotProcess(type);
-    res.json({ success: true, message: 'Процесс не отслеживался — отправлен сигнал остановки' });
+app.post('/api/bot/stop', async (req, res) => {
+  try {
+    res.json(await instagramWorkerService.stop(req.body?.type));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
   }
 });
 app.post('/api/bot/skip-donor', async (req, res) => {
-  try {
-    console.log('📢 [API] Получен запрос на пропуск текущего донора...');
-    fs.writeFileSync(path.join(utils.getRootPath(), 'data', 'skip_donor.flag'), 'skip');
-    res.json({ success: true, message: 'Сигнал пропуска донора отправлен' });
-  } catch (e) {
-    console.error('❌ [API] Ошибка при создании skip_donor.flag:', e);
-    res.json({ success: false, error: 'Ошибка при отправке сигнала' });
-  }
+  res.json(instagramWorkerService.skipDonor());
 });
 app.post('/api/skip-donor', async (req, res) => {
-  try {
-    console.log('📢 [API] Получен запрос на пропуск текущего донора...');
-    fs.writeFileSync(path.join(utils.getRootPath(), 'data', 'skip_donor.flag'), 'skip');
-    res.json({ success: true, message: 'Сигнал пропуска донора отправлен' });
-  } catch (e) {
-    console.error('❌ [API] Ошибка при создании skip_donor.flag:', e);
-    res.json({ success: false, error: 'Ошибка при отправке сигнала' });
-  }
+  res.json(instagramWorkerService.skipDonor());
 });
 app.post('/api/dm', async (req, res) => {
   const { url, message } = req.body;

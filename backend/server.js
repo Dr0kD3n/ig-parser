@@ -8,7 +8,9 @@ const { verifyToken, isAdmin } = require('./lib/auth-middleware');
 const { rateLimit } = require('express-rate-limit');
 const ctx = require('./lib/server-context');
 const mountRoutes = require('./routes');
-const { startMessageScheduler } = require('./lib/message-scheduler');
+const { startMessageScheduler, stopMessageScheduler } = require('./lib/message-scheduler');
+const { telegramBotService } = require('./lib/telegram-bot-service');
+const { startWindowsTray } = require('./lib/windows-tray');
 
 const originalLog = console.log;
 const originalError = console.error;
@@ -130,11 +132,42 @@ app.use(expressErrorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
   const HOST = process.env.HOST || '127.0.0.1';
-  const server = app.listen(PORT, HOST, async () => {
-    await state.StateManager.init();
-    startMessageScheduler();
+  let telegramRestartTimer = null;
+  const ensureTelegramBotStarted = () =>
+    telegramBotService.start().catch((error) => {
+      originalError('[TELEGRAM BOT] Ошибка запуска:', error.message);
+    });
+  const server = app.listen(PORT, HOST, () => {
+    state.StateManager.init()
+      .then(() => startMessageScheduler())
+      .catch((error) => {
+        originalError('[STATE] Initialization failed:', error.message);
+      });
+    ensureTelegramBotStarted();
+    telegramRestartTimer = setInterval(ensureTelegramBotStarted, 30_000);
+    telegramRestartTimer.unref();
     console.log(`Сервер запущен: http://${HOST}:${PORT}`);
   });
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    tray?.stop();
+    clearInterval(telegramRestartTimer);
+    stopMessageScheduler();
+    await telegramBotService.stop().catch((error) => {
+      originalError('[TELEGRAM BOT] Ошибка остановки:', error.message);
+    });
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+  const tray = startWindowsTray({
+    url: `http://${HOST}:${PORT}`,
+    onShutdown: shutdown,
+    logger: { error: originalError },
+  });
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
   server.on('clientError', (err, socket) => {
     if (['ECONNRESET', 'EPIPE', 'ERR_HTTP_REQUEST_TIMEOUT'].includes(err?.code)) {
       socket.destroy();

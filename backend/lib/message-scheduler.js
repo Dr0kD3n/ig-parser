@@ -2,6 +2,8 @@
 
 const { getDB } = require('./db');
 const { startMassMessaging, getMassMessengerStatus } = require('./mass-messenger');
+const { getInstagramActivity } = require('./instagram-activity');
+const { emitOperationEvent } = require('./operation-events');
 
 const TICK_MS = 5_000;
 const MISSED_GRACE_MS = 30 * 60 * 1000;
@@ -202,6 +204,7 @@ async function finishSlot(db, slotId, status, sentCount = 0, failReason = null) 
 
 async function runDueSlot(slot) {
   if (getMassMessengerStatus().running) return;
+  if (getInstagramActivity()) return;
 
   const db = await getDB();
   const now = new Date().toISOString();
@@ -236,6 +239,7 @@ async function runDueSlot(slot) {
       const failedRow = await db.get('SELECT * FROM message_schedule_slots WHERE id = ?', [slot.id]);
       if (failedRow) await spawnNextRepeatSlot(db, failedRow);
       console.log(`[SCHEDULER] Слот #${slot.id} не запущен: ${reason}`);
+      emitOperationEvent('schedule-slot', 'failed', { id: slot.id, error: reason });
       return;
     }
 
@@ -249,11 +253,13 @@ async function runDueSlot(slot) {
       console.log(`[SCHEDULER] Отдых ${REST_AFTER_MS / 60000} мин после слота #${slot.id}`);
     }
     console.log(`[SCHEDULER] Слот #${slot.id} завершён: ${status}, отправлено ${sentCount}`);
+    emitOperationEvent('schedule-slot', status, { id: slot.id, sent: sentCount });
   } catch (err) {
     console.error('[SCHEDULER] Ошибка слота', slot.id, err.message);
     await finishSlot(db, slot.id, 'failed', 0, err.message);
     const failedRow = await db.get('SELECT * FROM message_schedule_slots WHERE id = ?', [slot.id]);
     if (failedRow) await spawnNextRepeatSlot(db, failedRow);
+    emitOperationEvent('schedule-slot', 'failed', { id: slot.id, error: err.message });
   }
 }
 
@@ -274,6 +280,7 @@ async function tick() {
     const nowMs = Date.now();
 
     if (getMassMessengerStatus().running) return;
+    if (getInstagramActivity()) return;
 
     if (Date.now() < schedulerRestUntil) return;
 

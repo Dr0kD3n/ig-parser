@@ -81,10 +81,13 @@ describe('Service Test Suite', () => {
   describe('StateManager', () => {
     it('init should load history', async () => {
       mockDb.all.mockResolvedValueOnce([{ url: 'u1' }]);
+      mockDb.all.mockResolvedValueOnce([{ url: 'donor1' }]);
       mockDb.all.mockResolvedValueOnce([]);
       mockDb.all.mockResolvedValueOnce([]);
       await StateManager.init();
       expect(StateManager.processed.has('u1')).toBe(true);
+      expect(StateManager.processedDonors.has('donor1')).toBe(true);
+      expect(StateManager.processedDonors.has('u1')).toBe(false);
     });
 
     it('saveResult should insert profile if new', async () => {

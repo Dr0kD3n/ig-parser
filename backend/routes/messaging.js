@@ -3,6 +3,8 @@ const https = require('https');
 const { startMassMessaging, stopMassMessaging, getMassMessengerStatus } = require('../lib/mass-messenger');
 const { checkFeedback, getCheckerStatus, stopChecker } = require('../lib/feedback-handler');
 const ctx = require('../lib/server-context');
+const utils = require('../lib/utils');
+const { getInstagramActivity } = require('../lib/instagram-activity');
 module.exports = (app) => {
   const { CONFIG, invalidateGirlsCache, broadcastLog } = ctx;
 async function checkTelegramProfile(url) {
@@ -108,6 +110,13 @@ app.post('/api/check-telegram-batch', async (req, res) => {
 });
 
 app.post('/api/mass-messages/start', async (req, res) => {
+  const activeActivity = getInstagramActivity();
+  if (activeActivity) {
+    return res.status(409).json({
+      success: false,
+      error: `Instagram activity already running: ${activeActivity.type}`,
+    });
+  }
   const options = req.body || {};
   startMassMessaging((status) => {
     if (status.status && status.status !== 'Running') {

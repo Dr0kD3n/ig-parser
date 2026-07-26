@@ -181,6 +181,7 @@ const run = async () => {
                 const fetchResults = async (url) => {
                   try {
                     const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                    if (!res.ok) return [];
                     const json = await res.json();
                     if (json.users && Array.isArray(json.users)) {
                       return json.users.map(u => {
@@ -192,10 +193,12 @@ const run = async () => {
                   return [];
                 };
 
-                const [topResults, userResults] = await Promise.all([
-                  fetchResults(topSearchUrl),
-                  fetchResults(userSearchUrl)
-                ]);
+                // Один аккаунт: без burst из двух одновременных search-запросов.
+                // Topsearch нужен только когда специализированный поиск дал мало кандидатов.
+                const userResults = await fetchResults(userSearchUrl);
+                const topResults = userResults.length < 10
+                  ? await fetchResults(topSearchUrl)
+                  : [];
 
                 return [...topResults, ...userResults];
               } catch (e) {
@@ -208,7 +211,7 @@ const run = async () => {
 
             const uniqueLinks = [...new Set(apiLinks)];
             const finalLinks = uniqueLinks.slice(0, 30); // Target up to 30
-            let addedCount = 0;
+            const donorsToSave = [];
             for (const link of finalLinks) {
               const normLink = (0, config_1.normalizeUrl)(link);
               // Check city blacklist if donor is already known to contain city in its handle/placeholder
@@ -233,11 +236,11 @@ const run = async () => {
 
               if (!collectedUrls.has(normLink) && !state_1.StateManager.has(normLink)) {
                 collectedUrls.add(normLink);
-                await state_1.StateManager.saveDonor(normLink, niche, city, keyword);
-                addedCount++;
+                donorsToSave.push({ url: normLink, niche, city, keyword });
               }
             }
-            info(`✅ Всего найдено: ${uniqueLinks.length} | Взято: ${finalLinks.length} | Новых: ${addedCount}`);
+            await state_1.StateManager.saveDiscoveredDonors(donorsToSave);
+            info(`✅ Всего найдено: ${uniqueLinks.length} | Взято: ${finalLinks.length} | Новых: ${donorsToSave.length}`);
             await (0, anti_fraud_1.waitWithActivity)(page, 2000 + Math.random() * 3000);
           } catch (itemErr) {
             handleError(

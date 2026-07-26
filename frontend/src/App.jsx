@@ -77,13 +77,31 @@ export default function App() {
     safeStorage.setItem('ig_user', JSON.stringify(newUser));
   };
 
-  const handleLogout = useCallback(() => {
+  const clearSession = useCallback(() => {
     setToken(null);
     setUser(null);
     safeStorage.removeItem('ig_token');
     safeStorage.removeItem('ig_user');
-    toast.success("Вы вышли из системы");
   }, []);
+
+  const handleLogout = useCallback(async () => {
+    const currentToken = safeStorage.getItem('ig_token', null);
+    try {
+      if (currentToken && currentToken !== 'null' && currentToken !== 'undefined') {
+        const response = await fetch(`${API_BASE}/api/auth/logout`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${currentToken}` },
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.warn('[AUTH] Logout request failed:', error.message);
+      toast.error('Не удалось отозвать серверную сессию');
+      return;
+    }
+    clearSession();
+    toast.success('Вы вышли из системы');
+  }, [clearSession]);
 
   const authFetch = useCallback(
     async (url, options = {}) => {
@@ -97,7 +115,7 @@ export default function App() {
         const baseUrl = url.startsWith('/api/auth/') ? API_BASE : LOCAL_API_BASE;
         const res = await fetch(`${baseUrl}${url}`, { ...options, headers });
         if (res.status === 401) {
-          handleLogout();
+          clearSession();
         }
         return res;
       } catch (error) {
@@ -105,8 +123,24 @@ export default function App() {
         throw error;
       }
     },
-    [handleLogout]
+    [clearSession]
   );
+
+  useEffect(() => {
+    if (!token) return;
+    const controller = new AbortController();
+    fetch(`${API_BASE}/api/auth/verify`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) clearSession();
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') clearSession();
+      });
+    return () => controller.abort();
+  }, [token, clearSession]);
 
   const settingsLoaded = useRef(false);
   const pendingSave = useRef(false);

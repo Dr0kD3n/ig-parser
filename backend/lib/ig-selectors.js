@@ -78,6 +78,29 @@ const DIRECT_NAV = [
   'div[role="navigation"] a:has(svg[aria-label="Сообщения"])',
 ].join(', ');
 
+const DIRECT_NEW_MESSAGE = [
+  'button:has(svg[aria-label="New message"])',
+  'button:has(svg[aria-label="Новое сообщение"])',
+  'div[role="button"]:has(svg[aria-label="New message"])',
+  'div[role="button"]:has(svg[aria-label="Новое сообщение"])',
+  'button:has-text("New message")',
+  'button:has-text("Новое сообщение")',
+].join(', ');
+
+const DIRECT_RECIPIENT_INPUT = [
+  'div[role="dialog"] input[placeholder="Search"]',
+  'div[role="dialog"] input[placeholder="Поиск"]',
+  'div[role="dialog"] input[name="queryBox"]',
+  'div[role="dialog"] input[type="text"]',
+].join(', ');
+
+const DIRECT_NEXT_BTN = [
+  'div[role="dialog"] button:has-text("Next")',
+  'div[role="dialog"] button:has-text("Далее")',
+  'div[role="dialog"] div[role="button"]:has-text("Chat")',
+  'div[role="dialog"] div[role="button"]:has-text("Чат")',
+].join(', ');
+
 const FLOATING_INBOX = [
   '[aria-label="Thread list"]',
   '[aria-label="Список диалогов"]',
@@ -328,6 +351,9 @@ module.exports = {
   REELS_NAV,
   MESSAGE_BTN,
   DIRECT_NAV,
+  DIRECT_NEW_MESSAGE,
+  DIRECT_RECIPIENT_INPUT,
+  DIRECT_NEXT_BTN,
   FLOATING_INBOX,
   OPTIONS_BTN,
   MENU_MESSAGE_BTN,

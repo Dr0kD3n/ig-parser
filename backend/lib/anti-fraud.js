@@ -383,6 +383,108 @@ async function navigateViaSearch(page, url, config, session = {}) {
 }
 
 /**
+ * Открывает чат через Direct inbox. При несовместимой верстке отключается
+ * до конца сессии, после чего sender использует проверенный профильный flow.
+ */
+async function openDirectInboxThread(page, username, config, session = {}) {
+  const uname = String(username || '').replace('@', '').trim();
+  session.usedDirectInbox = false;
+  if (!uname || session.directInboxAvailable === false) return false;
+
+  try {
+    if (!/instagram\.com\/direct\/inbox\/?/.test(page.url())) {
+      const openedInbox = await IG.clickFirst(page, IG.DIRECT_NAV, humanClick, CLICK_OPTS);
+      if (!openedInbox) {
+        session.directInboxAvailable = false;
+        return false;
+      }
+      await T.pause(700, 1100);
+    }
+
+    const newMessage = await IG.findFirstVisible(page, IG.DIRECT_NEW_MESSAGE);
+    if (!newMessage) {
+      session.directInboxAvailable = false;
+      return false;
+    }
+    await humanClick(page, await IG.resolveClickable(newMessage), CLICK_OPTS);
+    await T.pause(350, 650);
+
+    const recipientInput = await IG.findFirstVisible(page, IG.DIRECT_RECIPIENT_INPUT);
+    if (!recipientInput) {
+      session.directInboxAvailable = false;
+      return false;
+    }
+    await humanClick(page, recipientInput, CLICK_OPTS);
+    await humanType(page, recipientInput, uname, config.timeouts, { skipFocus: true });
+    await T.pause(700, 1200);
+
+    const dialog = page.locator('div[role="dialog"]').last();
+    const exactUsername = dialog.getByText(uname, { exact: true }).last();
+    const atUsername = dialog.getByText(`@${uname}`, { exact: true }).last();
+    const result = await exactUsername.isVisible().catch(() => false)
+      ? exactUsername
+      : await atUsername.isVisible().catch(() => false)
+        ? atUsername
+        : null;
+    if (!result) {
+      await closeOverlays(page);
+      return false;
+    }
+
+    await humanClick(page, await IG.resolveClickable(result), CLICK_OPTS);
+    await T.pause(250, 500);
+
+    const next = await IG.findFirstVisible(page, IG.DIRECT_NEXT_BTN);
+    if (!next) {
+      await closeOverlays(page);
+      return false;
+    }
+    const previousUrl = page.url();
+    await humanClick(page, await IG.resolveClickable(next), CLICK_OPTS);
+
+    const composer = await waitForChatComposer(page, 10000);
+    if (!composer) {
+      await closeOverlays(page);
+      return false;
+    }
+
+    const threadChanged =
+      page.url() !== previousUrl && /instagram\.com\/direct\/t\//.test(page.url());
+    const correctChat = await isChatForUsername(page, uname, {
+      ...session,
+      lastOpenedDM: null,
+    });
+    if (!threadChanged || !correctChat) {
+      logger.warn(`⚠️ [DIRECT] Не удалось подтвердить чат @${uname}; используем профильный flow`);
+      await closeDirectModal(page, session);
+      return false;
+    }
+
+    session.lastOpenedDM = uname.toLowerCase();
+    session.usedDirectInbox = true;
+    logger.info(`✅ [DIRECT] Чат @${uname} открыт через inbox`);
+    return true;
+  } catch (e) {
+    logger.warn(`⚠️ [DIRECT] Inbox flow недоступен: ${e.message}`);
+    session.directInboxAvailable = false;
+    await closeOverlays(page).catch(() => {});
+    return false;
+  }
+}
+
+/** Возвращает sender в inbox без перехода через профиль и главную ленту. */
+async function returnToDirectInbox(page, session = {}) {
+  if (!session.usedDirectInbox || !page || page.isClosed()) return false;
+  session.lastOpenedDM = null;
+
+  if (/instagram\.com\/direct\/inbox\/?/.test(page.url())) return true;
+  const opened = await IG.clickFirst(page, IG.DIRECT_NAV, humanClick, CLICK_OPTS);
+  if (!opened) return false;
+  await T.pause(500, 900);
+  return true;
+}
+
+/**
  * Одно случайное «живое» действие на странице (скролл, курсор, hover, клик по блоку)
  */
 async function performIdleAction(page, options = {}) {
@@ -726,8 +828,8 @@ async function verifyMessageDeliveredOnce(page, message) {
   }
 
   if (chatCheck.inputEmpty) {
-    logger.info(`✅ [DELIVERY] Поле пустое — вероятно отправлено`);
-    return { delivered: true, confidence: 'input_cleared', final: true };
+    logger.info(`🔄 [DELIVERY] Поле очистилось, ждём подтверждение bubble`);
+    return { delivered: false, reason: 'not_verified', final: false };
   }
 
   return { delivered: false, reason: 'not_verified', final: false };
@@ -893,6 +995,8 @@ function createMessengerSession() {
     allowGotoFallback: true,
     profileCount: 0,
     lastOpenedDM: null,
+    directInboxAvailable: true,
+    usedDirectInbox: false,
   };
 }
 
@@ -900,6 +1004,8 @@ module.exports = {
   extractUsername,
   getPartialSearchQuery,
   navigateViaSearch,
+  openDirectInboxThread,
+  returnToDirectInbox,
   browseProfileBeforeDM,
   swipeHomeFeed,
   clickGoHome,

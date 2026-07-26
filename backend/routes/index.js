@@ -19,5 +19,6 @@ module.exports = function mountRoutes(app, middleware) {
   require('./proxy')(app);
   require('./presets')(app);
   require('./donors')(app);
+  require('./telegram-bot')(app);
   require('./admin')(app, { onClearLogs });
 };

@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import DebouncedLinesTextarea from './DebouncedLinesTextarea';
+import MessagesListEditor from './MessagesListEditor';
 
 const CategoryRowExpand = memo(function CategoryRowExpand({
   rowType,
@@ -14,12 +14,7 @@ const CategoryRowExpand = memo(function CategoryRowExpand({
         <p className="fs-11 color-muted m-0 mb-8">
           Если у донора нет категории или для неё пустые шаблоны
         </p>
-        <DebouncedLinesTextarea
-          className="msg-textarea category-msg-textarea fs-13"
-          lines={messages}
-          onCommit={onMessagesCommit}
-          placeholder="Одно сообщение на строку..."
-        />
+        <MessagesListEditor messages={messages} onCommit={onMessagesCommit} />
       </div>
     );
   }
@@ -54,12 +49,7 @@ const CategoryRowExpand = memo(function CategoryRowExpand({
             </tbody>
           </table>
         </div>
-        <DebouncedLinesTextarea
-          className="msg-textarea category-msg-textarea fs-13"
-          lines={messages}
-          onCommit={onMessagesCommit}
-          placeholder="Одно сообщение на строку..."
-        />
+        <MessagesListEditor messages={messages} onCommit={onMessagesCommit} />
       </div>
     );
   }
@@ -67,12 +57,7 @@ const CategoryRowExpand = memo(function CategoryRowExpand({
   return (
     <div className="category-expand-inner">
       <label className="fs-12 mb-4 block color-muted">Шаблоны рассылки:</label>
-      <DebouncedLinesTextarea
-        className="msg-textarea category-msg-textarea fs-13"
-        lines={messages}
-        onCommit={onMessagesCommit}
-        placeholder="Одно сообщение на строку..."
-      />
+      <MessagesListEditor messages={messages} onCommit={onMessagesCommit} />
     </div>
   );
 });

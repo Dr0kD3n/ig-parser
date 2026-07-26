@@ -5,6 +5,12 @@ const { JWT_SECRET } = require('./auth-config');
 const ENCRYPTION_KEY = crypto.createHash('sha256').update(JWT_SECRET).digest();
 const IV_LENGTH = 16;
 
+function isEncrypted(text) {
+    if (!text || !text.includes(':')) return false;
+    const ivHex = text.split(':')[0];
+    return ivHex.length === 32 && /^[0-9a-fA-F]+$/.test(ivHex);
+}
+
 function encrypt(text) {
     if (!text) return text;
     const iv = crypto.randomBytes(IV_LENGTH);
@@ -12,6 +18,12 @@ function encrypt(text) {
     let encrypted = cipher.update(text);
     encrypted = Buffer.concat([encrypted, cipher.final()]);
     return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+/** Шифрует только plaintext — не ломает уже зашифрованное значение */
+function encryptSafe(text) {
+    if (!text) return text;
+    return isEncrypted(text) ? text : encrypt(text);
 }
 
 function decrypt(text) {
@@ -39,4 +51,4 @@ function decrypt(text) {
     }
 }
 
-module.exports = { encrypt, decrypt };
+module.exports = { encrypt, decrypt, encryptSafe, isEncrypted };

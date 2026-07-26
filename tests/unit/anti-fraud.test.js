@@ -6,6 +6,7 @@ const {
   isOnHomeFeed,
   createMessengerSession,
   submitMessage,
+  verifyMessageDeliveredOnce,
 } = require('../../backend/lib/anti-fraud');
 
 describe('anti-fraud', () => {
@@ -95,6 +96,39 @@ describe('anti-fraud', () => {
       await submitMessage(page, 'input', session);
       expect(page.keyboard.press).toHaveBeenCalledTimes(2);
       expect(session.useEnter).toBe(true);
+    });
+  });
+
+  describe('verifyMessageDeliveredOnce', () => {
+    it('не считает пустой composer доказательством доставки', async () => {
+      const emptyLocator = {
+        count: vi.fn().mockResolvedValue(0),
+        isVisible: vi.fn().mockResolvedValue(false),
+        innerText: vi.fn().mockResolvedValue(''),
+        first() {
+          return this;
+        },
+        last() {
+          return this;
+        },
+        nth() {
+          return this;
+        },
+        locator() {
+          return this;
+        },
+      };
+      const page = {
+        getByText: vi.fn(() => emptyLocator),
+        locator: vi.fn(() => emptyLocator),
+        evaluate: vi.fn().mockResolvedValue({ found: false, inputEmpty: true }),
+      };
+
+      await expect(verifyMessageDeliveredOnce(page, 'Привет')).resolves.toEqual({
+        delivered: false,
+        reason: 'not_verified',
+        final: false,
+      });
     });
   });
 });

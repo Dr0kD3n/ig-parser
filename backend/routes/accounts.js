@@ -3,10 +3,22 @@ const warmup = require('../lib/warmup');
 const authorizer = require('../lib/authorizer');
 const fingerprintLib = require('../lib/fingerprint');
 const ctx = require('../lib/server-context');
+const {
+  tryAcquireInstagramActivity,
+  releaseInstagramActivity,
+  getInstagramActivity,
+} = require('../lib/instagram-activity');
 module.exports = (app) => {
-  const { encrypt, decrypt, restorePhotos, stopRestorePhotos, invalidateGirlsCache } = ctx;
+  const { encrypt, decrypt, encryptSafe, restorePhotos, stopRestorePhotos, invalidateGirlsCache } = ctx;
+function getActiveInstagramActivity() {
+  return getInstagramActivity()?.type || null;
+}
 app.post('/api/accounts/:id/authorize/start', async (req, res) => {
   const { id } = req.params;
+  const activeActivity = getActiveInstagramActivity();
+  if (activeActivity) {
+    return res.status(409).json({ success: false, error: `Instagram activity already running: ${activeActivity}` });
+  }
   try {
     const database = await db.getDB();
     const account = await database.get(`SELECT * FROM accounts WHERE id = ?`, [id]);
@@ -40,6 +52,10 @@ app.post('/api/accounts/:id/authorize/stop', async (req, res) => {
 
 app.post('/api/accounts/:id/browser/start', async (req, res) => {
   const { id } = req.params;
+  const activeActivity = getActiveInstagramActivity();
+  if (activeActivity) {
+    return res.status(409).json({ success: false, error: `Instagram activity already running: ${activeActivity}` });
+  }
   try {
     const database = await db.getDB();
     const account = await database.get(`SELECT * FROM accounts WHERE id = ?`, [id]);
@@ -62,8 +78,16 @@ app.post('/api/accounts/:id/browser/start', async (req, res) => {
 
 app.post('/api/accounts/:id/warmup', async (req, res) => {
   const { id } = req.params;
+  const activeActivity = getActiveInstagramActivity();
+  if (activeActivity) {
+    return res.status(409).json({ success: false, error: `Instagram activity already running: ${activeActivity}` });
+  }
   if (ctx.warmupStatus.get(id)?.running) {
     return res.status(400).json({ success: false, error: 'Warmup already in progress' });
+  }
+  const activityLease = tryAcquireInstagramActivity(`warmup:${id}`);
+  if (!activityLease) {
+    return res.status(409).json({ success: false, error: 'Instagram activity already running' });
   }
 
   ctx.warmupStatus.set(id, { running: true, current: 0, total: 50, site: '' });
@@ -78,6 +102,9 @@ app.post('/api/accounts/:id/warmup', async (req, res) => {
     })
     .catch((e) => {
       ctx.warmupStatus.set(id, { running: false, error: e.message });
+    })
+    .finally(() => {
+      releaseInstagramActivity(activityLease);
     });
 
   res.json({ success: true });
@@ -90,8 +117,16 @@ app.get('/api/accounts/:id/warmup/status', (req, res) => {
 
 app.post('/api/accounts/:id/instagram-cooldown', async (req, res) => {
   const { id } = req.params;
+  const activeActivity = getActiveInstagramActivity();
+  if (activeActivity) {
+    return res.status(409).json({ success: false, error: `Instagram activity already running: ${activeActivity}` });
+  }
   if (ctx.instagramCooldownStatus.get(id)?.running) {
     return res.status(400).json({ success: false, error: 'Instagram cooldown already in progress' });
+  }
+  const activityLease = tryAcquireInstagramActivity(`instagram-cooldown:${id}`);
+  if (!activityLease) {
+    return res.status(409).json({ success: false, error: 'Instagram activity already running' });
   }
 
   ctx.instagramCooldownStatus.set(id, { running: true, current: 0, total: 12, site: '' });
@@ -105,6 +140,9 @@ app.post('/api/accounts/:id/instagram-cooldown', async (req, res) => {
     })
     .catch((e) => {
       ctx.instagramCooldownStatus.set(id, { running: false, error: e.message });
+    })
+    .finally(() => {
+      releaseInstagramActivity(activityLease);
     });
 
   res.json({ success: true });
@@ -182,11 +220,11 @@ app.put('/api/accounts/:id', async (req, res) => {
     }
     if (proxy !== undefined) {
       updates.push('proxy = ?');
-      values.push(encrypt(proxy));
+      values.push(encryptSafe(proxy));
     }
     if (cookies !== undefined) {
       updates.push('cookies = ?');
-      values.push(encrypt(cookies));
+      values.push(encryptSafe(cookies));
     }
     let updatedFingerprint = null;
     if (fingerprint !== undefined) {

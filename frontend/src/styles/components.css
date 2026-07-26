@@ -253,6 +253,14 @@
   background: hsla(var(--accent), 0.8);
 }
 
+.ignoredTag {
+  background: hsla(45, 90%, 45%, 0.8);
+}
+
+.drainTag {
+  background: hsla(var(--danger), 0.8);
+}
+
 .viewedTag {
   background: hsla(var(--accent), 0.8);
 }
@@ -447,6 +455,36 @@
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+.donor-info-stats {
+  max-width: 100%;
+}
+
+.donor-stats-main {
+  display: inline;
+  line-height: 1.4;
+}
+
+.donor-stats-meta {
+  font-size: 11px;
+  color: hsl(var(--text-dim));
+  font-weight: 500;
+}
+
+.donor-popover-search {
+  font-size: 12px;
+  color: hsl(var(--text-muted));
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  background: hsl(var(--bg-card));
+  border-radius: 6px;
+  border: 1px solid hsl(var(--border));
+}
+
+.donor-info-stats .donor-popover {
+  left: 0;
+  right: auto;
 }
 
 .donor-popover::after {
@@ -693,4 +731,4 @@
     opacity: 1;
   }
 }
-
+

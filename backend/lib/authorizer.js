@@ -11,8 +11,14 @@ playwright_extra_1.chromium.use(stealth);
 
 const { createBrowserContext } = require('./browser');
 const { dismissBlockingModals, watchBlockingModals } = require('./instagram-overlays');
+const {
+  tryAcquireInstagramActivity,
+  releaseInstagramActivity,
+  getInstagramActivity,
+} = require('./instagram-activity');
 
 let activeAuthorizers = new Map();
+let authorizerLeases = new Map();
 
 function hasAccountCookies(cookies) {
   if (!cookies) return false;
@@ -53,6 +59,13 @@ async function startAuthorization(
   if (activeAuthorizers.has(accountId)) {
     return { success: false, error: 'Authorization already in progress' };
   }
+  const activityLease = tryAcquireInstagramActivity(`authorizer:${accountId}`);
+  if (!activityLease) {
+    return {
+      success: false,
+      error: `Instagram activity already running: ${getInstagramActivity()?.type || 'unknown'}`,
+    };
+  }
 
   let browser;
   let context;
@@ -71,11 +84,17 @@ async function startAuthorization(
     browser = result.browser;
     context = result.context;
   } catch (e) {
+    releaseInstagramActivity(activityLease);
     return { success: false, error: `Failed to launch browser: ${e.message}` };
   }
 
   activeAuthorizers.set(accountId, context);
-  context.on('close', () => activeAuthorizers.delete(accountId));
+  authorizerLeases.set(accountId, activityLease);
+  context.on('close', () => {
+    activeAuthorizers.delete(accountId);
+    releaseInstagramActivity(authorizerLeases.get(accountId));
+    authorizerLeases.delete(accountId);
+  });
 
   try {
     const page = context.pages()[0] || (await context.newPage());

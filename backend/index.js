@@ -139,7 +139,13 @@ const extractVisibleCandidates = () => {
   });
   return results;
 };
-const scrollAndCollectUrls = async (page, config, contextState, searchQuery = '') => {
+const scrollAndCollectUrls = async (
+  page,
+  config,
+  contextState,
+  searchQuery = '',
+  initialResponse = null
+) => {
   const collectedUrls = new Set();
   const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
   let hasMore = true;
@@ -147,7 +153,8 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
   let resolveResponse;
   let responseCount = 0;
 
-  // Handler for friendships API (ONLY for hasMore tracking)
+  // Берём кандидатов из уже выполненного Instagram-запроса.
+  // DOM остаётся fallback для изменений формата ответа.
   const onResponse = async (response) => {
     const url = response.url();
     if (url.includes('/api/v1/friendships/') && (url.includes('/followers') || url.includes('friendships_type=followers'))) {
@@ -155,16 +162,23 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
         try {
           const urlObj = new URL(url);
           const q = urlObj.searchParams.get('query') || '';
-          if (q && decodeURIComponent(q).toLowerCase() !== searchQuery.toLowerCase()) return;
+          if (q && q.toLowerCase() !== searchQuery.toLowerCase()) return;
         } catch (e) { }
       }
       try {
-        const text = await response.text();
-        const json = JSON.parse(text);
+        const json = await response.json();
         if (json.status === 'ok') {
           responseCount++;
           hasMore = json.has_more === true || json.has_next_page === true || !!json.next_max_id;
           lastResponseTime = Date.now();
+          const users = Array.isArray(json.users) ? json.users : [];
+          for (const item of users) {
+            const user = item?.user || item;
+            const username = String(user?.username || '').trim();
+            if (username) {
+              collectedUrls.add(`https://www.instagram.com/${username}/`);
+            }
+          }
           if (resolveResponse) resolveResponse();
         }
       } catch (e) { }
@@ -174,6 +188,10 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
   page.on('response', onResponse);
 
   try {
+    if (initialResponse) {
+      await onResponse(initialResponse);
+    }
+
     const modal = page.locator('div[role="dialog"]').first();
     const modalBox = await modal.boundingBox().catch(() => null);
     if (modalBox) {
@@ -189,7 +207,7 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
     ]);
     resolveResponse = null;
 
-    // Scan initial results for stories
+    // DOM fallback для ответа неизвестного формата.
     (await page.evaluate(extractVisibleCandidates)).forEach(url => collectedUrls.add(url));
 
     // If first response already said hasMore=false, exit immediately
@@ -227,12 +245,12 @@ const scrollAndCollectUrls = async (page, config, contextState, searchQuery = ''
       ]);
       resolveResponse = null;
 
-      // 3. Scan DOM for new stories at each step
+      // 3. DOM fallback после сетевого ответа
       const visibleStories = await page.evaluate(extractVisibleCandidates);
       visibleStories.forEach(url => collectedUrls.add(url));
 
       if (collectedUrls.size > lastCollectedSize) {
-        logger.info(`      📥 Собрано со сторис: ${collectedUrls.size}`);
+        logger.info(`      📥 Собрано профилей: ${collectedUrls.size}`);
         lastCollectedSize = collectedUrls.size;
         noChangeCount = 0;
       } else {
@@ -276,7 +294,6 @@ const analyzeProfile = async (context, url, config, donor = '') => {
     await state_1.StateManager.mergeDonorHint(usernameFromUrl, donor, url);
     return;
   }
-  await state_1.StateManager.add(url);
   const page = await context.newPage();
   logger.info(`      👀 Открываем профиль: ${url}`);
   try {
@@ -333,6 +350,7 @@ const analyzeProfile = async (context, url, config, donor = '') => {
 
     if (matchesWordsBlacklist(searchString, wordsBlacklist)) {
       logger.info(`         🚫 Профиль исключён (чёрный список слов): ${username}`);
+      await state_1.StateManager.add(url);
       return;
     }
 
@@ -444,24 +462,13 @@ const analyzeProfile = async (context, url, config, donor = '') => {
     if (isAnonymousPhoto(extraData.pUrl) && extraData.pUrl) {
       logger.warn(`         ⚠️ Обнаружена анонимная аватарка, не сохраняем фото.`);
     }
-    const photoCache = photo
-      ? await cacheProfilePhotoFromPage(page, photo).catch((e) => ({
-        success: false,
-        status: 'failed',
-        error: e.message,
-      }))
-      : { success: false, status: 'missing' };
-    if (photo && !photoCache.success) {
-      logger.warn(`         ⚠️ Фото найдено, но локально не сохранено: ${photoCache.error || photoCache.status}`);
-    }
     const profileData = {
       name,
       username,
       bio,
       photo,
-      photo_local: photoCache.localPath || '',
-      photo_cached_at: photoCache.cachedAt || null,
-      photo_status: photoCache.status || 'missing',
+      photo_status: photo ? 'pending' : 'missing',
+      deferPhotoCache: !!photo,
       url,
       donor,
       followers_count: extraData.fCount,
@@ -470,6 +477,7 @@ const analyzeProfile = async (context, url, config, donor = '') => {
       isInCity: isTarget ? 1 : 0,
     };
     await state_1.StateManager.saveResult(profileData);
+    await state_1.StateManager.add(url);
   } catch (e) {
     if (!e.message.includes('Timeout')) {
       logger.error(`         ❌ Ошибка анализа профиля: ${e.message.split('\n')[0]}`);
@@ -504,8 +512,6 @@ const analyzeProfileFast = async (context, url, config, donor = '') => {
       return analyzeProfile(context, url, config, donor);
     }
 
-    await state_1.StateManager.add(url);
-
     const searchString = `${data.name} ${data.bio} ${username}`.toLowerCase();
     const cityKeywords = config.target.cityKeywords || [];
     const cityBlacklist = config.target.cityBlacklist || [];
@@ -513,6 +519,7 @@ const analyzeProfileFast = async (context, url, config, donor = '') => {
 
     if (matchesWordsBlacklist(searchString, wordsBlacklist)) {
       logger.info(`         🚫 Профиль исключён (чёрный список слов): ${username}`);
+      await state_1.StateManager.add(url);
       return;
     }
 
@@ -525,31 +532,21 @@ const analyzeProfileFast = async (context, url, config, donor = '') => {
 
     const isTarget = matchesWhitelist && !matchesBlacklist;
     const photo = isAnonymousPhoto(data.photo) ? '' : data.photo;
-    const photoCache = photo
-      ? await cacheProfilePhotoFromPage(page, photo).catch((e) => ({
-        success: false,
-        status: 'failed',
-        error: e.message,
-      }))
-      : { success: false, status: 'missing' };
-    if (photo && !photoCache.success) {
-      logger.warn(`         ⚠️ Фото найдено, но локально не сохранено: ${photoCache.error || photoCache.status}`);
-    }
 
     await state_1.StateManager.saveResult({
       name: data.name,
       username,
       bio: data.bio,
       photo,
-      photo_local: photoCache.localPath || '',
-      photo_cached_at: photoCache.cachedAt || null,
-      photo_status: photoCache.status || 'missing',
+      photo_status: photo ? 'pending' : 'missing',
+      deferPhotoCache: !!photo,
       url,
       donor,
       followers_count: data.fCount,
       posts_count: data.pCount,
       isInCity: isTarget ? 1 : 0
     });
+    await state_1.StateManager.add(url);
 
     if (isTarget) logger.info(`         ✅ Целевой!`);
   } catch (e) {
@@ -825,10 +822,9 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     const donorSearchString = `${donorInfo.name} ${donorInfo.bio} ${donorInfo.username}`.toLowerCase();
 
     const matchesWhitelist = cityKeywords.length === 0 || cityKeywords.some(kw => donorSearchString.includes(kw.toLowerCase()));
-    const matchesBlacklist = cityBlacklist.length > 0 && cityBlacklist.some(kw => {
-      if (donorSearchString.includes(`${kw.toLowerCase()} `)) console.log(kw)
-      return donorSearchString.includes(`${kw.toLowerCase()} `)
-    });
+    const matchesBlacklist = cityBlacklist.length > 0 && cityBlacklist.some(kw =>
+      donorSearchString.includes(String(kw).trim().toLowerCase())
+    );
 
     if (!matchesWhitelist || matchesBlacklist) {
       if (!matchesWhitelist) {
@@ -853,7 +849,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     await page.waitForSelector('div[role="dialog"]', { timeout: 10000 });
     logger.info(`   ✅ Список подписчиков открыт.`);
     const searchInput = page.locator(SELECTORS.SEARCH_INPUT).first();
-    await searchInput.waitFor({ state: 'visible', timeout: config.timeouts.inputWait }).catch(e => `    ❌ КРИТИЧЕСКАЯ ОШИБКА В ИНПУТЕ ПОИСКА: ${e.message}`);
+    await searchInput.waitFor({ state: 'visible', timeout: config.timeouts.inputWait });
     let emptyResultsCount = 0;
     let namesToSearch = config.target.names;
     let checkedCount = 0;
@@ -876,8 +872,20 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
       try {
         await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 5000 });
       } catch (e) { }
-      const typeDelay = Math.floor(Math.random() * (60 - 20 + 1) + 20);
-      // await searchInput.pressSequentially(name, { delay: typeDelay });
+      const initialResponsePromise = page.waitForResponse((response) => {
+        const url = response.url();
+        if (
+          !url.includes('/api/v1/friendships/') ||
+          !(url.includes('/followers') || url.includes('friendships_type=followers')) ||
+          response.status() !== 200
+        ) return false;
+        try {
+          const query = new URL(url).searchParams.get('query') || '';
+          return query.toLowerCase() === name.toLowerCase();
+        } catch (_e) {
+          return false;
+        }
+      }, { timeout: 8000 }).catch(() => null);
       await (0, utils_1.humanType)(page, searchInput, name, config.timeouts);
 
       logger.info(`      ⏳ Ждем выдачу результатов от Инстаграма...`);
@@ -885,8 +893,14 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         await page.waitForSelector(SELECTORS.LOADER, { state: 'hidden', timeout: 5000 });
       } catch (e) { }
       await (0, browser_1.takeLiveScreenshot)(page);
-      await (0, utils_1.wait)(50);
-      const candidates = await scrollAndCollectUrls(page, config, contextState, name);
+      const initialResponse = await initialResponsePromise;
+      const candidates = await scrollAndCollectUrls(
+        page,
+        config,
+        contextState,
+        name,
+        initialResponse
+      );
       const newCandidates = candidates.filter((candidateUrl) => !state_1.StateManager.has(candidateUrl));
       const skippedCount = candidates.length - newCandidates.length;
       logger.info(`      📊 ИТОГИ СБОРА ССЫЛОК:`);
@@ -896,11 +910,10 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
 
       if (newCandidates.length > 0) {
         logger.info(`      🚀 Обрабатываем новые профили пачками...`);
-        const concurrentProfiles = await (0, config_1.getSetting)('concurrentProfiles');
         const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
 
-        // If human emulation is ON, we only process ONE profile at a time with large delays
-        const CHUNK_SIZE = humanEmulation ? 1 : concurrentProfiles ? parseInt(concurrentProfiles) : 3;
+        // Один Instagram-аккаунт: web_profile_info строго последовательно.
+        const CHUNK_SIZE = 1;
 
         for (let i = 0; i < newCandidates.length; i += CHUNK_SIZE) {
           if (checkSkipSignal(contextState)) {
@@ -925,11 +938,10 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
               await (0, anti_fraud_1.waitWithActivity)(page, delay);
             }
           } else {
-            const chunkPromises = chunk.map((url) => {
+            for (const url of chunk) {
               const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
-              return analyzeProfileFast(context, url, config, donorName);
-            });
-            await Promise.all(chunkPromises);
+              await analyzeProfileFast(context, url, config, donorName);
+            }
             await randomDelay(100, 300);
           }
 
@@ -937,18 +949,18 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         }
       }
 
-      await state_1.StateManager.markChecked(donorUrl, name);
       emptyResultsCount = newCandidates.length === 0 ? emptyResultsCount + 1 : 0;
 
       if (newCandidates.length === 0 && emptyResultsCount >= 3) {
         if (totalAccounts > 1) {
           logger.warn(`⚠️ 3 ПУСТЫХ РЕЗУЛЬТАТА ПОДРЯД. СКОРЕЕ ВСЕГО ШЕДОУБАН. ИНИЦИИРУЕМ СМЕНУ ПРОФИЛЯ...`);
-          throw new RotateAccountError('Shadowban (3 empty results)', namesToSearch.slice(nameIdx + 1));
+          throw new RotateAccountError('Shadowban (3 empty results)', namesToSearch.slice(nameIdx));
         } else {
           logger.warn(`⚠️ 3 ПУСТЫХ РЕЗУЛЬТАТА ПОДРЯД. ВОЗМОЖЕН ШЕДОУБАН. ПРОДОЛЖАЕМ (ТОЛЬКО 1 АККАУНТ ДЛЯ ЗАДАЧИ).`);
           emptyResultsCount = 0;
         }
       }
+      await state_1.StateManager.markChecked(donorUrl, name);
 
       if (shouldSkipDonor) break;
     }
@@ -1029,8 +1041,6 @@ const run = async () => {
   let donorIdx = 0;
   while (donorIdx < donors.length) {
     const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
-    const concurrentProfilesValue = await (0, config_1.getSetting)('concurrentProfiles');
-    const concurrentProfiles = parseInt(concurrentProfilesValue) || 3;
     const searchNames = await (0, config_1.getList)('names.txt');
     const unparsedDonors = donors.slice(donorIdx).filter(d => {
       if (state_1.StateManager.hasDonor(d)) return false;
@@ -1063,7 +1073,6 @@ const run = async () => {
             } else {
               logger.error(`   ❌ Ошибка обработки донора ${donorUrl}: ${err.message}`);
             }
-            await state_1.StateManager.addDonor(donorUrl);
           }
           donorIdx++;
           // Reset to full names list for next donor
@@ -1082,10 +1091,10 @@ const run = async () => {
           }
         }
       } else {
-        logger.info(`🚀 Запускаем пул параллельной обработки доноров (concurrency: ${concurrentProfiles})...`);
-        await (0, utils_1.asyncPool)(unparsedDonors, concurrentProfiles, async (donor) => {
-          if (state_1.StateManager.hasDonor(donor)) return;
+        logger.info(`🚀 Обрабатываем доноров последовательно для одного Instagram-аккаунта...`);
+        for (const donor of unparsedDonors) {
           const donorUrl = typeof donor === 'object' ? donor.url : donor;
+          if (state_1.StateManager.hasDonor(donorUrl)) continue;
           const donorConfig = JSON.parse(JSON.stringify(CONFIG));
           try {
             await processDonor(context, donorUrl, donorConfig, accounts.length);
@@ -1095,9 +1104,8 @@ const run = async () => {
             if (err.name === 'RotateAccountError') throw err;
             logger.error(`   ❌ Ошибка обработки донора ${donorUrl}: ${err.message}`);
             donorIdx++;
-            await state_1.StateManager.addDonor(donorUrl); // Mark as processed to not repeat error
           }
-        });
+        }
         break; // Finished pool successfully
       }
     } catch (e) {

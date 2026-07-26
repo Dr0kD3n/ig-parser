@@ -119,6 +119,15 @@ const humanTypeChars = async (page, text, timeouts) => {
   const delayMin = timeouts?.typingDelayMin || 30;
   const delayMax = timeouts?.typingDelayMax || 90;
   for (const char of text) {
+    if (char === '\n') {
+      await page.keyboard.down('Shift');
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Shift');
+      await waitAfterEvent();
+      const delay = Math.floor(Math.random() * (delayMax - delayMin + 1)) + delayMin;
+      await wait(delay);
+      continue;
+    }
     // 2% шанс опечатки с исправлением через Backspace
     if (Math.random() < 0.02 && char !== ' ') {
       const incorrectChar = String.fromCharCode(

@@ -90,14 +90,19 @@ export default function AccountsSection({
         }
       } catch (e) { }
 
-      await authFetch(`/api/accounts/${id}`, {
+      const res = await authFetch(`/api/accounts/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
       // Update local state
+      const { userAgent: _ua, ...accountPatch } = data;
       const updatedAccounts = settingsData.accounts.map((a) =>
-        a.id === id ? { ...a, ...data, fingerprint: data.fingerprint } : a
+        a.id === id ? { ...a, ...accountPatch, fingerprint: data.fingerprint } : a
       );
       onSettingsChange({ accounts: updatedAccounts });
       setEditingAccount(null);

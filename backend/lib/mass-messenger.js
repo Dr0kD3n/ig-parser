@@ -3,10 +3,12 @@ const { getDB } = require('./db');
 const logger = require('./logger');
 const IG = require('./ig-selectors');
 const { getAllAccounts, getSetting, getList } = require('./config');
-const { createBrowserContext, startLiveView, takeLiveScreenshot } = require('./browser');
+const { createBrowserContext, startLiveView } = require('./browser');
 const { wait, humanType, humanClick, humanScrollToTop } = require('./utils');
 const {
     navigateViaSearch,
+    openDirectInboxThread,
+    returnToDirectInbox,
     browseProfileBeforeDM,
     swipeHomeFeed,
     performMicroActions,
@@ -33,6 +35,13 @@ const {
     normalizeUsername,
     USERNAME_SQL,
 } = require('./profile-dedup');
+const { createSendRateGovernor } = require('./send-rate-governor');
+const {
+    tryAcquireInstagramActivity,
+    releaseInstagramActivity,
+    getInstagramActivity,
+} = require('./instagram-activity');
+const { emitOperationEvent } = require('./operation-events');
 
 let massMessengerStatus = {
     running: false,
@@ -56,40 +65,43 @@ async function sendMessageToProfile(page, url, message, config, session) {
         const username = url.split('/').filter(Boolean).pop() || '';
         session.lastOpenedDM = null;
 
-        await closeDirectModal(page, session);
+        const openedViaInbox = await openDirectInboxThread(page, username, config, session);
 
-        const navigated = await navigateViaSearch(page, url, config, session);
-        if (!navigated) {
-            return { success: false, reason: 'nav_failed' };
-        }
+        if (!openedViaInbox) {
+            await closeDirectModal(page, session);
 
-        await waitWithActivity(page, 400 + Math.random() * 600, { noScroll: true });
-        await closeStoryIfOpen(page);
-        await closeFloatingInbox(page);
-        await ensureCorrectChatOrClosed(page, username, session);
-        await takeLiveScreenshot(page);
+            const navigated = await navigateViaSearch(page, url, config, session);
+            if (!navigated) {
+                return { success: false, reason: 'nav_failed' };
+            }
 
-        const isDirectChat = page.url().includes('/direct/t/');
-
-        if (!isDirectChat) {
-            await page.waitForSelector('header section button, div[role="dialog"]', { timeout: 8000 }).catch(() => { });
-            await wait(500 + Math.random() * 400);
-
-            await browseProfileBeforeDM(page);
+            await waitWithActivity(page, 400 + Math.random() * 600, { noScroll: true });
             await closeStoryIfOpen(page);
             await closeFloatingInbox(page);
             await ensureCorrectChatOrClosed(page, username, session);
-            await humanScrollToTop(page);
-            await wait(300 + Math.random() * 300);
 
-            const chatInput = await IG.findActiveChatInput(page);
-            const chatLoaded = chatInput && (await isChatForUsername(page, username, session));
+            const isDirectChat = page.url().includes('/direct/t/');
 
-            if (!chatLoaded) {
-                const opened = await openProfileDM(page, username, session);
-                if (!opened) {
-                    logger.warn(`❌ No message button found for ${url}`);
-                    return { success: false, reason: 'no_button' };
+            if (!isDirectChat) {
+                await page.waitForSelector('header section button, div[role="dialog"]', { timeout: 8000 }).catch(() => { });
+                await wait(500 + Math.random() * 400);
+
+                await browseProfileBeforeDM(page);
+                await closeStoryIfOpen(page);
+                await closeFloatingInbox(page);
+                await ensureCorrectChatOrClosed(page, username, session);
+                await humanScrollToTop(page);
+                await wait(300 + Math.random() * 300);
+
+                const chatInput = await IG.findActiveChatInput(page);
+                const chatLoaded = chatInput && (await isChatForUsername(page, username, session));
+
+                if (!chatLoaded) {
+                    const opened = await openProfileDM(page, username, session);
+                    if (!opened) {
+                        logger.warn(`❌ No message button found for ${url}`);
+                        return { success: false, reason: 'no_button' };
+                    }
                 }
             }
         }
@@ -107,7 +119,7 @@ async function sendMessageToProfile(page, url, message, config, session) {
             return { success: false, reason: 'wrong_chat' };
         }
 
-        await wait(600 + Math.random() * 900);
+        await wait(150 + Math.random() * 200);
 
         const history = await detectChatHistory(page, username);
         if (history.hasHistory) {
@@ -153,9 +165,16 @@ async function sendMessageToProfile(page, url, message, config, session) {
     } finally {
         if (page && !page.isClosed()) {
             try {
-                await closeDirectModal(page, session);
-                session.lastOpenedDM = null;
-                await swipeHomeFeed(page, session);
+                if (session.usedDirectInbox) {
+                    const returned = await returnToDirectInbox(page, session);
+                    if (!returned) {
+                        await closeDirectModal(page, session);
+                    }
+                } else {
+                    await closeDirectModal(page, session);
+                    session.lastOpenedDM = null;
+                    await swipeHomeFeed(page, session);
+                }
                 if (session.profileCount % 5 === 0) {
                     await performMicroActions(page);
                 }
@@ -240,12 +259,34 @@ async function runE2eMassMessaging({ profiles, dmLimit, likedOnly, onProgress, d
 
 async function startMassMessaging(onProgress, options = {}) {
     if (massMessengerStatus.running) return { started: false, reason: 'already_running' };
+    const activityLease = tryAcquireInstagramActivity('mass-messenger');
+    if (!activityLease) {
+        return {
+            started: false,
+            reason: `instagram_busy:${getInstagramActivity()?.type || 'unknown'}`,
+        };
+    }
 
+    try {
     messengerStopRequested = false;
+    massMessengerStatus = {
+        running: true,
+        current: 0,
+        total: 0,
+        status: 'Starting',
+        results: [],
+    };
+    if (onProgress) onProgress(massMessengerStatus);
     const db = await getDB();
     const settings = await db.all(`SELECT * FROM settings`);
     const donorGroups = JSON.parse(settings.find(s => s.key === 'donorGroups')?.value || '[]');
     const donorsList = await state_1.StateManager.loadDonors();
+    const messageCountRows = await db.all(
+        `SELECT message_text, COUNT(*) AS c FROM messages_log GROUP BY message_text`
+    );
+    const messageCountMap = new Map(
+        messageCountRows.map((row) => [row.message_text, Number(row.c) || 0])
+    );
     const humanEmulation =
         settings.find(s => s.key === 'humanEmulation')?.value === 'true' || !!options.restAfter;
     const dmLimit = options.dmLimit != null
@@ -274,7 +315,9 @@ async function startMassMessaging(onProgress, options = {}) {
     // Порядок как в таблице на главной: от самой большой даты к старым.
     query += ` ORDER BY datetime(timestamp) DESC, rowid DESC`;
     if (dmLimit && dmLimit > 0) {
-        query += ` LIMIT ${dmLimit}`;
+        // Blacklist и dedupe применяются ниже; берём запас кандидатов,
+        // иначе фактическая рассылка часто получается короче dmLimit.
+        query += ` LIMIT ${Math.max(dmLimit, dmLimit * 5)}`;
     }
 
     const profiles = await db.all(query, params);
@@ -294,12 +337,15 @@ async function startMassMessaging(onProgress, options = {}) {
             })
             : profiles;
 
-    const filteredProfiles = dedupeProfilesForMessaging(
+    let filteredProfiles = dedupeProfilesForMessaging(
         afterBlacklist.filter((p) => {
             const uname = normalizeUsername(p.username);
             return !uname || !dmSentUsernames.has(uname);
         })
     );
+    if (dmLimit && dmLimit > 0) {
+        filteredProfiles = filteredProfiles.slice(0, dmLimit);
+    }
     const profilesCount = filteredProfiles.length;
     logger.info(`🔍 Found ${profilesCount} profiles for mass messaging (cityOnly: ${!!options.cityOnly}, exceptCity: ${!!options.exceptCity})`);
 
@@ -374,6 +420,7 @@ async function startMassMessaging(onProgress, options = {}) {
         liveInterval = startLiveView(context);
 
         const session = createMessengerSession();
+        const sendGovernor = createSendRateGovernor();
         page = await context.newPage();
         logger.info(`🖥️ [ACC: ${account.name}] Последовательная рассылка: ${profilesCount} профилей`);
         await page.goto('https://www.instagram.com/', {
@@ -398,9 +445,6 @@ async function startMassMessaging(onProgress, options = {}) {
 
             if (!page || page.isClosed()) {
                 await reopenPage('before_profile');
-                currentProcessed++;
-                updateStatus({ current: currentProcessed });
-                continue;
             }
 
             const freshProfile = await db.get(`SELECT dmSent, username FROM profiles WHERE url = ?`, [profile.url]);
@@ -418,6 +462,7 @@ async function startMassMessaging(onProgress, options = {}) {
             }
 
             logger.info(`🧵 [${i + 1}/${profilesCount}] ${profile.url}`);
+            let governorDecision = { delayMs: 0, stop: false };
 
             try {
                 const primaryDonor = extractPrimaryDonor(profile.donor);
@@ -431,24 +476,19 @@ async function startMassMessaging(onProgress, options = {}) {
 
                 let message = msgs[0];
                 if (msgs.length > 1) {
-                    try {
-                        const counts = await db.all(`
-                            SELECT message_text, COUNT(*) as c 
-                            FROM messages_log 
-                            WHERE message_text IN (${msgs.map(() => '?').join(',')})
-                            GROUP BY message_text
-                        `, msgs);
-                        const countMap = Object.fromEntries(counts.map(r => [r.message_text, r.c]));
-                        const minCount = Math.min(...msgs.map(m => countMap[m] || 0));
-                        const bestMsgs = msgs.filter(m => (countMap[m] || 0) === minCount);
-                        message = bestMsgs[Math.floor(Math.random() * bestMsgs.length)];
-                    } catch (e) {
-                        logger.error(`Error in smart message selection: ${e.message}`);
-                        message = msgs[Math.floor(Math.random() * msgs.length)];
-                    }
+                    const minCount = Math.min(...msgs.map((item) => messageCountMap.get(item) || 0));
+                    const bestMsgs = msgs.filter((item) => (messageCountMap.get(item) || 0) === minCount);
+                    message = bestMsgs[Math.floor(Math.random() * bestMsgs.length)];
                 }
 
                 const result = await sendMessageToProfile(page, profile.url, message, browserConfig, session);
+                governorDecision = sendGovernor.record(result);
+                if (governorDecision.stop) {
+                    messengerStopRequested = true;
+                    logger.error(
+                        `🛑 [ANTIFRAUD] ${governorDecision.consecutiveRiskFailures} риск-ошибки подряд (${governorDecision.reason}). Рассылка остановлена.`
+                    );
+                }
 
                 if (result.reason === 'page_closed') {
                     await reopenPage('during_profile');
@@ -463,6 +503,7 @@ async function startMassMessaging(onProgress, options = {}) {
                         `INSERT INTO messages_log (url, username, name, message_text, status, timestamp, account_id, sender_name, donor) VALUES (?, ?, ?, ?, 'sent', ?, ?, ?, ?)`,
                         [profile.url, profile.username || profile.name, profile.name, message, new Date().toISOString(), account.id, account.name, primaryDonor]
                     );
+                    messageCountMap.set(message, (messageCountMap.get(message) || 0) + 1);
                     logger.info(`🚀 [ACC: ${account.name} SENT] ${profile.url} (@${profile.username})`);
                 } else {
                     const errReason = result.reason || 'error';
@@ -503,7 +544,8 @@ async function startMassMessaging(onProgress, options = {}) {
                 const hasMore = i < filteredProfiles.length - 1 && !messengerStopRequested;
                 if (hasMore) {
                     const [gapMin, gapMax] = humanEmulation ? PROFILE_GAP.human : PROFILE_GAP.normal;
-                    const delay = gapMin + Math.random() * (gapMax - gapMin);
+                    const profileGap = gapMin + Math.random() * (gapMax - gapMin);
+                    const delay = Math.max(profileGap, governorDecision.delayMs || 0);
                     logger.info(`👤 [ANTIFRAUD] Пауза ${Math.round(delay / 1000)}с до следующего профиля`);
                     if (!page || page.isClosed()) {
                         await reopenPage('before_gap');
@@ -527,19 +569,36 @@ async function startMassMessaging(onProgress, options = {}) {
     const successfulTotal = results.filter(r => r.success).length;
     logger.info(`✅ Mass messaging session complete. Sent: ${successfulTotal}/${results.length}`);
     updateStatus({ running: false, status: messengerStopRequested ? 'Stopped' : 'Done' });
+    emitOperationEvent(
+        'mass-messaging',
+        messengerStopRequested ? 'stopped' : 'completed',
+        { sent: successfulTotal, total: results.length }
+    );
     return {
         started: true,
         sent: successfulTotal,
         stopped: !!messengerStopRequested,
         total: results.length,
     };
+    } catch (e) {
+        massMessengerStatus = {
+            ...massMessengerStatus,
+            running: false,
+            status: 'Error',
+            error: e.message,
+        };
+        if (onProgress) onProgress(massMessengerStatus);
+        emitOperationEvent('mass-messaging', 'failed', { error: e.message });
+        throw e;
+    } finally {
+        releaseInstagramActivity(activityLease);
+    }
 }
 
 
 function stopMassMessaging() {
 
     messengerStopRequested = true;
-    massMessengerStatus.running = false;
     massMessengerStatus.status = 'Stopping...';
     logger.info('🛑 [SENDER] Stop requested');
 }

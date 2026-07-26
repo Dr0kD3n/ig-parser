@@ -4,7 +4,7 @@ const config = require('../lib/config');
 const fingerprint = require('../lib/fingerprint');
 const ctx = require('../lib/server-context');
 module.exports = (app) => {
-  const { getSettings, encrypt, decrypt } = ctx;
+  const { getSettings, encryptSafe, decrypt } = ctx;
 app.get('/api/settings', async (req, res) => {
   const settings = await getSettings();
   const names = await config.getList('names.txt');
@@ -76,16 +76,18 @@ app.post('/api/settings', async (req, res) => {
             accountFingerprint = JSON.stringify(accountFingerprint);
           }
 
-          // [FIX] Protect existing cookies/localStorage from being overwritten by empty data
+          // Не затираем proxy/cookies/localStorage пустыми значениями из bulk-save
+          let finalProxy = a.proxy || '';
           let finalCookies = a.cookies || '';
           let finalLocalStorage = a.local_storage || null;
 
-          if (!finalCookies || !finalLocalStorage) {
+          if (!finalProxy || !finalCookies || !finalLocalStorage) {
             const existing = await database.get(
-              'SELECT cookies, local_storage FROM accounts WHERE id = ?',
+              'SELECT proxy, cookies, local_storage FROM accounts WHERE id = ?',
               [a.id]
             );
             if (existing) {
+              if (!finalProxy && existing.proxy) finalProxy = decrypt(existing.proxy);
               if (!finalCookies && existing.cookies) finalCookies = decrypt(existing.cookies);
               if (!finalLocalStorage && existing.local_storage)
                 finalLocalStorage = existing.local_storage;
@@ -98,8 +100,8 @@ app.post('/api/settings', async (req, res) => {
             [
               a.id,
               a.name,
-              encrypt(a.proxy || ''),
-              encrypt(finalCookies),
+              encryptSafe(finalProxy || ''),
+              encryptSafe(finalCookies),
               getPriority(req.body.activeParserAccountIds, a.id),
               getPriority(req.body.activeServerAccountIds, a.id),
               getPriority(req.body.activeIndexAccountIds, a.id),

@@ -22,12 +22,28 @@ const DB_PATH =
     ));
 const CONFIG_DIR = path_1.dirname(DB_PATH);
 let dbInstance = null;
+let dbInitialization = null;
 const resetDB = () => {
   dbInstance = null;
+  dbInitialization = null;
 };
 exports.resetDB = resetDB;
 async function getDB() {
   if (dbInstance) return dbInstance;
+  if (dbInitialization) return dbInitialization;
+
+  dbInitialization = initializeDB();
+  try {
+    return await dbInitialization;
+  } catch (error) {
+    dbInstance = null;
+    throw error;
+  } finally {
+    dbInitialization = null;
+  }
+}
+
+async function initializeDB() {
   // Обеспечиваем существование папки config если это не :memory:
   if (DB_PATH !== ':memory:') {
     try {
@@ -182,6 +198,22 @@ async function getDB() {
             fail_reason TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS telegram_bot_config (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            token_ciphertext TEXT NOT NULL,
+            bot_id TEXT,
+            bot_username TEXT,
+            owner_user_id TEXT,
+            owner_chat_id TEXT,
+            owner_username TEXT,
+            owner_first_name TEXT,
+            pair_code_hash TEXT,
+            pair_code_expires_at TEXT,
+            update_offset INTEGER DEFAULT 0,
+            enabled INTEGER DEFAULT 1,
+            updated_at TEXT NOT NULL
         );
 
     `);

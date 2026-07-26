@@ -3,7 +3,7 @@ const browser = require('./browser');
 const utils = require('./utils');
 const db = require('./db');
 const reporter = require('./reporter');
-const { encrypt, decrypt } = require('./encryption');
+const { encrypt, decrypt, encryptSafe } = require('./encryption');
 const { markDmSentByUsername } = require('./profile-dedup');
 const events = require('events');
 
@@ -325,6 +325,7 @@ module.exports = {
   sendMessageToProfile,
   encrypt,
   decrypt,
+  encryptSafe,
   markDmSentByUsername,
   restorePhotos: require('./photo-restorer').restorePhotos,
   stopRestorePhotos: require('./photo-restorer').stopRestorePhotos,

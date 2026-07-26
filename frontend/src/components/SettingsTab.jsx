@@ -1,8 +1,20 @@
-import React, { useState, useEffect, startTransition } from 'react';
+import { useState, useEffect, startTransition } from 'react';
 import { CITIES_PRESETS } from '../constants/cities';
 import SkeletonSettings from './settings/SkeletonSettings';
 import AccountsSection from './settings/AccountsSection';
 import DonorsSettingsSection from './settings/DonorsSettingsSection';
+import TelegramAgentSection from './settings/TelegramAgentSection';
+
+const SETTINGS_TABS = ['accounts', 'names', 'cities', 'blacklist', 'niches', 'donors', 'telegram'];
+const SETTINGS_TAB_LABELS = {
+  accounts: 'Аккаунты',
+  names: 'Имена',
+  cities: 'Города',
+  blacklist: 'Блеклист',
+  niches: 'Ниши',
+  donors: 'Доноры',
+  telegram: 'Telegram',
+};
 
 export default function SettingsTab({
   settingsData,
@@ -51,13 +63,13 @@ export default function SettingsTab({
     <div className="settings-wrap tab-content-fade">
       <div className="settings-header">
         <div className="settings-nested-tabs">
-          {['accounts', 'names', 'cities', 'blacklist', 'niches', 'donors'].map((tab) => (
+          {SETTINGS_TABS.map((tab) => (
             <button
               key={tab}
               className={`tab-btn${settingsTab === tab ? ' active' : ''}`}
               onClick={() => handleSettingsTabChange(tab)}
             >
-              {({ accounts: 'Аккаунты', names: 'Имена', cities: 'Города', blacklist: 'Блеклист', niches: 'Ниши', donors: 'Доноры' })[tab]}
+              {SETTINGS_TAB_LABELS[tab]}
             </button>
           ))}
         </div>
@@ -223,6 +235,8 @@ export default function SettingsTab({
           )}
         </div>
       )}
+
+      {settingsTab === 'telegram' && <TelegramAgentSection authFetch={authFetch} />}
     </div>
   );
 }

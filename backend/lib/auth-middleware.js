@@ -1,25 +1,28 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const { getDB } = require('./db');
 const { JWT_SECRET, JWT_PUBLIC_KEY, IS_ASYMMETRIC } = require('./auth-config');
 
 const PROD_URL = 'https://botback-production-1011.up.railway.app';
-
-function isLocalRequest(req) {
-  const ip = req.ip || req.socket?.remoteAddress || '';
-  return ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1';
-}
+const REMOTE_VERIFY_CACHE_MS = 15_000;
+const REMOTE_VERIFY_CACHE_LIMIT = 100;
+const remoteVerifyCache = new Map();
+const remoteVerificationsInFlight = new Map();
+const remoteAuthAgents = {
+  http: new http.Agent({ keepAlive: true }),
+  https: new https.Agent({ keepAlive: true }),
+};
 
 function getAuthServerUrl() {
   if (process.env.AUTH_SERVER_URL) return process.env.AUTH_SERVER_URL;
   if (process.env.VITE_AUTH_URL) return process.env.VITE_AUTH_URL;
-  if (process.env.NODE_ENV === 'production') return PROD_URL;
-  return null;
+  return PROD_URL;
 }
 
-/** valid | invalid | skip (remote недоступен — не разлогиниваем локальную панель) */
-function verifyRemoteToken(token, authUrl, strict) {
+/** valid | invalid. Ошибка или недоступность auth-сервера всегда закрывает доступ. */
+function verifyRemoteToken(token, authUrl) {
   return new Promise((resolve) => {
     const httpModule = authUrl.startsWith('http://') ? http : https;
     const verifyUrl = new URL('/api/auth/verify', authUrl).toString();
@@ -28,24 +31,69 @@ function verifyRemoteToken(token, authUrl, strict) {
       {
         headers: { Authorization: `Bearer ${token}` },
         timeout: 8000,
+        agent: authUrl.startsWith('http://') ? remoteAuthAgents.http : remoteAuthAgents.https,
       },
       (response) => {
+        response.resume();
         if (response.statusCode === 200) return resolve('valid');
         if (response.statusCode === 401 || response.statusCode === 403) return resolve('invalid');
-        console.warn(`[AUTH] Remote verify HTTP ${response.statusCode}, fallback=${strict ? 'deny' : 'local'}`);
-        return resolve(strict ? 'invalid' : 'skip');
+        console.warn(`[AUTH] Remote verify HTTP ${response.statusCode}, access denied`);
+        return resolve('invalid');
       }
     );
     req.on('error', (err) => {
-      console.warn(`[AUTH] Remote auth unavailable (${err.code || err.message}), fallback=${strict ? 'deny' : 'local'}`);
-      resolve(strict ? 'invalid' : 'skip');
+      console.warn(`[AUTH] Remote auth unavailable (${err.code || err.message}), access denied`);
+      resolve('invalid');
     });
     req.on('timeout', () => {
       req.destroy();
-      console.warn('[AUTH] Remote auth timeout, fallback=', strict ? 'deny' : 'local');
-      resolve(strict ? 'invalid' : 'skip');
+      console.warn('[AUTH] Remote auth timeout, access denied');
+      resolve('invalid');
     });
   });
+}
+
+function getRemoteVerificationKey(token, authUrl) {
+  return crypto.createHash('sha256').update(`${authUrl}\0${token}`).digest('hex');
+}
+
+function cacheValidVerification(key, token) {
+  const now = Date.now();
+  const decoded = jwt.decode(token);
+  const tokenExpiresAt =
+    decoded && typeof decoded !== 'string' && Number.isFinite(decoded.exp)
+      ? decoded.exp * 1000
+      : now + REMOTE_VERIFY_CACHE_MS;
+  const expiresAt = Math.min(now + REMOTE_VERIFY_CACHE_MS, tokenExpiresAt);
+  if (expiresAt <= now) return;
+
+  if (remoteVerifyCache.size >= REMOTE_VERIFY_CACHE_LIMIT) {
+    for (const [cachedKey, cached] of remoteVerifyCache) {
+      if (cached.expiresAt <= now || remoteVerifyCache.size >= REMOTE_VERIFY_CACHE_LIMIT) {
+        remoteVerifyCache.delete(cachedKey);
+      }
+    }
+  }
+  remoteVerifyCache.set(key, { expiresAt });
+}
+
+function verifyRemoteTokenCached(token, authUrl) {
+  const key = getRemoteVerificationKey(token, authUrl);
+  const cached = remoteVerifyCache.get(key);
+  if (cached?.expiresAt > Date.now()) return Promise.resolve('valid');
+  if (cached) remoteVerifyCache.delete(key);
+
+  const existing = remoteVerificationsInFlight.get(key);
+  if (existing) return existing;
+
+  const verification = verifyRemoteToken(token, authUrl)
+    .then((result) => {
+      if (result === 'valid') cacheValidVerification(key, token);
+      return result;
+    })
+    .finally(() => remoteVerificationsInFlight.delete(key));
+  remoteVerificationsInFlight.set(key, verification);
+  return verification;
 }
 
 exports.verifyToken = async (req, res, next) => {
@@ -71,35 +119,30 @@ exports.verifyToken = async (req, res, next) => {
 
   const authUrl = getAuthServerUrl();
   const skipRemote =
-    process.env.AUTH_SKIP_REMOTE_VERIFY === '1' ||
-    process.env.AUTH_SKIP_REMOTE_VERIFY === 'true';
-  const localPanel = isLocalRequest(req);
-  const useRemoteVerify = !!authUrl && !skipRemote && !localPanel;
+    process.env.AUTH_SKIP_REMOTE_VERIFY === '1' || process.env.AUTH_SKIP_REMOTE_VERIFY === 'true';
+  const useRemoteVerify = !!authUrl && !skipRemote;
 
   const key = IS_ASYMMETRIC ? JWT_PUBLIC_KEY : JWT_SECRET;
   let decoded;
 
-  try {
-    decoded = jwt.verify(token, key, {
-      algorithms: IS_ASYMMETRIC ? ['RS256'] : ['HS256'],
-    });
-  } catch (error) {
+  if (useRemoteVerify) {
+    const remoteResult = await verifyRemoteTokenCached(token, authUrl);
+    if (remoteResult === 'invalid') {
+      return res.status(401).json({ error: 'Session expired or account blocked.' });
+    }
+    decoded = jwt.decode(token);
+  } else {
     try {
-      decoded = jwt.decode(token);
-    } catch (e) {
+      decoded = jwt.verify(token, key, {
+        algorithms: IS_ASYMMETRIC ? ['RS256'] : ['HS256'],
+      });
+    } catch {
       return res.status(401).json({ error: 'Invalid token.' });
     }
   }
 
   if (!decoded || typeof decoded === 'string')
     return res.status(401).json({ error: 'Invalid token payload' });
-
-  if (useRemoteVerify) {
-    const remoteResult = await verifyRemoteToken(token, authUrl, process.env.NODE_ENV === 'production');
-    if (remoteResult === 'invalid') {
-      return res.status(401).json({ error: 'Session expired or account blocked.' });
-    }
-  }
 
   try {
     const db = await getDB();
@@ -122,7 +165,11 @@ exports.verifyToken = async (req, res, next) => {
       return next();
     }
 
-    // If user not in local DB but remote validation passed
+    if (!useRemoteVerify) {
+      return res.status(401).json({ error: 'User not found.' });
+    }
+
+    // Remote auth server verified the exact active session token.
     req.user = { id: decoded.id, email: decoded.email, role: decoded.role || 'user' };
     next();
   } catch (dbError) {

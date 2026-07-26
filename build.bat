@@ -53,15 +53,24 @@ if %ERRORLEVEL% neq 0 (
 )
 cd ..
 
-:: Move the generated executable
-if exist "backend\ig-bot-local-backend.exe" (
-    move /Y "backend\ig-bot-local-backend.exe" "dist\ig-bot.exe" >nul
-) else if exist "backend\ig-bot-backend.exe" (
-    move /Y "backend\ig-bot-backend.exe" "dist\ig-bot.exe" >nul
-) else if exist "backend\server.exe" (
-    move /Y "backend\server.exe" "dist\ig-bot.exe" >nul
-) else (
+:: Copy the generated executable. Keep backend output available for diagnostics/rebuilds.
+set "BACKEND_EXE="
+if exist "backend\ig-bot-local-backend.exe" set "BACKEND_EXE=backend\ig-bot-local-backend.exe"
+if not defined BACKEND_EXE if exist "backend\ig-bot-backend.exe" set "BACKEND_EXE=backend\ig-bot-backend.exe"
+if not defined BACKEND_EXE if exist "backend\server.exe" set "BACKEND_EXE=backend\server.exe"
+if not defined BACKEND_EXE (
     echo [ERROR] Executable not found in backend folder!
+    pause
+    exit /b 1
+)
+copy /Y "%BACKEND_EXE%" "dist\ig-bot.exe" >nul
+if errorlevel 1 (
+    echo [ERROR] Failed to copy executable to dist!
+    pause
+    exit /b 1
+)
+if not exist "dist\ig-bot.exe" (
+    echo [ERROR] dist\ig-bot.exe was not created!
     pause
     exit /b 1
 )
