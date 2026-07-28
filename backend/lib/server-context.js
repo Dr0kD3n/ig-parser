@@ -93,6 +93,22 @@ async function getSettings() {
   const dolphinToken = dolphinTokenStr ? dolphinTokenStr.value : '';
   const donorGroupsStr = await database.get(`SELECT value FROM settings WHERE key = 'donorGroups'`);
   const donorGroups = donorGroupsStr ? JSON.parse(donorGroupsStr.value) : [];
+  const nichePresetsStr = await database.get(
+    `SELECT value FROM settings WHERE key = 'nichePresets'`
+  );
+  const nichePresets = nichePresetsStr ? JSON.parse(nichePresetsStr.value) : null;
+  const feedbackCheckEnabledStr = await database.get(
+    `SELECT value FROM settings WHERE key = 'feedbackCheckEnabled'`
+  );
+  const feedbackCheckEnabled = feedbackCheckEnabledStr
+    ? feedbackCheckEnabledStr.value === 'true'
+    : false;
+  const feedbackCheckIntervalStr = await database.get(
+    `SELECT value FROM settings WHERE key = 'feedbackCheckIntervalMinutes'`
+  );
+  const feedbackCheckIntervalMinutes = feedbackCheckIntervalStr
+    ? parseInt(feedbackCheckIntervalStr.value, 10)
+    : 60;
 
   return {
     accounts,
@@ -107,6 +123,9 @@ async function getSettings() {
     humanEmulation,
     dolphinToken,
     donorGroups,
+    nichePresets,
+    feedbackCheckEnabled,
+    feedbackCheckIntervalMinutes,
   };
 }
 

@@ -7,8 +7,6 @@ const { createBrowserContext, startLiveView } = require('./browser');
 const { wait, humanType, humanClick, humanScrollToTop } = require('./utils');
 const {
     navigateViaSearch,
-    openDirectInboxThread,
-    returnToDirectInbox,
     browseProfileBeforeDM,
     swipeHomeFeed,
     performMicroActions,
@@ -65,43 +63,39 @@ async function sendMessageToProfile(page, url, message, config, session) {
         const username = url.split('/').filter(Boolean).pop() || '';
         session.lastOpenedDM = null;
 
-        const openedViaInbox = await openDirectInboxThread(page, username, config, session);
+        await closeDirectModal(page, session);
 
-        if (!openedViaInbox) {
-            await closeDirectModal(page, session);
+        const navigated = await navigateViaSearch(page, url, config, session);
+        if (!navigated) {
+            return { success: false, reason: 'nav_failed' };
+        }
 
-            const navigated = await navigateViaSearch(page, url, config, session);
-            if (!navigated) {
-                return { success: false, reason: 'nav_failed' };
-            }
+        await waitWithActivity(page, 400 + Math.random() * 600, { noScroll: true, noClick: true });
+        await closeStoryIfOpen(page);
+        await closeFloatingInbox(page);
+        await ensureCorrectChatOrClosed(page, username, session);
 
-            await waitWithActivity(page, 400 + Math.random() * 600, { noScroll: true });
+        const isDirectChat = page.url().includes('/direct/t/');
+
+        if (!isDirectChat) {
+            await page.waitForSelector('header section button, div[role="dialog"]', { timeout: 8000 }).catch(() => { });
+            await wait(500 + Math.random() * 400);
+
+            await browseProfileBeforeDM(page);
             await closeStoryIfOpen(page);
             await closeFloatingInbox(page);
             await ensureCorrectChatOrClosed(page, username, session);
+            await humanScrollToTop(page);
+            await wait(300 + Math.random() * 300);
 
-            const isDirectChat = page.url().includes('/direct/t/');
+            const chatInput = await IG.findActiveChatInput(page);
+            const chatLoaded = chatInput && (await isChatForUsername(page, username, session));
 
-            if (!isDirectChat) {
-                await page.waitForSelector('header section button, div[role="dialog"]', { timeout: 8000 }).catch(() => { });
-                await wait(500 + Math.random() * 400);
-
-                await browseProfileBeforeDM(page);
-                await closeStoryIfOpen(page);
-                await closeFloatingInbox(page);
-                await ensureCorrectChatOrClosed(page, username, session);
-                await humanScrollToTop(page);
-                await wait(300 + Math.random() * 300);
-
-                const chatInput = await IG.findActiveChatInput(page);
-                const chatLoaded = chatInput && (await isChatForUsername(page, username, session));
-
-                if (!chatLoaded) {
-                    const opened = await openProfileDM(page, username, session);
-                    if (!opened) {
-                        logger.warn(`❌ No message button found for ${url}`);
-                        return { success: false, reason: 'no_button' };
-                    }
+            if (!chatLoaded) {
+                const opened = await openProfileDM(page, username, session);
+                if (!opened) {
+                    logger.warn(`❌ No message button found for ${url}`);
+                    return { success: false, reason: 'no_button' };
                 }
             }
         }
@@ -165,16 +159,9 @@ async function sendMessageToProfile(page, url, message, config, session) {
     } finally {
         if (page && !page.isClosed()) {
             try {
-                if (session.usedDirectInbox) {
-                    const returned = await returnToDirectInbox(page, session);
-                    if (!returned) {
-                        await closeDirectModal(page, session);
-                    }
-                } else {
-                    await closeDirectModal(page, session);
-                    session.lastOpenedDM = null;
-                    await swipeHomeFeed(page, session);
-                }
+                await closeDirectModal(page, session);
+                session.lastOpenedDM = null;
+                await swipeHomeFeed(page, session);
                 if (session.profileCount % 5 === 0) {
                     await performMicroActions(page);
                 }

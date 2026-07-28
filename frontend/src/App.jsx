@@ -232,6 +232,11 @@ export default function App() {
           humanEmulation: data.humanEmulation || false,
           concurrentProfiles: data.concurrentProfiles || 3,
           dmLimit: data.dmLimit || 20,
+          feedbackCheckEnabled: data.feedbackCheckEnabled === true,
+          feedbackCheckIntervalMinutes: data.feedbackCheckIntervalMinutes || 60,
+          nichePresets: Array.isArray(data.nichePresets)
+            ? data.nichePresets
+            : prev.nichePresets,
           donorGroups: ensureDefaultDonorGroups(Array.isArray(data.donorGroups) ? data.donorGroups : []),
         }));
         pendingSave.current = false; // Reset dirty flag after polling

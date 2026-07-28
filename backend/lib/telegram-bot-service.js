@@ -691,6 +691,22 @@ function createTelegramBotService(dependencies = {}) {
     if (operation === 'schedule-slot' && ['completed', 'failed', 'cancelled'].includes(status)) {
       return `Слот #${details.id}: ${status}${details.sent !== undefined ? `, отправлено ${details.sent}` : ''}.`;
     }
+    if (operation === 'feedback-check' && ['completed', 'stopped', 'failed'].includes(status)) {
+      const state =
+        status === 'completed' ? 'завершён' : status === 'stopped' ? 'остановлен' : 'ошибка';
+      const trigger = details.trigger === 'timer' ? 'таймер' : 'вручную';
+      return [
+        `Авточек Instagram: ${state}`,
+        `Запуск: ${trigger}`,
+        `Папка: ${details.folder || 'Primary'}`,
+        `Сендеров: ${details.senderCount || 0}`,
+        `Ожидали ответа: ${details.pending || 0}`,
+        `Проверено: ${details.checked || 0}`,
+        `Ответили: ${details.found || 0}`,
+        `Время: ${details.durationSeconds || 0} сек.`,
+        ...(details.error ? [`Причина: ${details.error}`] : []),
+      ].join('\n');
+    }
     return null;
   }
 

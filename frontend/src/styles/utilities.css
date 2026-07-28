@@ -945,6 +945,15 @@
   text-overflow: ellipsis;
 }
 
+.reply-preview {
+  margin-top: 5px;
+  overflow: hidden;
+  color: hsl(var(--success));
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .count-cell {
   font-weight: 600;
   color: hsl(var(--accent));

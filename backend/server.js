@@ -9,6 +9,10 @@ const { rateLimit } = require('express-rate-limit');
 const ctx = require('./lib/server-context');
 const mountRoutes = require('./routes');
 const { startMessageScheduler, stopMessageScheduler } = require('./lib/message-scheduler');
+const {
+  startFeedbackCheckScheduler,
+  stopFeedbackCheckScheduler,
+} = require('./lib/feedback-check-scheduler');
 const { telegramBotService } = require('./lib/telegram-bot-service');
 const { startWindowsTray } = require('./lib/windows-tray');
 
@@ -158,7 +162,10 @@ if (process.env.NODE_ENV !== 'test') {
     });
   const server = app.listen(PORT, HOST, () => {
     state.StateManager.init()
-      .then(() => startMessageScheduler())
+      .then(() => {
+        startMessageScheduler();
+        startFeedbackCheckScheduler();
+      })
       .catch((error) => {
         originalError('[STATE] Initialization failed:', error.message);
       });
@@ -174,6 +181,7 @@ if (process.env.NODE_ENV !== 'test') {
     tray?.stop();
     clearInterval(telegramRestartTimer);
     stopMessageScheduler();
+    stopFeedbackCheckScheduler();
     await telegramBotService.stop().catch((error) => {
       originalError('[TELEGRAM BOT] Ошибка остановки:', error.message);
     });

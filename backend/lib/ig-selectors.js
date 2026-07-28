@@ -195,43 +195,52 @@ async function clickFirst(page, selectors, humanClick, clickOpts, scope = null) 
 
 /** Ссылка на профиль в результатах поиска */
 async function findProfileLink(page, username) {
-  const uname = username.toLowerCase();
-  const hrefPatterns = [
-    `a[href="/${username}/"]`,
-    `a[href="/${username.toLowerCase()}/"]`,
-    `a[href="/${username}/"]:not([href*="/p/"]):not([href*="/reel/"])`,
-  ];
+  const uname = String(username || '').replace(/^@/, '').trim().toLowerCase();
+  if (!uname) return null;
 
-  for (const scopeSel of SEARCH_RESULTS_SCOPE) {
-    const scope = page.locator(scopeSel).first();
-    if ((await scope.count()) === 0) continue;
+  const findExactHref = async (root) => {
+    const links = root.locator('a[href]');
+    const count = await links.count().catch(() => 0);
 
-    for (const hrefSel of hrefPatterns) {
-      const link = scope.locator(hrefSel).first();
-      if ((await link.count()) > 0 && (await link.isVisible().catch(() => false))) {
-        const href = (await link.getAttribute('href').catch(() => '')) || '';
-        const match = href.match(/^\/([^/]+)\/?$/);
-        if (match && match[1].toLowerCase() === uname) return link;
+    for (let i = 0; i < count; i++) {
+      const link = links.nth(i);
+      if (!(await link.isVisible().catch(() => false))) continue;
+
+      const href = (await link.getAttribute('href').catch(() => '')) || '';
+      let pathname = '';
+      try {
+        pathname = new URL(href, 'https://www.instagram.com').pathname;
+      } catch {
+        continue;
+      }
+
+      const parts = pathname.split('/').filter(Boolean);
+      let candidate = '';
+      try {
+        candidate = parts.length === 1 ? decodeURIComponent(parts[0]).toLowerCase() : '';
+      } catch {
+        continue;
+      }
+      if (candidate === uname) {
+        return link;
       }
     }
 
-    const roleLink = scope.getByRole('link', { name: username, exact: true }).first();
-    if ((await roleLink.count()) > 0 && (await roleLink.isVisible().catch(() => false))) {
-      return roleLink;
+    return null;
+  };
+
+  for (const scopeSel of SEARCH_RESULTS_SCOPE) {
+    const scopes = page.locator(scopeSel);
+    const count = await scopes.count().catch(() => 0);
+    for (let i = 0; i < count; i++) {
+      const scope = scopes.nth(i);
+      if (!(await scope.isVisible().catch(() => false))) continue;
+      const exactLink = await findExactHref(scope);
+      if (exactLink) return exactLink;
     }
   }
 
-  // Глобальный fallback — только точный href
-  for (const hrefSel of hrefPatterns) {
-    const link = page.locator(hrefSel).first();
-    if ((await link.count()) > 0 && (await link.isVisible().catch(() => false))) {
-      const href = (await link.getAttribute('href').catch(() => '')) || '';
-      const match = href.match(/^\/([^/]+)\/?$/);
-      if (match && match[1].toLowerCase() === uname) return link;
-    }
-  }
-
-  return null;
+  return findExactHref(page);
 }
 
 /** Поле ввода в активном DM (не inbox-виджет снизу справа) */

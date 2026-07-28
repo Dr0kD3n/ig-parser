@@ -155,7 +155,14 @@ const HistoryRow = memo(function HistoryRow({ row, onStatusChange }) {
       <td className="user-cell" style={{ fontSize: '12px' }}>
         {row.donor ? `@${row.donor}` : '—'}
       </td>
-      <td className="msg-cell">{row.message_text}</td>
+      <td className="msg-cell">
+        <div>{row.message_text}</div>
+        {row.reply_preview ? (
+          <div className="reply-preview" title={row.reply_preview}>
+            Ответ: {row.reply_preview}
+          </div>
+        ) : null}
+      </td>
       <td style={{ textAlign: 'center' }}>
         <div className="status-select-wrap">
           <select

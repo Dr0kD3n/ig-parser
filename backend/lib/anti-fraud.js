@@ -366,9 +366,15 @@ async function navigateViaSearch(page, url, config, session = {}) {
     await humanTypeRemainder(page, username.slice(query.length), config.timeouts);
   }
 
-  await T.pause(700, 1200);
+  await T.pause(500, 800);
 
-  const profileLink = await findProfileLink(page, username);
+  let profileLink = null;
+  const searchDeadline = Date.now() + 5000;
+  while (!profileLink && Date.now() < searchDeadline) {
+    profileLink = await findProfileLink(page, username);
+    if (!profileLink) await T.pause(250, 450);
+  }
+
   if (profileLink) {
     await humanClick(page, profileLink, CLICK_OPTS);
     await T.pause(700, 1200);
@@ -636,28 +642,6 @@ async function browseProfileBeforeDM(page) {
         await T.pause(150, 400);
       }
     }
-  }
-
-  if (postCount > 0 && Math.random() < 0.25) {
-    const idx = Math.floor(Math.random() * Math.min(postCount, 9));
-    logger.info(`👤 [ANTIFRAUD] Смотрим пост #${idx + 1}...`);
-    await humanClick(page, posts[idx], CLICK_OPTS);
-    await T.pause(900, 1800);
-
-    if (Math.random() < 0.5) {
-      await humanScroll(page, null, 'down', 180 + Math.random() * 320);
-      await T.pause(350, 700);
-    }
-
-    const closeBtn = await IG.findFirstVisible(page, IG.POST_CLOSE);
-    if (closeBtn) {
-      const target = await IG.resolveClickable(closeBtn);
-      await humanClick(page, target, CLICK_OPTS);
-    } else {
-      await page.keyboard.press('Escape');
-      await waitAfterEvent();
-    }
-    await T.pause(400, 800);
   }
 
   await closeStoryIfOpen(page);

@@ -1,11 +1,22 @@
-import { useState, useEffect, startTransition } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
+import { toast } from 'react-hot-toast';
 import { CITIES_PRESETS } from '../constants/cities';
 import SkeletonSettings from './settings/SkeletonSettings';
 import AccountsSection from './settings/AccountsSection';
 import DonorsSettingsSection from './settings/DonorsSettingsSection';
+import NichePresetsSection from './settings/NichePresetsSection';
 import TelegramAgentSection from './settings/TelegramAgentSection';
 
-const SETTINGS_TABS = ['accounts', 'names', 'cities', 'blacklist', 'niches', 'donors', 'telegram'];
+const SETTINGS_TABS = [
+  'accounts',
+  'names',
+  'cities',
+  'blacklist',
+  'niches',
+  'donors',
+  'automation',
+  'telegram',
+];
 const SETTINGS_TAB_LABELS = {
   accounts: 'Аккаунты',
   names: 'Имена',
@@ -13,6 +24,7 @@ const SETTINGS_TAB_LABELS = {
   blacklist: 'Блеклист',
   niches: 'Ниши',
   donors: 'Доноры',
+  automation: 'Авточек',
   telegram: 'Telegram',
 };
 
@@ -29,6 +41,14 @@ export default function SettingsTab({
     () => localStorage.getItem('ig_settings_tab') === 'donors'
   );
   const [donorsReady, setDonorsReady] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState({
+    running: false,
+    current: 0,
+    total: 0,
+    found: 0,
+    status: 'Ожидание',
+  });
+  const [feedbackActionBusy, setFeedbackActionBusy] = useState(false);
 
   const handleSettingsTabChange = (tab) => {
     if (tab === 'donors') setDonorsMounted(true);
@@ -56,6 +76,63 @@ export default function SettingsTab({
       clearTimeout(id);
     };
   }, [donorsMounted, settingsTab, donorsReady]);
+
+  const loadFeedbackStatus = useCallback(async () => {
+    const response = await authFetch('/api/feedback/status');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    setFeedbackStatus(data);
+    return data;
+  }, [authFetch]);
+
+  useEffect(() => {
+    if (settingsTab !== 'automation') return undefined;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const response = await authFetch('/api/feedback/status');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) setFeedbackStatus(data);
+      } catch {
+        // Следующий polling повторит запрос.
+      }
+    };
+    refresh();
+    const interval = setInterval(refresh, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [settingsTab, authFetch]);
+
+  const handleFeedbackAction = async () => {
+    setFeedbackActionBusy(true);
+    try {
+      const shouldStop = feedbackStatus.running || feedbackStatus.starting;
+      const response = await authFetch(`/api/feedback/${shouldStop ? 'stop' : 'start'}`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const message =
+          data.reason === 'busy'
+            ? `Instagram занят: ${data.activity || 'другая операция'}`
+            : data.error || 'Не удалось запустить проверку';
+        throw new Error(message);
+      }
+      toast.success(shouldStop ? 'Остановка проверки запрошена' : 'Проверка Primary запущена');
+      await loadFeedbackStatus();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setFeedbackActionBusy(false);
+    }
+  };
+
+  const senderAccounts = (settingsData.activeServerAccountIds || [])
+    .map((id) => (settingsData.accounts || []).find((account) => account.id === id))
+    .filter(Boolean);
 
   if (isLoading) return <SkeletonSettings />;
 
@@ -212,11 +289,10 @@ export default function SettingsTab({
       }
       {
         settingsTab === 'niches' && (
-          <textarea
-            className="msg-textarea"
-            style={{ height: 500, margin: '0 32px' }}
-            value={(settingsData.niches || []).join('\n')}
-            onChange={(e) => onSettingsChange({ niches: e.target.value.split('\n') })}
+          <NichePresetsSection
+            niches={settingsData.niches || []}
+            presets={settingsData.nichePresets || []}
+            onChange={onSettingsChange}
           />
         )
       }
@@ -233,6 +309,84 @@ export default function SettingsTab({
           ) : (
             <div className="skeleton-item skeleton h-400" />
           )}
+        </div>
+      )}
+
+      {settingsTab === 'automation' && (
+        <div className="automation-settings">
+          <section className="automation-settings-card">
+            <div>
+              <h3>Автоматическая проверка ответов</h3>
+              <p>
+                Бот открывает только Primary, читает preview последнего сообщения, не открывает
+                диалоги.
+              </p>
+            </div>
+            <div className="automation-status-row">
+              <div>
+                <strong>
+                  {feedbackStatus.running || feedbackStatus.starting
+                    ? feedbackStatus.status || 'Запуск...'
+                    : 'Проверка не запущена'}
+                </strong>
+                <span>
+                  {feedbackStatus.running
+                    ? `${feedbackStatus.current || 0}/${feedbackStatus.total || 0}, найдено: ${feedbackStatus.found || 0}`
+                    : `Сендеры: ${senderAccounts.map((account) => account.name).join(', ') || 'не выбраны'}`}
+                </span>
+              </div>
+              <button
+                type="button"
+                className={`btn-primary btn-sm${feedbackStatus.running ? ' btn-danger' : ''}`}
+                disabled={
+                  feedbackActionBusy ||
+                  (!feedbackStatus.running && !feedbackStatus.starting && senderAccounts.length === 0)
+                }
+                onClick={handleFeedbackAction}
+              >
+                {feedbackActionBusy
+                  ? 'Подождите...'
+                  : feedbackStatus.running || feedbackStatus.starting
+                    ? 'Остановить'
+                    : 'Проверить сейчас'}
+              </button>
+            </div>
+            <label className="checkbox-label checkbox">
+              <input
+                type="checkbox"
+                checked={settingsData.feedbackCheckEnabled === true}
+                onChange={(event) =>
+                  onSettingsChange({ feedbackCheckEnabled: event.target.checked })
+                }
+              />
+              Включить автопроверку
+            </label>
+            <label className="automation-interval-field">
+              <span>Интервал проверки</span>
+              <div>
+                <input
+                  type="number"
+                  min="5"
+                  max="1440"
+                  value={settingsData.feedbackCheckIntervalMinutes || 60}
+                  disabled={!settingsData.feedbackCheckEnabled}
+                  onChange={(event) =>
+                    onSettingsChange({
+                      feedbackCheckIntervalMinutes: Math.min(
+                        1440,
+                        Math.max(5, parseInt(event.target.value, 10) || 5)
+                      ),
+                    })
+                  }
+                />
+                <span>минут</span>
+              </div>
+            </label>
+            <p className="automation-settings-note">
+              Минимум 5 минут. Проверка ждёт освобождения Instagram, использует только аккаунты
+              с выбранной ролью «Сендер». Неоднозначные совпадения пропускаются.
+            </p>
+          </section>
         </div>
       )}
 

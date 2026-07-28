@@ -1,7 +1,11 @@
 const db = require('../lib/db');
 const https = require('https');
 const { startMassMessaging, stopMassMessaging, getMassMessengerStatus } = require('../lib/mass-messenger');
-const { checkFeedback, getCheckerStatus, stopChecker } = require('../lib/feedback-handler');
+const {
+  getFeedbackCheckStatus,
+  runFeedbackCheckNow,
+  stopFeedbackCheckRun,
+} = require('../lib/feedback-check-scheduler');
 const ctx = require('../lib/server-context');
 const utils = require('../lib/utils');
 const { getInstagramActivity } = require('../lib/instagram-activity');
@@ -169,16 +173,22 @@ app.post('/api/mass-messages/stop', (req, res) => {
 
 // Feedback Checker Endpoints
 app.post('/api/feedback/start', async (req, res) => {
-  checkFeedback().catch(e => console.error('Feedback checker crash:', e));
-  res.json({ success: true });
+  const result = await runFeedbackCheckNow();
+  if (!result?.started) {
+    return res.status(result?.reason === 'busy' || result?.reason === 'already_running' ? 409 : 500).json({
+      success: false,
+      ...result,
+    });
+  }
+  res.status(202).json({ success: true, ...result });
 });
 
 app.get('/api/feedback/status', (req, res) => {
-  res.json(getCheckerStatus());
+  res.json(getFeedbackCheckStatus());
 });
 
 app.post('/api/feedback/stop', (req, res) => {
-  stopChecker();
+  stopFeedbackCheckRun();
   res.json({ success: true });
 });
 

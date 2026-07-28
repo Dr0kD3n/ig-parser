@@ -291,6 +291,10 @@ async function initializeDB() {
     'sender_name TEXT',
     'donor TEXT',
     'status_manual INTEGER DEFAULT 0',
+    'reply_preview TEXT',
+    'reply_at TEXT',
+    'reply_kind TEXT',
+    'reply_source TEXT',
   ]);
 
   await dbInstance.exec(`

@@ -1,3 +1,5 @@
+import { NICHE_PRESETS } from './nichePresets';
+
 export const DEFAULT_SETTINGS = {
   accounts: [],
   activeParserAccountIds: [],
@@ -14,6 +16,9 @@ export const DEFAULT_SETTINGS = {
   humanEmulation: false,
   concurrentProfiles: 3,
   dmLimit: 20,
+  feedbackCheckEnabled: false,
+  feedbackCheckIntervalMinutes: 60,
+  nichePresets: NICHE_PRESETS,
   donorGroups: [{ id: 'all', type: 'all', name: 'Все доноры', messages: [] }],
 };
 

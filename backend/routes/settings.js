@@ -47,6 +47,9 @@ app.get('/api/settings', async (req, res) => {
     humanEmulation: settings.humanEmulation,
     dolphinToken: settings.dolphinToken,
     donorGroups: settings.donorGroups,
+    nichePresets: settings.nichePresets,
+    feedbackCheckEnabled: settings.feedbackCheckEnabled,
+    feedbackCheckIntervalMinutes: settings.feedbackCheckIntervalMinutes,
   });
 });
 app.post('/api/settings', async (req, res) => {
@@ -180,6 +183,28 @@ app.post('/api/settings', async (req, res) => {
         await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'donorGroups',
           JSON.stringify(req.body.donorGroups || []),
+        ]);
+      }
+      if (Object.hasOwn(req.body, 'nichePresets')) {
+        await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          'nichePresets',
+          JSON.stringify(Array.isArray(req.body.nichePresets) ? req.body.nichePresets : []),
+        ]);
+      }
+      if (Object.hasOwn(req.body, 'feedbackCheckEnabled')) {
+        await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          'feedbackCheckEnabled',
+          req.body.feedbackCheckEnabled ? 'true' : 'false',
+        ]);
+      }
+      if (Object.hasOwn(req.body, 'feedbackCheckIntervalMinutes')) {
+        const interval = Math.min(
+          1440,
+          Math.max(5, Number.parseInt(req.body.feedbackCheckIntervalMinutes, 10) || 60)
+        );
+        await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          'feedbackCheckIntervalMinutes',
+          String(interval),
         ]);
       }
       await database.run('COMMIT');
