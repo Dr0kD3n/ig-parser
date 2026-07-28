@@ -87,6 +87,13 @@ async function getSettings() {
   const concurrentProfiles = concurrentProfilesStr ? parseInt(concurrentProfilesStr.value) : 3;
   const dmLimitStr = await database.get(`SELECT value FROM settings WHERE key = 'dmLimit'`);
   const dmLimit = dmLimitStr ? parseInt(dmLimitStr.value) : 20;
+  const followerLimitRows = await database.all(
+    `SELECT key, value FROM settings
+     WHERE key IN ('donorFollowersMin', 'donorFollowersMax', 'targetFollowersMin', 'targetFollowersMax')`
+  );
+  const followerLimits = Object.fromEntries(
+    followerLimitRows.map((row) => [row.key, Math.max(0, parseInt(row.value, 10) || 0)])
+  );
   const humanEmulationStr = await database.get(`SELECT value FROM settings WHERE key = 'humanEmulation'`);
   const humanEmulation = humanEmulationStr ? humanEmulationStr.value === 'true' : false;
   const dolphinTokenStr = await database.get(`SELECT value FROM settings WHERE key = 'dolphinToken'`);
@@ -120,6 +127,10 @@ async function getSettings() {
     showBrowser,
     concurrentProfiles,
     dmLimit,
+    donorFollowersMin: followerLimits.donorFollowersMin ?? 1000,
+    donorFollowersMax: followerLimits.donorFollowersMax ?? 0,
+    targetFollowersMin: followerLimits.targetFollowersMin ?? 0,
+    targetFollowersMax: followerLimits.targetFollowersMax ?? 0,
     humanEmulation,
     dolphinToken,
     donorGroups,

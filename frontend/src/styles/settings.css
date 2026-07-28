@@ -2067,6 +2067,71 @@
   padding: 16px 18px;
 }
 
+.donor-limits-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  background: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.donor-limit-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.donor-limit-group h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.donor-limit-group p,
+.donor-limits-hint {
+  margin: 0;
+  color: hsl(var(--text-muted));
+  font-size: 12px;
+}
+
+.donor-limit-fields {
+  display: flex;
+  gap: 8px;
+}
+
+.donor-limit-fields label {
+  display: grid;
+  gap: 4px;
+  color: hsl(var(--text-muted));
+  font-size: 11px;
+}
+
+.donor-limit-fields input {
+  width: 100px;
+  height: 34px;
+  padding: 0 8px;
+  background: hsl(var(--bg-elevated));
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+  color: hsl(var(--text-main));
+}
+
+.donor-limits-hint {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .donor-limits-card {
+    grid-template-columns: 1fr;
+  }
+
+  .donor-limit-group {
+    align-items: flex-start;
+  }
+}
+
 .donors-raw-list .msg-textarea,
 .donors-raw-textarea {
   margin: 0;

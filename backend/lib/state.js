@@ -162,6 +162,17 @@ exports.StateManager = {
       throw e;
     }
   },
+  async unmarkDonor(url) {
+    const normUrl = (0, config_1.normalizeUrl)(url);
+    if (!normUrl) return;
+    const db = await (0, db_1.getDB)();
+    await db.run(`DELETE FROM urls WHERE type = 'processed_donor' AND url = ?`, [normUrl]);
+    await db.run(`DELETE FROM checked_searches WHERE donor_url = ?`, [normUrl]);
+    this.processedDonors.delete(normUrl);
+    for (const key of [...this.checkedSearches]) {
+      if (key.startsWith(`${normUrl}|`)) this.checkedSearches.delete(key);
+    }
+  },
   async saveResult(profileData) {
     const db = await (0, db_1.getDB)();
     const usernameNorm = normalizeUsername(profileData.username);
@@ -297,6 +308,7 @@ exports.StateManager = {
     const kw = keyword || `${city || ''} ${niche || ''}`.trim() || null;
 
     try {
+      await this.unmarkDonor(normUrl);
       await db.run(`INSERT OR REPLACE INTO urls (type, url, niche, city, keyword) VALUES (?, ?, ?, ?, ?)`, [
         'donor',
         normUrl,
@@ -333,6 +345,10 @@ exports.StateManager = {
   async saveDonors(donors) {
     const db = await (0, db_1.getDB)();
     try {
+      const existingRows = await db.all(`SELECT url FROM urls WHERE type = 'donor'`);
+      const existingUrls = new Set(
+        existingRows.map((row) => (0, config_1.normalizeUrl)(row.url))
+      );
       await db.run(`DELETE FROM urls WHERE type = 'donor'`);
       for (const donor of donors) {
         const url = typeof donor === 'string' ? donor : donor.url;
@@ -340,6 +356,7 @@ exports.StateManager = {
         const city = donor.city || null;
         const keyword = donor.keyword || `${city || ''} ${niche || ''}`.trim() || null;
         const normUrl = (0, config_1.normalizeUrl)(url);
+        if (!existingUrls.has(normUrl)) await this.unmarkDonor(normUrl);
         await db.run(`INSERT OR REPLACE INTO urls (type, url, niche, city, keyword) VALUES (?, ?, ?, ?, ?)`, [
           'donor',
           normUrl,

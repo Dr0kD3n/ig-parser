@@ -232,6 +232,10 @@ export default function App() {
           humanEmulation: data.humanEmulation || false,
           concurrentProfiles: data.concurrentProfiles || 3,
           dmLimit: data.dmLimit || 20,
+          donorFollowersMin: data.donorFollowersMin ?? 1000,
+          donorFollowersMax: data.donorFollowersMax ?? 0,
+          targetFollowersMin: data.targetFollowersMin ?? 0,
+          targetFollowersMax: data.targetFollowersMax ?? 0,
           feedbackCheckEnabled: data.feedbackCheckEnabled === true,
           feedbackCheckIntervalMinutes: data.feedbackCheckIntervalMinutes || 60,
           nichePresets: Array.isArray(data.nichePresets)

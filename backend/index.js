@@ -11,6 +11,29 @@ const logger = require('./lib/logger');
 const reporter_1 = require('./lib/reporter');
 const { cacheProfilePhotoFromPage } = require('./lib/photo-cache');
 
+const normalizeFollowerLimit = (value, fallback = 0) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+};
+
+const normalizeConcurrency = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  return Math.min(20, Math.max(1, Number.isFinite(parsed) ? parsed : 1));
+};
+
+const normalizeFollowerRange = (minValue, maxValue, defaultMin = 0) => {
+  const min = normalizeFollowerLimit(minValue, defaultMin);
+  const rawMax = normalizeFollowerLimit(maxValue);
+  return { min, max: rawMax > 0 && rawMax < min ? min : rawMax };
+};
+
+const isFollowerCountAllowed = (count, min, max) => {
+  const followers = normalizeFollowerLimit(count);
+  return followers >= min && (max === 0 || followers <= max);
+};
+
+const followerRangeLabel = (min, max) => `${min}–${max === 0 ? '∞' : max}`;
+
 const isAnonymousPhoto = (url) => {
   if (!url) return true;
   // Base64 of 'anonymous_profile_pic' in ig_cache_key
@@ -34,6 +57,21 @@ const getDynamicConfig = async () => {
   const height = 900 + Math.floor(Math.random() * 100);
   const rawNames = await config_1.getList('names.txt');
   const shuffledNames = utils_1.shuffleArray(rawNames);
+  const [
+    donorMinSetting,
+    donorMaxSetting,
+    targetMinSetting,
+    targetMaxSetting,
+    concurrencySetting,
+  ] = await Promise.all([
+    config_1.getSetting('donorFollowersMin'),
+    config_1.getSetting('donorFollowersMax'),
+    config_1.getSetting('targetFollowersMin'),
+    config_1.getSetting('targetFollowersMax'),
+    config_1.getSetting('concurrentProfiles'),
+  ]);
+  const donorFollowers = normalizeFollowerRange(donorMinSetting, donorMaxSetting, 1000);
+  const targetFollowers = normalizeFollowerRange(targetMinSetting, targetMaxSetting);
   return {
     viewport: { width, height },
     userAgent:
@@ -51,6 +89,11 @@ const getDynamicConfig = async () => {
       cityBlacklist: await config_1.getList('cityBlacklist.txt'),
       wordsBlacklist: await config_1.getList('wordBlacklist.txt'),
       names: shuffledNames,
+      donorFollowersMin: donorFollowers.min,
+      donorFollowersMax: donorFollowers.max,
+      targetFollowersMin: targetFollowers.min,
+      targetFollowersMax: targetFollowers.max,
+      concurrency: normalizeConcurrency(concurrencySetting),
     },
   };
 };
@@ -462,6 +505,16 @@ const analyzeProfile = async (context, url, config, donor = '') => {
     if (isAnonymousPhoto(extraData.pUrl) && extraData.pUrl) {
       logger.warn(`         ⚠️ Обнаружена анонимная аватарка, не сохраняем фото.`);
     }
+    const targetFollowersMin = config.target.targetFollowersMin;
+    const targetFollowersMax = config.target.targetFollowersMax;
+    if (!isFollowerCountAllowed(extraData.fCount, targetFollowersMin, targetFollowersMax)) {
+      const range = followerRangeLabel(targetFollowersMin, targetFollowersMax);
+      logger.info(
+        `         ⏭️ Профиль исключён: ${extraData.fCount} подписчиков, диапазон ${range}`
+      );
+      await state_1.StateManager.add(url);
+      return;
+    }
     const profileData = {
       name,
       username,
@@ -492,7 +545,7 @@ const analyzeProfile = async (context, url, config, donor = '') => {
 /**
  * [HYBRID OPTIMIZATION] Быстрый анализ профиля через API внутри контекста браузера
  */
-const analyzeProfileFast = async (context, url, config, donor = '') => {
+const analyzeProfileFastInternal = async (context, url, config, donor = '', apiPage = null) => {
   if (state_1.StateManager.has(url)) return;
   const usernameFromUrl = url.split('/').filter(Boolean).pop() || '';
   if (state_1.StateManager.hasUsername(usernameFromUrl)) {
@@ -504,7 +557,7 @@ const analyzeProfileFast = async (context, url, config, donor = '') => {
   logger.info(`      ⚡ Быстрый анализ (API): ${username}`);
 
   try {
-    const page = await getInstagramPage(context);
+    const page = apiPage || await getInstagramPage(context);
     const data = await fetchProfileInfo(page, username);
 
     if (!data) {
@@ -532,6 +585,14 @@ const analyzeProfileFast = async (context, url, config, donor = '') => {
 
     const isTarget = matchesWhitelist && !matchesBlacklist;
     const photo = isAnonymousPhoto(data.photo) ? '' : data.photo;
+    const targetFollowersMin = config.target.targetFollowersMin;
+    const targetFollowersMax = config.target.targetFollowersMax;
+    if (!isFollowerCountAllowed(data.fCount, targetFollowersMin, targetFollowersMax)) {
+      const range = followerRangeLabel(targetFollowersMin, targetFollowersMax);
+      logger.info(`         ⏭️ Профиль исключён: ${data.fCount} подписчиков, диапазон ${range}`);
+      await state_1.StateManager.add(url);
+      return;
+    }
 
     await state_1.StateManager.saveResult({
       name: data.name,
@@ -551,6 +612,24 @@ const analyzeProfileFast = async (context, url, config, donor = '') => {
     if (isTarget) logger.info(`         ✅ Целевой!`);
   } catch (e) {
     logger.error(`         ❌ Ошибка API анализа: ${e.message}`);
+  }
+};
+const profileAnalysisInFlight = new Map();
+const analyzeProfileFast = async (context, url, config, donor = '', apiPage = null) => {
+  const username = url.split('/').filter(Boolean).pop()?.toLowerCase() || url;
+  const running = profileAnalysisInFlight.get(username);
+  if (running) {
+    await running;
+    await state_1.StateManager.mergeDonorHint(username, donor, url);
+    return;
+  }
+
+  const task = analyzeProfileFastInternal(context, url, config, donor, apiPage);
+  profileAnalysisInFlight.set(username, task);
+  try {
+    return await task;
+  } finally {
+    profileAnalysisInFlight.delete(username);
   }
 };
 const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
@@ -714,6 +793,31 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         let photo = '';
         let fCount = 0;
         let pCount = 0;
+        let followersResolved = false;
+        const parseMetric = (value) => {
+          const raw = String(value || '').toLowerCase().replace(/\u00a0/g, ' ').trim();
+          const match = raw.match(/(\d[\d\s]*(?:[.,]\d+)?)\s*(k|m|тыс\.?|млн\.?)?/i);
+          if (!match) return null;
+
+          const suffix = (match[2] || '').replace('.', '');
+          if (suffix) {
+            const base = Number(match[1].replace(/\s/g, '').replace(',', '.'));
+            const multiplier = suffix === 'k' || suffix === 'тыс' ? 1000 : 1000000;
+            return Number.isFinite(base) ? Math.round(base * multiplier) : null;
+          }
+
+          const digits = match[1].replace(/\D/g, '');
+          return digits ? Number.parseInt(digits, 10) : null;
+        };
+        const parseLabeledMetric = (value, labels) => {
+          const escapedLabels = labels.join('|');
+          const expression = new RegExp(
+            `(\\d[\\d\\s.,]*\\s*(?:k|m|тыс\\.?|млн\\.)?)\\s*(?:${escapedLabels})`,
+            'i'
+          );
+          const match = String(value || '').match(expression);
+          return match ? parseMetric(match[1]) : null;
+        };
 
         try {
           const res = await fetch(`/api/v1/users/web_profile_info/?username=${uname}`, {
@@ -723,8 +827,10 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
             const json = await res.json();
             if (json?.data?.user) {
               if (json.data.user.profile_pic_url_hd) photo = json.data.user.profile_pic_url_hd;
-              if (json.data.user.edge_followed_by?.count)
+              if (json.data.user.edge_followed_by?.count !== undefined) {
                 fCount = json.data.user.edge_followed_by.count;
+                followersResolved = true;
+              }
               if (json.data.user.edge_owner_to_timeline_media?.count)
                 pCount = json.data.user.edge_owner_to_timeline_media.count;
             }
@@ -748,22 +854,56 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
           if (img) photo = img.getAttribute('src') || img.src || '';
         }
 
-        if (fCount === 0 || pCount === 0) {
+        if (!followersResolved || pCount === 0) {
           if (header) {
+            const followersLink = header.querySelector('a[href*="/followers/"]');
+            const followerSources = [
+              followersLink?.querySelector('[title]')?.getAttribute('title'),
+              followersLink?.getAttribute('title'),
+              followersLink?.getAttribute('aria-label'),
+              followersLink?.textContent,
+            ];
+            for (const source of followerSources) {
+              const parsed = parseMetric(source);
+              if (parsed !== null) {
+                fCount = parsed;
+                followersResolved = true;
+                break;
+              }
+            }
+
             const items = Array.from(header.querySelectorAll('li'));
             for (const item of items) {
               const text = item.textContent || '';
-              const clean = text.replace(/\s+/g, '').replace(/[.,]/g, '');
-              const numMatch = clean.match(/^(\d+)/);
-              if (!numMatch) continue;
-
-              const val = parseInt(numMatch[1]);
+              const val = parseMetric(text);
+              if (val === null) continue;
               if (text.includes('posts') || text.includes('публикаций')) {
                 if (pCount === 0) pCount = val;
               } else if (text.includes('followers') || text.includes('подписчиков')) {
-                if (fCount === 0) fCount = val;
+                if (!followersResolved) {
+                  fCount = val;
+                  followersResolved = true;
+                }
               }
             }
+          }
+        }
+
+        if (!followersResolved) {
+          const pageDescription =
+            document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+            document.querySelector('meta[name="description"]')?.getAttribute('content') ||
+            header?.textContent ||
+            '';
+          const parsed = parseLabeledMetric(pageDescription, [
+            'followers',
+            'подписчик(?:ов|а|и)?',
+            'abonnés',
+            'seguidores',
+          ]);
+          if (parsed !== null) {
+            fCount = parsed;
+            followersResolved = true;
           }
         }
 
@@ -773,6 +913,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
           bio,
           photo,
           followers_count: fCount,
+          followers_resolved: followersResolved,
           publications_count: pCount,
         };
       }, donorUrl.split('/').filter(Boolean).pop())
@@ -784,6 +925,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
           bio: '',
           photo: '',
           followers_count: 0,
+          followers_resolved: false,
           publications_count: 0,
         };
       });
@@ -837,9 +979,18 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
     }
 
     const parsedCount = donorInfo.followers_count;
-    if (parsedCount < 1000) {
+    const donorFollowersMin = config.target.donorFollowersMin;
+    const donorFollowersMax = config.target.donorFollowersMax;
+    if (!donorInfo.followers_resolved) {
+      logger.warn(
+        `   ⚠️ Не удалось определить подписчиков ${donorUrl}. Донор оставлен в очереди для повторной проверки.`
+      );
+      return { retry: true };
+    }
+    if (!isFollowerCountAllowed(parsedCount, donorFollowersMin, donorFollowersMax)) {
+      const range = followerRangeLabel(donorFollowersMin, donorFollowersMax);
       logger.info(
-        `   ⏭️ Пропуск и удаление: ${donorUrl} — слишком мало подписчиков. (Парсинг: ${parsedCount} < 1000)`
+        `   ⏭️ Пропуск и удаление: ${donorUrl} — ${parsedCount} подписчиков, диапазон ${range}`
       );
       await state_1.StateManager.addDonor(donorUrl);
       return;
@@ -912,8 +1063,7 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
         logger.info(`      🚀 Обрабатываем новые профили пачками...`);
         const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
 
-        // Один Instagram-аккаунт: web_profile_info строго последовательно.
-        const CHUNK_SIZE = 1;
+        const CHUNK_SIZE = config.target.concurrency;
 
         for (let i = 0; i < newCandidates.length; i += CHUNK_SIZE) {
           if (checkSkipSignal(contextState)) {
@@ -922,26 +1072,21 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
           }
           const chunk = newCandidates.slice(i, i + CHUNK_SIZE);
 
+          const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
+          const profileResults = await Promise.allSettled(
+            chunk.map((url) => analyzeProfileFast(context, url, config, donorName, page))
+          );
+          for (const result of profileResults) {
+            if (result.status === 'rejected') {
+              logger.warn(`         ⚠️ Ошибка параллельной проверки: ${result.reason?.message || result.reason}`);
+            }
+          }
+
           if (humanEmulation) {
-            for (const url of chunk) {
-              if (checkSkipSignal(contextState)) {
-                shouldSkipDonor = true;
-                break;
-              }
-              const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
-              // Используем быстрый анализ для ускорения в 10 раз
-              await analyzeProfileFast(context, url, config, donorName);
-              const delay = 2000 + Math.random() * 2000;
-              logger.info(
-                `👤 [HUMAN] Ожидание ${Math.round(delay / 1000)}с перед следующим профилем...`
-              );
-              await (0, anti_fraud_1.waitWithActivity)(page, delay);
-            }
+            const delay = 2000 + Math.random() * 2000;
+            logger.info(`👤 [HUMAN] Пауза ${Math.round(delay / 1000)}с после пачки профилей...`);
+            await (0, anti_fraud_1.waitWithActivity)(page, delay);
           } else {
-            for (const url of chunk) {
-              const donorName = donorUrl.split('/').filter(Boolean).pop() || '';
-              await analyzeProfileFast(context, url, config, donorName);
-            }
             await randomDelay(100, 300);
           }
 
@@ -1038,104 +1183,92 @@ const run = async () => {
   let { browser, context } = await setupBrowser();
   await (0, browser_1.optimizeContextForScraping)(context);
   let liveViewInterval = (0, browser_1.startLiveView)(context);
-  let donorIdx = 0;
-  while (donorIdx < donors.length) {
-    const humanEmulation = await (0, config_1.getSetting)('humanEmulation');
-    const searchNames = await (0, config_1.getList)('names.txt');
-    const unparsedDonors = donors.slice(donorIdx).filter(d => {
-      if (state_1.StateManager.hasDonor(d)) return false;
-
-      // Skip donor if all current search names are already checked for it
-      const donorUrl = typeof d === 'object' ? d.url : d;
-      const allChecked = searchNames.every(name => state_1.StateManager.isChecked(donorUrl, name));
-      if (allChecked) {
-        // Self-correct by adding to processed donors
-        state_1.StateManager.addDonor(donorUrl);
-        return false;
-      }
-      return true;
-    });
-
-    if (unparsedDonors.length === 0) break;
-
-    try {
-      if (humanEmulation) {
-        // Sequential processing for human emulation
-        for (const donor of unparsedDonors) {
-          const donorUrl = typeof donor === 'object' ? donor.url : donor;
-          try {
-            await processDonor(context, donorUrl, CONFIG, accounts.length);
-            await state_1.StateManager.addDonor(donorUrl);
-          } catch (err) {
-            if (err.name === 'RotateAccountError') throw err;
-            if (/Target page, context or browser has been closed|Page closed|Target closed/i.test(err.message || '')) {
-              logger.warn(`   ⚠️ Окно закрылось на доноре ${donorUrl}. Пропускаем и идем дальше.`);
-            } else {
-              logger.error(`   ❌ Ошибка обработки донора ${donorUrl}: ${err.message}`);
-            }
-          }
-          donorIdx++;
-          // Reset to full names list for next donor
-          CONFIG.target.names = (0, utils_1.shuffleArray)(await (0, config_1.getList)('names.txt'));
-
-          if (donorIdx % 2 === 0) {
-            try {
-              logger.info(`👤 [HUMAN] Заходим в ленту новостей для "отдыха"...`);
-              const feedPage = await context.newPage();
-              await feedPage.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
-              await (0, anti_fraud_1.waitWithActivity)(feedPage, 2000);
-              await (0, utils_1.humanScroll)(feedPage, null, 'down', 800 + Math.random() * 1000);
-              await (0, anti_fraud_1.waitWithActivity)(feedPage, 3000 + Math.random() * 4000);
-              await feedPage.close();
-            } catch (e) { }
-          }
-        }
-      } else {
-        logger.info(`🚀 Обрабатываем доноров последовательно для одного Instagram-аккаунта...`);
-        for (const donor of unparsedDonors) {
-          const donorUrl = typeof donor === 'object' ? donor.url : donor;
-          if (state_1.StateManager.hasDonor(donorUrl)) continue;
-          const donorConfig = JSON.parse(JSON.stringify(CONFIG));
-          try {
-            await processDonor(context, donorUrl, donorConfig, accounts.length);
-            await state_1.StateManager.addDonor(donorUrl);
-            donorIdx++;
-          } catch (err) {
-            if (err.name === 'RotateAccountError') throw err;
-            logger.error(`   ❌ Ошибка обработки донора ${donorUrl}: ${err.message}`);
-            donorIdx++;
-          }
-        }
-        break; // Finished pool successfully
-      }
-    } catch (e) {
-      if (e.name === 'RotateAccountError') {
-        const isRotationNeeded = accounts.length > 1;
-        if (isRotationNeeded) {
-          logger.info(`🔄 ПЕРЕКЛЮЧЕНИЕ ПРОФИЛЯ: ${e.reason}`);
-        } else {
-          logger.info(`🔄 ПЕРЕЗАГРУЗКА СЕССИИ: ${e.reason}`);
-        }
-        clearInterval(liveViewInterval);
-        await browser.close();
-        if (isRotationNeeded) {
-          currentAccountIndex = (currentAccountIndex + 1) % accounts.length;
-          logger.info(`🔀 Переключились на аккаунт #${currentAccountIndex + 1} из ${accounts.length}`);
-        } else {
-          logger.warn(`⚠️ Только один аккаунт доступен. Ждем 30 сек перед повторной попыткой...`);
-          await (0, utils_1.wait)(30000);
-        }
-        const setup = await setupBrowser();
-        browser = setup.browser;
-        context = setup.context;
-        await (0, browser_1.optimizeContextForScraping)(context);
-        liveViewInterval = (0, browser_1.startLiveView)(context);
-        CONFIG.target.names = e.remainingNames.length > 0 ? e.remainingNames : (0, utils_1.shuffleArray)(await (0, config_1.getList)('names.txt'));
-      } else {
-        logger.error(`❌ Непредвиденная ошибка: ${e.message}`);
-        donorIdx++;
-      }
+  const searchNames = await (0, config_1.getList)('names.txt');
+  const donorQueue = [];
+  for (const donor of donors) {
+    if (state_1.StateManager.hasDonor(donor)) continue;
+    const donorUrl = typeof donor === 'object' ? donor.url : donor;
+    const allChecked = searchNames.every((name) =>
+      state_1.StateManager.isChecked(donorUrl, name)
+    );
+    if (allChecked) {
+      await state_1.StateManager.addDonor(donorUrl);
+      continue;
     }
+    donorQueue.push({ donor, names: null });
+  }
+
+  const donorConcurrency = CONFIG.target.concurrency;
+  logger.info(
+    `🚀 Worker pool: ${Math.min(donorConcurrency, donorQueue.length)} доноров × до ${donorConcurrency} профилей`
+  );
+  while (donorQueue.length > 0) {
+    let rotationError = null;
+    const workerCount = Math.min(donorConcurrency, donorQueue.length);
+    const runDonorWorker = async (workerId) => {
+      while (donorQueue.length > 0 && !rotationError) {
+        const task = donorQueue.shift();
+        const donorUrl = typeof task.donor === 'object' ? task.donor.url : task.donor;
+        if (state_1.StateManager.hasDonor(donorUrl)) continue;
+
+        const donorConfig = JSON.parse(JSON.stringify(CONFIG));
+        donorConfig.target.names =
+          task.names?.length > 0 ? task.names : (0, utils_1.shuffleArray)(searchNames);
+        logger.info(`🧵 Worker ${workerId}: открыт ${donorUrl}. В очереди: ${donorQueue.length}`);
+
+        try {
+          const result = await processDonor(
+            context,
+            donorUrl,
+            donorConfig,
+            accounts.length
+          );
+          if (!result?.retry) await state_1.StateManager.addDonor(donorUrl);
+        } catch (error) {
+          if (error.name === 'RotateAccountError') {
+            task.names = error.remainingNames;
+            donorQueue.unshift(task);
+            rotationError ||= error;
+            return;
+          }
+          if (
+            /Target page, context or browser has been closed|Page closed|Target closed/i.test(
+              error.message || ''
+            )
+          ) {
+            logger.warn(`   ⚠️ Окно закрылось на доноре ${donorUrl}. Повторим при следующем запуске.`);
+          } else {
+            logger.error(`   ❌ Ошибка обработки донора ${donorUrl}: ${error.message}`);
+          }
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: workerCount }, (_, index) => runDonorWorker(index + 1))
+    );
+    if (!rotationError) break;
+
+    const isRotationNeeded = accounts.length > 1;
+    logger.info(
+      isRotationNeeded
+        ? `🔄 ПЕРЕКЛЮЧЕНИЕ ПРОФИЛЯ: ${rotationError.reason}`
+        : `🔄 ПЕРЕЗАГРУЗКА СЕССИИ: ${rotationError.reason}`
+    );
+    clearInterval(liveViewInterval);
+    await browser.close();
+    if (isRotationNeeded) {
+      currentAccountIndex = (currentAccountIndex + 1) % accounts.length;
+      logger.info(`🔀 Переключились на аккаунт #${currentAccountIndex + 1} из ${accounts.length}`);
+    } else {
+      logger.warn(`⚠️ Только один аккаунт доступен. Ждем 30 сек перед повторной попыткой...`);
+      await (0, utils_1.wait)(30000);
+    }
+    const setup = await setupBrowser();
+    browser = setup.browser;
+    context = setup.context;
+    await (0, browser_1.optimizeContextForScraping)(context);
+    liveViewInterval = (0, browser_1.startLiveView)(context);
   }
   clearInterval(liveViewInterval);
   await browser.close();

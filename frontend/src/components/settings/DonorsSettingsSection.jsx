@@ -245,6 +245,26 @@ const DonorsSettingsSection = memo(function DonorsSettingsSection({
     [onSettingsChange]
   );
 
+  const handleFollowerLimit = useCallback(
+    (key, value) => {
+      const parsed = Math.max(0, Number.parseInt(value, 10) || 0);
+      onSettingsChange((previous) => {
+        const patch = { [key]: parsed };
+        const isMinimum = key.endsWith('Min');
+        const pairedKey = isMinimum ? key.replace(/Min$/, 'Max') : key.replace(/Max$/, 'Min');
+        const pairedValue = Math.max(0, Number(previous[pairedKey]) || 0);
+
+        if (isMinimum && pairedValue > 0 && parsed > pairedValue) {
+          patch[pairedKey] = parsed;
+        } else if (!isMinimum && parsed > 0 && parsed < pairedValue) {
+          patch[pairedKey] = parsed;
+        }
+        return patch;
+      });
+    },
+    [onSettingsChange]
+  );
+
   const handleAllGroupUpdate = useCallback(
     (patch) => {
       onSettingsChange((prev) => ({
@@ -396,6 +416,65 @@ const DonorsSettingsSection = memo(function DonorsSettingsSection({
 
   return (
     <div className="donor-groups-manager">
+      <div className="donor-limits-card">
+        <div className="donor-limit-group">
+          <div>
+            <h4>Фильтр доноров</h4>
+            <p>Проверяется перед открытием списка подписчиков.</p>
+          </div>
+          <div className="donor-limit-fields">
+            <label>
+              <span>От</span>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={settingsData.donorFollowersMin ?? 1000}
+                onChange={(event) => handleFollowerLimit('donorFollowersMin', event.target.value)}
+              />
+            </label>
+            <label>
+              <span>До</span>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={settingsData.donorFollowersMax ?? 0}
+                onChange={(event) => handleFollowerLimit('donorFollowersMax', event.target.value)}
+              />
+            </label>
+          </div>
+        </div>
+        <div className="donor-limit-group">
+          <div>
+            <h4>Фильтр целевых профилей</h4>
+            <p>Проверяется до сохранения найденного профиля.</p>
+          </div>
+          <div className="donor-limit-fields">
+            <label>
+              <span>От</span>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={settingsData.targetFollowersMin ?? 0}
+                onChange={(event) => handleFollowerLimit('targetFollowersMin', event.target.value)}
+              />
+            </label>
+            <label>
+              <span>До</span>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={settingsData.targetFollowersMax ?? 0}
+                onChange={(event) => handleFollowerLimit('targetFollowersMax', event.target.value)}
+              />
+            </label>
+          </div>
+        </div>
+        <div className="donor-limits-hint">0 — без ограничения</div>
+      </div>
       <div className="donors-raw-list">
         <div className="flex-between mb-12">
           <h4 className="fs-16 color-accent m-0">📋 Общий список доноров</h4>

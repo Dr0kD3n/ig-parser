@@ -10,6 +10,7 @@ const anti_fraud_1 = require('./lib/anti-fraud');
 const { info, warn, error: logError } = require('./lib/logger');
 const { handleError, setupProcessHandlers } = require('./lib/error-handler');
 const { getDB } = require('./lib/db');
+const { evaluateDonor, rankDonorCandidates, splitAliases } = require('./lib/donor-relevance');
 
 const getDynamicConfig = async () => {
   try {
@@ -57,10 +58,70 @@ const getCombinedKeywords = (cities, niches) => {
   const combined = [];
   for (const city of cities) {
     for (const niche of niches) {
-      combined.push({ keyword: `${city} ${niche}`, city, niche });
+      const cityQuery = splitAliases(city)[0] || city;
+      const nicheQuery = splitAliases(niche)[0] || niche;
+      combined.push({ keyword: `${cityQuery} ${nicheQuery}`, city, niche });
     }
   }
   return shuffleArray(combined);
+};
+
+const getUsernameFromUrl = (url) => {
+  try {
+    return new URL(url).pathname.split('/').filter(Boolean)[0] || '';
+  } catch {
+    return '';
+  }
+};
+
+const fetchDonorProfile = async (page, username, userId) => {
+  return page.evaluate(async ({ uname, uid }) => {
+    const attempts = [];
+    const headers = {
+      'X-IG-App-ID': '936619743392459',
+      'X-Requested-With': 'XMLHttpRequest',
+    };
+    const normalizeUser = (user) => user ? ({
+      username: user.username || uname,
+      fullName: user.full_name || '',
+      biography: user.biography || '',
+      category: user.category_name || user.category || '',
+    }) : null;
+    const request = async (source, url, extractUser) => {
+      try {
+        const response = await fetch(url, { headers });
+        if (!response.ok) {
+          attempts.push(`${source}:${response.status}`);
+          return null;
+        }
+        const json = await response.json();
+        const profile = normalizeUser(extractUser(json));
+        if (!profile) attempts.push(`${source}:empty`);
+        return profile;
+      } catch {
+        attempts.push(`${source}:network`);
+        return null;
+      }
+    };
+
+    const webProfile = await request(
+      'web',
+      `/api/v1/users/web_profile_info/?username=${encodeURIComponent(uname)}`,
+      (json) => json.data?.user
+    );
+    if (webProfile) return { profile: webProfile, source: 'web', error: '' };
+
+    if (uid) {
+      const apiProfile = await request(
+        'user-info',
+        `/api/v1/users/${encodeURIComponent(uid)}/info/`,
+        (json) => json.user
+      );
+      if (apiProfile) return { profile: apiProfile, source: 'user-info', error: '' };
+    }
+
+    return { profile: null, source: '', error: attempts.join(',') || 'no-user-id' };
+  }, { uname: username, uid: userId ? String(userId) : '' });
 };
 
 const run = async () => {
@@ -84,6 +145,7 @@ const run = async () => {
   }
   const savedProfiles = await state_1.StateManager.loadDonors();
   const collectedUrls = new Set(savedProfiles.map(config_1.normalizeUrl));
+  const profileCache = new Map();
   info(`📂 В базе уже сохранено доноров: ${collectedUrls.size}`);
   info(`📍 Ключевых слов города: ${CONFIG.cities.length}`);
   if (CONFIG.citiesBlacklist.length > 0) {
@@ -170,9 +232,8 @@ const run = async () => {
 
             // More aggressive API fetch using multiple endpoints to ensure >5 results
             info(`📡 [API] Глубокий поиск профилей для: "${keyword}"`);
-            const apiLinks = await page.evaluate(async (kw) => {
+            const apiCandidates = await page.evaluate(async (kw) => {
               try {
-                const results = [];
                 // 1. Topsearch (Blended)
                 const topSearchUrl = `https://www.instagram.com/api/v1/web/search/topsearch/?context=blended&query=${encodeURIComponent(kw)}&rank_token=${Math.random()}`;
                 // 2. Specialized User Search
@@ -186,7 +247,11 @@ const run = async () => {
                     if (json.users && Array.isArray(json.users)) {
                       return json.users.map(u => {
                         const user = u.user || u;
-                        return user.username ? `https://www.instagram.com/${user.username}/` : null;
+                        return user.username ? {
+                          username: user.username,
+                          fullName: user.full_name || '',
+                          userId: user.pk || user.pk_id || user.id || '',
+                        } : null;
                       }).filter(Boolean);
                     }
                   } catch (e) { }
@@ -209,38 +274,69 @@ const run = async () => {
             await (0, browser_1.takeLiveScreenshot)(page);
             await (0, anti_fraud_1.waitWithActivity)(page, 1000);
 
-            const uniqueLinks = [...new Set(apiLinks)];
-            const finalLinks = uniqueLinks.slice(0, 30); // Target up to 30
+            const uniqueCandidates = [...new Map(
+              apiCandidates.map((candidate) => [candidate.username.toLowerCase(), candidate])
+            ).values()];
+            const rankedCandidates = rankDonorCandidates(uniqueCandidates, {
+              city,
+              niche,
+              cityBlacklist: CONFIG.citiesBlacklist,
+              wordsBlacklist: CONFIG.wordsBlacklist,
+            });
+            // Глубокая проверка дороже search API: проверяем лучшие 20, сохраняем до 10.
+            const finalCandidates = rankedCandidates.slice(0, 20);
             const donorsToSave = [];
-            for (const link of finalLinks) {
+            let cacheHits = 0;
+            for (const candidate of finalCandidates) {
+              const link = `https://www.instagram.com/${candidate.username}/`;
               const normLink = (0, config_1.normalizeUrl)(link);
-              // Check city blacklist if donor is already known to contain city in its handle/placeholder
-              // For parser, we usually assume it's okay because we searched for it,
-              // but we can add a check if we were to fetch its bio here.
-              // However, parser saves donor with nices/cities passed into saveDonor.
-              // We'll filter the "city" being passed in if it's in blacklist (though unlikely as it came from whitelist).
-              // A better place is during the profile analysis in scraper, but let's be safe.
+              if (collectedUrls.has(normLink) || state_1.StateManager.has(normLink)) continue;
 
-              const isBlacklisted = CONFIG.citiesBlacklist.length > 0 && CONFIG.citiesBlacklist.some(bl =>
-                normLink.toLowerCase().includes(bl.toLowerCase()) ||
-                city.toLowerCase().includes(bl.toLowerCase())
-              ) || CONFIG.wordsBlacklist.length > 0 && CONFIG.wordsBlacklist.some(bl =>
-                normLink.toLowerCase().includes(bl.toLowerCase()) ||
-                niche.toLowerCase().includes(bl.toLowerCase())
-              );
+              const username = getUsernameFromUrl(normLink);
+              const cacheKey = username.toLowerCase();
+              const cached = profileCache.has(cacheKey);
+              const profileResult = cached
+                ? profileCache.get(cacheKey)
+                : await fetchDonorProfile(page, username, candidate.userId);
+              if (profileResult?.profile && !cached) profileCache.set(cacheKey, profileResult);
+              if (cached) {
+                cacheHits++;
+              } else {
+                await (0, anti_fraud_1.waitWithActivity)(page, 250 + Math.random() * 250);
+              }
+              let profile = profileResult?.profile;
+              if (!profile) {
+                const searchFallback = evaluateDonor(candidate, {
+                  city,
+                  niche,
+                  cityBlacklist: CONFIG.citiesBlacklist,
+                  wordsBlacklist: CONFIG.wordsBlacklist,
+                });
+                if (!searchFallback.accepted) {
+                  warn(`⚠️ Профиль ${normLink} пропущен: ${profileResult?.error || 'данные недоступны'}`);
+                  continue;
+                }
+                profile = candidate;
+                info(`⚡ @${username} подтверждён по username/full_name; profile API: ${profileResult?.error || 'недоступен'}`);
+              }
 
-              if (isBlacklisted) {
-                warn(`🚫 Профиль ${normLink} пропущен (чёрный список)`);
+              const relevance = evaluateDonor(profile, {
+                city,
+                niche,
+                cityBlacklist: CONFIG.citiesBlacklist,
+                wordsBlacklist: CONFIG.wordsBlacklist,
+              });
+              if (!relevance.accepted) {
+                info(`⏭️ @${username} отклонён: ${relevance.reason}`);
                 continue;
               }
 
-              if (!collectedUrls.has(normLink) && !state_1.StateManager.has(normLink)) {
-                collectedUrls.add(normLink);
-                donorsToSave.push({ url: normLink, niche, city, keyword });
-              }
+              collectedUrls.add(normLink);
+              donorsToSave.push({ url: normLink, niche, city, keyword });
+              if (donorsToSave.length >= 10) break;
             }
             await state_1.StateManager.saveDiscoveredDonors(donorsToSave);
-            info(`✅ Всего найдено: ${uniqueLinks.length} | Взято: ${finalLinks.length} | Новых: ${donorsToSave.length}`);
+            info(`✅ Найдено: ${uniqueCandidates.length} | После ранжирования: ${finalCandidates.length} | Кеш: ${cacheHits} | Новых: ${donorsToSave.length}`);
             await (0, anti_fraud_1.waitWithActivity)(page, 2000 + Math.random() * 3000);
           } catch (itemErr) {
             handleError(

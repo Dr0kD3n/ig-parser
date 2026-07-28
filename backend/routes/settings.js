@@ -44,6 +44,10 @@ app.get('/api/settings', async (req, res) => {
     showBrowser: settings.showBrowser,
     concurrentProfiles: settings.concurrentProfiles,
     dmLimit: settings.dmLimit,
+    donorFollowersMin: settings.donorFollowersMin,
+    donorFollowersMax: settings.donorFollowersMax,
+    targetFollowersMin: settings.targetFollowersMin,
+    targetFollowersMax: settings.targetFollowersMax,
     humanEmulation: settings.humanEmulation,
     dolphinToken: settings.dolphinToken,
     donorGroups: settings.donorGroups,
@@ -165,6 +169,19 @@ app.post('/api/settings', async (req, res) => {
         await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'dmLimit',
           req.body.dmLimit.toString(),
+        ]);
+      }
+      for (const key of [
+        'donorFollowersMin',
+        'donorFollowersMax',
+        'targetFollowersMin',
+        'targetFollowersMax',
+      ]) {
+        if (!Object.hasOwn(req.body, key)) continue;
+        const value = Math.max(0, Number.parseInt(req.body[key], 10) || 0);
+        await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          key,
+          String(value),
         ]);
       }
       if (Object.hasOwn(req.body, 'humanEmulation')) {

@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IG Bot — UI directions</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #111; font-family: "DM Sans", sans-serif; }
+    button, input { font: inherit; }
+    .concept { width: 1440px; height: 960px; overflow: hidden; position: relative; }
+    .eyebrow { text-transform: uppercase; letter-spacing: .13em; font-size: 11px; font-weight: 700; }
+    .avatar { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-weight: 800; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .spark { display: flex; align-items: end; gap: 5px; height: 42px; }
+    .spark i { display: block; width: 7px; border-radius: 8px; }
+    .pill { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; white-space: nowrap; }
+    .icon { width: 18px; height: 18px; display: inline-block; }
+
+    /* A — light operations workspace */
+    .concept-a { background: #f3f5f7; color: #17202b; display: grid; grid-template-columns: 228px 1fr; }
+    .a-side { background: #fff; border-right: 1px solid #dde2e7; padding: 26px 18px; display: flex; flex-direction: column; }
+    .a-brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 30px; font: 800 18px "Segoe UI", sans-serif; }
+    .a-logo { width: 33px; height: 33px; border-radius: 10px; display: grid; place-items: center; color: white; background: #165dff; }
+    .a-nav { display: grid; gap: 6px; }
+    .a-nav div { padding: 11px 13px; border-radius: 10px; color: #667080; font-size: 14px; display: flex; gap: 11px; align-items: center; }
+    .a-nav .active { color: #114fd0; background: #edf3ff; font-weight: 700; }
+    .a-nav .nav-icon { width: 21px; text-align: center; }
+    .a-account { margin-top: auto; padding: 14px 10px 0; border-top: 1px solid #e6e9ed; display: flex; gap: 10px; align-items: center; }
+    .a-account .avatar { width: 35px; height: 35px; border-radius: 50%; color: #154caa; background: #d9e7ff; }
+    .a-main { padding: 26px 30px 34px; }
+    .a-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 23px; }
+    .a-title h1 { margin: 4px 0 0; font: 800 28px "Segoe UI", sans-serif; letter-spacing: -.04em; }
+    .a-title .eyebrow { color: #87909d; }
+    .a-actions { display: flex; gap: 10px; align-items: center; }
+    .a-search { width: 226px; border: 1px solid #d9dee5; background: white; border-radius: 10px; padding: 10px 13px; color: #8a929e; }
+    .a-primary { border: 0; color: white; background: #165dff; border-radius: 10px; padding: 11px 16px; font-weight: 700; }
+    .a-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .a-card { background: #fff; border: 1px solid #dfe4e9; border-radius: 15px; padding: 17px; box-shadow: 0 3px 12px rgba(21, 32, 44, .035); }
+    .a-kpi { min-height: 128px; }
+    .a-kpi-top { display: flex; justify-content: space-between; color: #727d8a; font-size: 13px; }
+    .a-kpi strong { display: block; font: 800 28px "Segoe UI", sans-serif; margin: 13px 0 8px; }
+    .a-trend { font-size: 12px; color: #1b8b5a; font-weight: 700; }
+    .a-trend.muted { color: #727d8a; }
+    .a-body { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, .85fr); gap: 14px; margin-top: 14px; }
+    .a-panel { background: #fff; border: 1px solid #dfe4e9; border-radius: 15px; padding: 18px; }
+    .a-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .a-panel h2 { margin: 0; font: 800 16px "Segoe UI", sans-serif; }
+    .a-filter { color: #687383; font-size: 12px; border: 1px solid #dfe4e9; padding: 7px 10px; border-radius: 8px; }
+    .a-profile { display: grid; grid-template-columns: 46px 1.2fr .8fr .72fr auto; gap: 12px; align-items: center; padding: 13px 2px; border-top: 1px solid #edf0f2; font-size: 13px; }
+    .a-profile:first-of-type { border-top: 0; }
+    .a-profile .avatar { color: white; }
+    .av1 { background: linear-gradient(135deg,#ff8f70,#ad4ee6); }
+    .av2 { background: linear-gradient(135deg,#5cc8ff,#3567d6); }
+    .av3 { background: linear-gradient(135deg,#ffd76b,#e27048); }
+    .av4 { background: linear-gradient(135deg,#78dcb5,#268888); }
+    .name { font-weight: 700; }
+    .sub { color: #89929d; font-size: 12px; margin-top: 3px; }
+    .a-status { color: #14794d; background: #e7f7ef; font-size: 11px; font-weight: 700; padding: 6px 9px; }
+    .a-status.wait { color: #9a6410; background: #fff3d8; }
+    .a-arrow { color: #a0a8b2; font-size: 18px; }
+    .a-right { display: grid; gap: 14px; }
+    .a-run { background: #172331; color: white; border: 0; }
+    .a-run .eyebrow { color: #8ca0b5; }
+    .a-run h2 { font-size: 20px; margin-top: 8px; }
+    .a-progress { height: 8px; background: #334252; border-radius: 99px; margin: 18px 0 10px; overflow: hidden; }
+    .a-progress span { display: block; width: 68%; height: 100%; background: #4b92ff; border-radius: inherit; }
+    .a-run-meta { color: #9bacc0; font-size: 12px; display: flex; justify-content: space-between; }
+    .a-log { display: grid; gap: 11px; }
+    .a-log-row { display: grid; grid-template-columns: 9px 1fr auto; gap: 10px; align-items: start; font-size: 12px; color: #5e6976; }
+    .a-log-row .dot { margin-top: 4px; background: #35a66f; }
+    .a-log-row time { color: #9ba3ad; font-family: "IBM Plex Mono"; }
+
+    /* B — dark mission control */
+    .concept-b { background: #090b0e; color: #f1f5f7; display: grid; grid-template-columns: 72px 1fr; font-family: Manrope, sans-serif; }
+    .b-rail { border-right: 1px solid #242a30; background: #0c0f13; padding: 17px 12px; display: flex; flex-direction: column; align-items: center; gap: 13px; }
+    .b-logo { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: #d7ff3f; color: #0c0f13; font-weight: 900; margin-bottom: 18px; }
+    .b-nav { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; color: #66717a; font-size: 18px; }
+    .b-nav.active { background: #20262c; color: #d7ff3f; }
+    .b-avatar { margin-top: auto; width: 37px; height: 37px; border-radius: 50%; background: #2d3740; display: grid; place-items: center; font-size: 12px; }
+    .b-main { padding: 22px 25px; }
+    .b-top { display: grid; grid-template-columns: 1fr auto; align-items: center; padding-bottom: 18px; border-bottom: 1px solid #20262b; }
+    .b-top h1 { margin: 0; font-size: 19px; letter-spacing: -.03em; }
+    .b-top p { margin: 4px 0 0; color: #76818b; font: 11px "IBM Plex Mono"; }
+    .b-system { display: flex; align-items: center; gap: 10px; color: #9ba5ae; font-size: 11px; font-family: "IBM Plex Mono"; }
+    .b-system .dot { background: #d7ff3f; box-shadow: 0 0 14px #d7ff3f; }
+    .b-layout { margin-top: 20px; display: grid; grid-template-columns: 1.45fr .78fr; gap: 16px; }
+    .b-left, .b-right { display: grid; gap: 16px; align-content: start; }
+    .b-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .b-card { border: 1px solid #252c32; background: #101419; border-radius: 11px; }
+    .b-kpi { padding: 15px; min-height: 126px; position: relative; overflow: hidden; }
+    .b-kpi label { color: #7f8992; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }
+    .b-kpi strong { display: block; font: 600 30px "Consolas", monospace; margin: 15px 0 7px; }
+    .b-kpi small { color: #d7ff3f; font: 11px "IBM Plex Mono"; }
+    .b-kpi .spark { position: absolute; right: 13px; bottom: 13px; opacity: .65; }
+    .b-kpi .spark i { background: #d7ff3f; width: 4px; }
+    .b-table { padding: 0; overflow: hidden; }
+    .b-head { padding: 15px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #252c32; }
+    .b-head h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+    .b-head span { color: #6f7982; font: 10px "IBM Plex Mono"; }
+    .b-row { display: grid; grid-template-columns: 34px 1.1fr .8fr .7fr .7fr; gap: 11px; align-items: center; padding: 12px 16px; border-bottom: 1px solid #1c2227; font-size: 11px; }
+    .b-row:last-child { border-bottom: 0; }
+    .b-row .avatar { width: 31px; height: 31px; border-radius: 8px; color: white; font-size: 10px; }
+    .b-row .sub { color: #66717a; font-family: "IBM Plex Mono"; font-size: 9px; }
+    .b-chip { color: #d7ff3f; border: 1px solid #4d591e; background: #1a1f11; padding: 5px 7px; font: 9px "IBM Plex Mono"; }
+    .b-chip.orange { color: #ff9b53; border-color: #5c3c24; background: #21160f; }
+    .b-terminal { padding-bottom: 6px; }
+    .b-console { height: 190px; padding: 13px 15px; color: #8c979f; font: 10px/1.9 "IBM Plex Mono"; }
+    .b-console b { color: #d7ff3f; font-weight: 500; }
+    .b-console .warn { color: #ff9b53; }
+    .b-control { padding: 17px; }
+    .b-control .eyebrow { color: #69747e; }
+    .b-control h2 { font-size: 22px; margin: 8px 0 6px; }
+    .b-control p { color: #77818a; font-size: 11px; line-height: 1.6; margin: 0 0 18px; }
+    .b-run-btn { width: 100%; border: 0; background: #d7ff3f; color: #101419; padding: 12px; border-radius: 7px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; font-size: 11px; }
+    .b-meters { display: grid; gap: 14px; margin-top: 18px; }
+    .b-meter-top { display: flex; justify-content: space-between; font: 10px "IBM Plex Mono"; color: #89939c; }
+    .b-meter-track { height: 4px; border-radius: 99px; background: #2a3035; margin-top: 7px; overflow: hidden; }
+    .b-meter-track span { height: 100%; display: block; background: #d7ff3f; }
+    .b-queue { padding: 15px; }
+    .b-task { display: grid; grid-template-columns: 24px 1fr auto; gap: 9px; align-items: center; padding: 10px 0; border-bottom: 1px solid #20262b; font-size: 11px; }
+    .b-task:last-child { border: 0; }
+    .b-num { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid #343c43; border-radius: 6px; color: #7f8a93; font: 9px "IBM Plex Mono"; }
+    .b-time { color: #68737c; font: 9px "IBM Plex Mono"; }
+
+    /* C — warm editorial workspace */
+    .concept-c { background: #eae5db; color: #1e241f; font-family: "DM Sans", sans-serif; padding: 18px; }
+    .c-shell { width: 100%; height: 100%; border: 1px solid #2c332d; border-radius: 24px; overflow: hidden; display: grid; grid-template-rows: 82px 1fr; background: #f5f1e8; }
+    .c-top { display: grid; grid-template-columns: 240px 1fr auto; align-items: center; padding: 0 28px; border-bottom: 1px solid #bec0b7; }
+    .c-brand { font: 800 21px Georgia, serif; letter-spacing: -.05em; }
+    .c-brand span { color: #e54729; }
+    .c-nav { display: flex; gap: 27px; font-size: 13px; color: #6b716b; }
+    .c-nav .active { color: #1e241f; font-weight: 700; position: relative; }
+    .c-nav .active::after { content: ""; position: absolute; height: 3px; background: #e54729; left: 0; right: 0; bottom: -31px; }
+    .c-user { display: flex; align-items: center; gap: 9px; font-size: 12px; }
+    .c-user .avatar { width: 35px; height: 35px; border-radius: 50%; background: #24392d; color: #f5f1e8; font-size: 11px; }
+    .c-main { padding: 30px; display: grid; grid-template-columns: 1.36fr .64fr; gap: 28px; min-height: 0; }
+    .c-left { min-width: 0; }
+    .c-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 24px; }
+    .c-heading .eyebrow { color: #e54729; margin-bottom: 7px; }
+    .c-heading h1 { font: 800 38px/1 Georgia, serif; letter-spacing: -.055em; margin: 0; max-width: 540px; }
+    .c-date { color: #6b716b; font-size: 12px; text-align: right; }
+    .c-summary { display: grid; grid-template-columns: 1.2fr .8fr .8fr; border: 1px solid #9fa49d; border-radius: 18px; overflow: hidden; margin-bottom: 20px; }
+    .c-stat { padding: 20px; border-right: 1px solid #b3b7af; min-height: 126px; }
+    .c-stat:last-child { border: 0; }
+    .c-stat label { font-size: 12px; color: #6e746f; }
+    .c-stat strong { display: block; font: 800 30px Georgia, serif; margin: 13px 0 7px; letter-spacing: -.04em; }
+    .c-stat small { color: #397457; font-weight: 700; font-size: 11px; }
+    .c-feature { background: #24392d; color: #f7f3ea; border-radius: 20px; padding: 22px; display: grid; grid-template-columns: 1fr 205px; gap: 20px; min-height: 210px; }
+    .c-feature .eyebrow { color: #f09a86; }
+    .c-feature h2 { font: 800 24px/1.15 Georgia, serif; letter-spacing: -.04em; margin: 10px 0 9px; }
+    .c-feature p { color: #bac7bf; font-size: 12px; line-height: 1.55; max-width: 400px; }
+    .c-feature button { background: #f0e95d; border: 0; border-radius: 999px; padding: 10px 16px; font-weight: 700; margin-top: 8px; }
+    .c-orbit { position: relative; display: grid; place-items: center; }
+    .c-ring { width: 158px; height: 158px; border: 1px solid #658071; border-radius: 50%; display: grid; place-items: center; }
+    .c-ring::before { content: ""; width: 104px; height: 104px; border: 1px dashed #879c90; border-radius: 50%; }
+    .c-ring::after { content: "68%"; position: absolute; font: 800 26px Georgia, serif; }
+    .c-side { border-left: 1px solid #c2c3bb; padding-left: 28px; min-width: 0; }
+    .c-side-head { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 20px; }
+    .c-side h2 { margin: 0; font: 800 18px Georgia, serif; }
+    .c-see { color: #e54729; font-size: 11px; font-weight: 700; }
+    .c-person { display: grid; grid-template-columns: 46px 1fr auto; gap: 11px; align-items: center; padding: 13px 0; border-bottom: 1px solid #c8c9c1; }
+    .c-person .avatar { border-radius: 50%; color: white; }
+    .c-person .meta { font-size: 11px; color: #767b76; margin-top: 4px; }
+    .c-score { width: 39px; height: 39px; border: 1px solid #989e98; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 11px; }
+    .c-activity { margin-top: 24px; }
+    .c-event { display: grid; grid-template-columns: 10px 1fr; gap: 10px; font-size: 11px; line-height: 1.45; margin: 14px 0; }
+    .c-event .dot { margin-top: 3px; background: #e54729; }
+    .c-event time { color: #858a85; display: block; margin-top: 3px; }
+
+    /* Preserved functional screen — profile traffic feed */
+    .concept-feed { background: #f3f5f7; color: #17202b; display: grid; grid-template-columns: 228px 1fr; }
+    .feed-main { padding: 26px 30px 34px; min-width: 0; }
+    .feed-toolbar { display: grid; grid-template-columns: 1.35fr .9fr .8fr .95fr auto; gap: 10px; margin: 20px 0 16px; }
+    .feed-field { background: #fff; border: 1px solid #d9dee5; color: #65717e; border-radius: 10px; padding: 11px 13px; font-size: 13px; }
+    .feed-count { display: grid; place-items: center; padding: 0 14px; background: #172331; color: white; border-radius: 10px; font-size: 12px; font-weight: 700; }
+    .feed-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+    .feed-card { background: white; border: 1px solid #dde2e7; border-radius: 17px; overflow: hidden; box-shadow: 0 6px 20px rgba(24, 34, 45, .05); }
+    .feed-photo { height: 235px; padding: 15px; display: flex; align-items: flex-start; justify-content: space-between; color: white; position: relative; }
+    .feed-photo::after { content: ""; position: absolute; inset: 45% 0 0; background: linear-gradient(transparent, rgba(8, 15, 24, .72)); }
+    .photo-1 { background: linear-gradient(135deg, #f5aa8f, #8b66c6 56%, #27354f); }
+    .photo-2 { background: linear-gradient(135deg, #7cd5ef, #4b7cc7 55%, #1d3156); }
+    .photo-3 { background: linear-gradient(135deg, #ffd070, #e77a55 55%, #673d4b); }
+    .feed-badges { display: flex; gap: 6px; position: relative; z-index: 2; }
+    .feed-badge { padding: 6px 9px; background: rgba(16, 25, 35, .62); backdrop-filter: blur(8px); border-radius: 999px; font-size: 10px; font-weight: 700; }
+    .feed-links { display: flex; gap: 7px; position: relative; z-index: 2; }
+    .feed-link { width: 31px; height: 31px; display: grid; place-items: center; background: rgba(16, 25, 35, .65); border-radius: 9px; font-size: 11px; }
+    .feed-photo-name { position: absolute; z-index: 2; left: 16px; right: 16px; bottom: 14px; }
+    .feed-photo-name b { display: block; font-size: 17px; }
+    .feed-photo-name span { font-size: 11px; opacity: .78; }
+    .feed-body { padding: 15px; }
+    .feed-donor { display: flex; justify-content: space-between; font-size: 11px; color: #76818d; padding-bottom: 11px; border-bottom: 1px solid #e9edf0; }
+    .feed-bio { font-size: 12px; line-height: 1.5; color: #4f5c68; min-height: 54px; padding: 11px 0; }
+    .feed-metrics { display: flex; gap: 14px; color: #6c7783; font-size: 11px; margin-bottom: 13px; }
+    .traffic-actions { display: grid; grid-template-columns: 42px 42px 42px 1fr; gap: 7px; }
+    .traffic-btn { border: 1px solid #dce2e7; background: #fff; color: #53606d; border-radius: 9px; height: 39px; font-weight: 700; }
+    .traffic-btn.like { color: #168757; background: #eaf8f1; border-color: #c7ead8; }
+    .traffic-btn.skip { color: #c3453f; background: #fff0ef; border-color: #f2cfcc; }
+    .traffic-btn.tg { color: #1474bd; background: #edf7ff; border-color: #cde6f8; }
+    .traffic-btn.dm { color: white; background: #165dff; border-color: #165dff; }
+    .feed-note { display: flex; justify-content: space-between; align-items: center; margin-top: 17px; padding: 13px 16px; background: #e9efff; border: 1px solid #cfdbfb; border-radius: 12px; color: #315080; font-size: 12px; }
+    .feed-note strong { color: #17396f; }
+  </style>
+</head>
+<body>
+  <section class="concept concept-a" id="concept-a">
+    <aside class="a-side">
+      <div class="a-brand"><span class="a-logo">I</span> Instaflow</div>
+      <nav class="a-nav">
+        <div class="active"><span class="nav-icon">◫</span>Обзор</div>
+        <div><span class="nav-icon">◎</span>Профили</div>
+        <div><span class="nav-icon">▶</span>Управление</div>
+        <div><span class="nav-icon">◷</span>Расписание</div>
+        <div><span class="nav-icon">▥</span>Сообщения</div>
+        <div><span class="nav-icon">⚙</span>Настройки</div>
+      </nav>
+      <div class="a-account">
+        <div class="avatar">AK</div>
+        <div><div class="name">Алексей</div><div class="sub">Администратор</div></div>
+      </div>
+    </aside>
+    <main class="a-main">
+      <header class="a-top">
+        <div class="a-title"><div class="eyebrow">28 июля · понедельник</div><h1>Добрый день, Алексей</h1></div>
+        <div class="a-actions"><div class="a-search">⌕&nbsp;&nbsp;Найти профиль</div><button class="a-primary">+ Новый запуск</button></div>
+      </header>
+      <section class="a-grid">
+        <div class="a-card a-kpi"><div class="a-kpi-top"><span>Новые профили</span><span>◎</span></div><strong>1 248</strong><span class="a-trend">+18% за неделю</span></div>
+        <div class="a-card a-kpi"><div class="a-kpi-top"><span>Отправлено DM</span><span>↗</span></div><strong>386</strong><span class="a-trend">+42 сегодня</span></div>
+        <div class="a-card a-kpi"><div class="a-kpi-top"><span>Ответили</span><span>✦</span></div><strong>12.8%</strong><span class="a-trend">+2.4 п.п.</span></div>
+        <div class="a-card a-kpi"><div class="a-kpi-top"><span>Аккаунты</span><span>◉</span></div><strong>8 / 10</strong><span class="a-trend muted">2 требуют внимания</span></div>
+      </section>
+      <section class="a-body">
+        <div class="a-panel">
+          <div class="a-panel-head"><h2>Приоритетные профили</h2><span class="a-filter">Все профили⌄</span></div>
+          <div class="a-profile"><div class="avatar av1">AM</div><div><div class="name">Анна Морозова</div><div class="sub">@anna.mrzv · Москва</div></div><div><div class="name">48.2K</div><div class="sub">подписчиков</div></div><span class="pill a-status">Высокий match</span><span class="a-arrow">›</span></div>
+          <div class="a-profile"><div class="avatar av2">EL</div><div><div class="name">Елена Ли</div><div class="sub">@elena.li · Казань</div></div><div><div class="name">21.7K</div><div class="sub">подписчиков</div></div><span class="pill a-status">Ответила</span><span class="a-arrow">›</span></div>
+          <div class="a-profile"><div class="avatar av3">KV</div><div><div class="name">Кира Волкова</div><div class="sub">@kiravolk · Москва</div></div><div><div class="name">18.9K</div><div class="sub">подписчиков</div></div><span class="pill a-status wait">Ждёт DM</span><span class="a-arrow">›</span></div>
+          <div class="a-profile"><div class="avatar av4">NS</div><div><div class="name">Ника Смирнова</div><div class="sub">@nika.smr · Сочи</div></div><div><div class="name">62.1K</div><div class="sub">подписчиков</div></div><span class="pill a-status">Высокий match</span><span class="a-arrow">›</span></div>
+        </div>
+        <div class="a-right">
+          <div class="a-panel a-run"><div class="eyebrow">Активный процесс</div><h2>Парсинг Fashion Moscow</h2><div class="a-progress"><span></span></div><div class="a-run-meta"><span>3 402 из 5 000</span><span>68%</span></div></div>
+          <div class="a-panel"><div class="a-panel-head"><h2>Последние события</h2><span class="sub">Live</span></div><div class="a-log">
+            <div class="a-log-row"><span class="dot"></span><span>Получено 24 новых профиля</span><time>12:42</time></div>
+            <div class="a-log-row"><span class="dot"></span><span>DM отправлен @elena.li</span><time>12:39</time></div>
+            <div class="a-log-row"><span class="dot"></span><span>Аккаунт primary_02 подключён</span><time>12:31</time></div>
+            <div class="a-log-row"><span class="dot"></span><span>Проверка ответов завершена</span><time>12:18</time></div>
+          </div></div>
+        </div>
+      </section>
+    </main>
+  </section>
+
+  <section class="concept concept-b" id="concept-b">
+    <aside class="b-rail"><div class="b-logo">IG</div><div class="b-nav active">⌂</div><div class="b-nav">◎</div><div class="b-nav">▶</div><div class="b-nav">◷</div><div class="b-nav">▥</div><div class="b-nav">⚙</div><div class="b-avatar">AK</div></aside>
+    <main class="b-main">
+      <header class="b-top"><div><h1>Operations control</h1><p>WORKSPACE / PRIMARY PIPELINE / LIVE</p></div><div class="b-system"><span class="dot"></span>ALL SYSTEMS OPERATIONAL&nbsp;&nbsp;·&nbsp;&nbsp;12:48:06 MSK</div></header>
+      <div class="b-layout">
+        <div class="b-left">
+          <section class="b-kpis">
+            <div class="b-card b-kpi"><label>Profiles parsed</label><strong>12,480</strong><small>+18.4%</small><div class="spark"><i style="height:14px"></i><i style="height:22px"></i><i style="height:18px"></i><i style="height:32px"></i><i style="height:39px"></i></div></div>
+            <div class="b-card b-kpi"><label>DM throughput</label><strong>42/h</strong><small>86% LIMIT</small><div class="spark"><i style="height:12px"></i><i style="height:24px"></i><i style="height:29px"></i><i style="height:26px"></i><i style="height:36px"></i></div></div>
+            <div class="b-card b-kpi"><label>Reply rate</label><strong>12.8%</strong><small>+2.4 PP</small><div class="spark"><i style="height:17px"></i><i style="height:16px"></i><i style="height:27px"></i><i style="height:31px"></i><i style="height:40px"></i></div></div>
+          </section>
+          <section class="b-card b-table">
+            <div class="b-head"><h2>Live profile stream</h2><span>UPDATED 4S AGO</span></div>
+            <div class="b-row"><div class="avatar av1">AM</div><div><b>anna.mrzv</b><div class="sub">MOSCOW · FASHION</div></div><span>48.2K</span><span>92 MATCH</span><span class="pill b-chip">READY</span></div>
+            <div class="b-row"><div class="avatar av2">EL</div><div><b>elena.li</b><div class="sub">KAZAN · BEAUTY</div></div><span>21.7K</span><span>87 MATCH</span><span class="pill b-chip">REPLIED</span></div>
+            <div class="b-row"><div class="avatar av3">KV</div><div><b>kiravolk</b><div class="sub">MOSCOW · LIFESTYLE</div></div><span>18.9K</span><span>84 MATCH</span><span class="pill b-chip orange">QUEUED</span></div>
+            <div class="b-row"><div class="avatar av4">NS</div><div><b>nika.smr</b><div class="sub">SOCHI · TRAVEL</div></div><span>62.1K</span><span>81 MATCH</span><span class="pill b-chip">READY</span></div>
+          </section>
+          <section class="b-card b-terminal"><div class="b-head"><h2>Activity terminal</h2><span>STREAM: INDEX-01</span></div><div class="b-console"><b>12:47:56</b> PROFILE_MATCH&nbsp;&nbsp;@anna.mrzv&nbsp;&nbsp;score=0.92<br><b>12:47:41</b> DM_SENT&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;@elena.li&nbsp;&nbsp;template=fashion_02<br><b>12:47:18</b> DONOR_SCAN&nbsp;&nbsp;&nbsp;&nbsp;fashion_moscow&nbsp;&nbsp;cursor=3402<br><span class="warn">12:46:52 WARN&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;primary_04 throttle 18s</span><br><b>12:46:31</b> PROFILE_SAVED&nbsp;&nbsp;@nika.smr&nbsp;&nbsp;followers=62104</div></section>
+        </div>
+        <aside class="b-right">
+          <section class="b-card b-control"><div class="eyebrow">Primary pipeline</div><h2>Parser active</h2><p>Donor group: Fashion Moscow<br>3 parallel browser sessions</p><button class="b-run-btn">Pause pipeline</button><div class="b-meters">
+            <div><div class="b-meter-top"><span>PROGRESS</span><span>3,402 / 5,000</span></div><div class="b-meter-track"><span style="width:68%"></span></div></div>
+            <div><div class="b-meter-top"><span>DAILY DM LIMIT</span><span>386 / 450</span></div><div class="b-meter-track"><span style="width:86%;background:#ff9b53"></span></div></div>
+            <div><div class="b-meter-top"><span>ACCOUNT HEALTH</span><span>8 / 10</span></div><div class="b-meter-track"><span style="width:80%"></span></div></div>
+          </div></section>
+          <section class="b-card b-queue"><div class="b-head" style="padding:0 0 10px;border:0"><h2>Upcoming queue</h2><span>4 TASKS</span></div>
+            <div class="b-task"><span class="b-num">01</span><span>Check Primary replies</span><span class="b-time">13:00</span></div>
+            <div class="b-task"><span class="b-num">02</span><span>Warmup primary_03</span><span class="b-time">13:15</span></div>
+            <div class="b-task"><span class="b-num">03</span><span>Start donor batch</span><span class="b-time">14:00</span></div>
+            <div class="b-task"><span class="b-num">04</span><span>Export daily report</span><span class="b-time">18:00</span></div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </section>
+
+  <section class="concept concept-c" id="concept-c">
+    <div class="c-shell">
+      <header class="c-top"><div class="c-brand">insta<span>flow</span></div><nav class="c-nav"><span class="active">Обзор</span><span>Профили</span><span>Управление</span><span>Расписание</span><span>Сообщения</span><span>Настройки</span></nav><div class="c-user"><div><b>Алексей К.</b><div class="sub">Администратор</div></div><div class="avatar">АК</div></div></header>
+      <main class="c-main">
+        <section class="c-left">
+          <div class="c-heading"><div><div class="eyebrow">Рабочее пространство</div><h1>Сегодня всё идёт по плану.</h1></div><div class="c-date">Понедельник<br><b>28 июля 2026</b></div></div>
+          <div class="c-summary">
+            <div class="c-stat"><label>Обработано профилей</label><strong>1 248</strong><small>+18% к прошлой неделе</small></div>
+            <div class="c-stat"><label>Отправлено DM</label><strong>386</strong><small>42 сегодня</small></div>
+            <div class="c-stat"><label>Ответили</label><strong>12.8%</strong><small>+2.4 п.п.</small></div>
+          </div>
+          <div class="c-feature">
+            <div><div class="eyebrow">Сейчас в работе</div><h2>Fashion Moscow.<br>Парсинг профилей</h2><p>Обработано 3 402 из 5 000 профилей. Три браузерные сессии работают без ошибок.</p><button>Открыть управление</button></div>
+            <div class="c-orbit"><div class="c-ring"></div></div>
+          </div>
+        </section>
+        <aside class="c-side">
+          <div class="c-side-head"><h2>Лучшие совпадения</h2><span class="c-see">Смотреть все</span></div>
+          <div class="c-person"><div class="avatar av1">AM</div><div><b>Анна Морозова</b><div class="meta">@anna.mrzv · 48.2K</div></div><span class="c-score">92</span></div>
+          <div class="c-person"><div class="avatar av2">EL</div><div><b>Елена Ли</b><div class="meta">@elena.li · 21.7K</div></div><span class="c-score">87</span></div>
+          <div class="c-person"><div class="avatar av3">KV</div><div><b>Кира Волкова</b><div class="meta">@kiravolk · 18.9K</div></div><span class="c-score">84</span></div>
+          <div class="c-activity"><div class="c-side-head"><h2>Активность</h2><span class="c-see">Live</span></div>
+            <div class="c-event"><span class="dot"></span><div>Получено 24 новых профиля<time>12:42 · Парсер</time></div></div>
+            <div class="c-event"><span class="dot"></span><div>DM отправлен @elena.li<time>12:39 · Сообщения</time></div></div>
+            <div class="c-event"><span class="dot"></span><div>Проверка ответов завершена<time>12:18 · Автоматизация</time></div></div>
+          </div>
+        </aside>
+      </main>
+    </div>
+  </section>
+
+  <section class="concept concept-feed" id="concept-feed">
+    <aside class="a-side">
+      <div class="a-brand"><span class="a-logo">I</span> Instaflow</div>
+      <nav class="a-nav">
+        <div><span class="nav-icon">◫</span>Обзор</div>
+        <div class="active"><span class="nav-icon">◎</span>Профили</div>
+        <div><span class="nav-icon">▶</span>Управление</div>
+        <div><span class="nav-icon">◷</span>Расписание</div>
+        <div><span class="nav-icon">▥</span>Сообщения</div>
+        <div><span class="nav-icon">⚙</span>Настройки</div>
+      </nav>
+      <div class="a-account">
+        <div class="avatar">AK</div>
+        <div><div class="name">Алексей</div><div class="sub">Администратор</div></div>
+      </div>
+    </aside>
+    <main class="feed-main">
+      <header class="a-top">
+        <div class="a-title"><div class="eyebrow">Работа с трафиком</div><h1>Лента профилей</h1></div>
+        <div class="a-actions"><button class="a-primary">Запустить проверку TG</button></div>
+      </header>
+      <div class="feed-toolbar">
+        <div class="feed-field">⌕&nbsp;&nbsp;Поиск профилей...</div>
+        <div class="feed-field">Все статусы⌄</div>
+        <div class="feed-field">Все (TG)⌄</div>
+        <div class="feed-field">Доноры: все⌄</div>
+        <div class="feed-count">1 248 профилей</div>
+      </div>
+      <section class="feed-grid">
+        <article class="feed-card">
+          <div class="feed-photo photo-1">
+            <div class="feed-badges"><span class="feed-badge">92 MATCH</span><span class="feed-badge">TG найден</span></div>
+            <div class="feed-links"><span class="feed-link">IG</span><span class="feed-link">TG</span></div>
+            <div class="feed-photo-name"><b>Анна Морозова</b><span>@anna.mrzv · Москва</span></div>
+          </div>
+          <div class="feed-body">
+            <div class="feed-donor"><span>Донор: @fashion_moscow</span><span>сегодня</span></div>
+            <div class="feed-bio">Fashion creator · lifestyle · Москва. Сотрудничество и съёмки в DM.</div>
+            <div class="feed-metrics"><span>48.2K подписчиков</span><span>812 публикаций</span></div>
+            <div class="traffic-actions"><button class="traffic-btn like" title="Лайк">♥</button><button class="traffic-btn skip" title="Скип">×</button><button class="traffic-btn tg" title="Написал в Telegram">TG</button><button class="traffic-btn dm">Написать DM</button></div>
+          </div>
+        </article>
+        <article class="feed-card">
+          <div class="feed-photo photo-2">
+            <div class="feed-badges"><span class="feed-badge">87 MATCH</span><span class="feed-badge">Ответила</span></div>
+            <div class="feed-links"><span class="feed-link">IG</span><span class="feed-link">TG</span></div>
+            <div class="feed-photo-name"><b>Елена Ли</b><span>@elena.li · Казань</span></div>
+          </div>
+          <div class="feed-body">
+            <div class="feed-donor"><span>Донор: @beauty_people</span><span>вчера</span></div>
+            <div class="feed-bio">Beauty expert · skincare · reviews. Открыта к новым проектам.</div>
+            <div class="feed-metrics"><span>21.7K подписчиков</span><span>468 публикаций</span></div>
+            <div class="traffic-actions"><button class="traffic-btn like" title="Лайк">♥</button><button class="traffic-btn skip" title="Скип">×</button><button class="traffic-btn tg" title="Написал в Telegram">TG</button><button class="traffic-btn dm">Написать DM</button></div>
+          </div>
+        </article>
+        <article class="feed-card">
+          <div class="feed-photo photo-3">
+            <div class="feed-badges"><span class="feed-badge">84 MATCH</span><span class="feed-badge">Не просмотрен</span></div>
+            <div class="feed-links"><span class="feed-link">IG</span><span class="feed-link">TG</span></div>
+            <div class="feed-photo-name"><b>Кира Волкова</b><span>@kiravolk · Москва</span></div>
+          </div>
+          <div class="feed-body">
+            <div class="feed-donor"><span>Донор: @moscow_style</span><span>2 дня назад</span></div>
+            <div class="feed-bio">Lifestyle · travel · daily outfits. По вопросам рекламы — сообщения.</div>
+            <div class="feed-metrics"><span>18.9K подписчиков</span><span>591 публикация</span></div>
+            <div class="traffic-actions"><button class="traffic-btn like" title="Лайк">♥</button><button class="traffic-btn skip" title="Скип">×</button><button class="traffic-btn tg" title="Написал в Telegram">TG</button><button class="traffic-btn dm">Написать DM</button></div>
+          </div>
+        </article>
+      </section>
+      <div class="feed-note"><span><strong>Функциональный контракт сохранён:</strong> фильтры, IG/TG-ссылки, donor context, like, skip, Telegram-tag, DM.</span><span>Страница 1 из 42&nbsp;&nbsp; ‹ &nbsp;1&nbsp; 2&nbsp; 3&nbsp; ›</span></div>
+    </main>
+  </section>
+</body>
+</html>
