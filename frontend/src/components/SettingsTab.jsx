@@ -6,6 +6,7 @@ import AccountsSection from './settings/AccountsSection';
 import DonorsSettingsSection from './settings/DonorsSettingsSection';
 import NichePresetsSection from './settings/NichePresetsSection';
 import TelegramAgentSection from './settings/TelegramAgentSection';
+import ChangesSection from './settings/ChangesSection';
 
 const SETTINGS_TABS = [
   'accounts',
@@ -16,6 +17,7 @@ const SETTINGS_TABS = [
   'donors',
   'automation',
   'telegram',
+  'changes',
 ];
 const SETTINGS_TAB_LABELS = {
   accounts: 'Аккаунты',
@@ -26,6 +28,7 @@ const SETTINGS_TAB_LABELS = {
   donors: 'Доноры',
   automation: 'Авточек',
   telegram: 'Telegram',
+  changes: 'Изменения',
 };
 
 export default function SettingsTab({
@@ -391,6 +394,8 @@ export default function SettingsTab({
       )}
 
       {settingsTab === 'telegram' && <TelegramAgentSection authFetch={authFetch} />}
+
+      {settingsTab === 'changes' && <ChangesSection />}
     </div>
   );
 }
