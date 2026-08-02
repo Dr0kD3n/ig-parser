@@ -21,7 +21,7 @@ function getAuthServerUrl() {
   return PROD_URL;
 }
 
-/** valid | invalid. Ошибка или недоступность auth-сервера всегда закрывает доступ. */
+/** valid | invalid | unavailable */
 function verifyRemoteToken(token, authUrl) {
   return new Promise((resolve) => {
     const httpModule = authUrl.startsWith('http://') ? http : https;
@@ -37,18 +37,18 @@ function verifyRemoteToken(token, authUrl) {
         response.resume();
         if (response.statusCode === 200) return resolve('valid');
         if (response.statusCode === 401 || response.statusCode === 403) return resolve('invalid');
-        console.warn(`[AUTH] Remote verify HTTP ${response.statusCode}, access denied`);
-        return resolve('invalid');
+        console.warn(`[AUTH] Remote verify HTTP ${response.statusCode}, service unavailable`);
+        return resolve('unavailable');
       }
     );
     req.on('error', (err) => {
-      console.warn(`[AUTH] Remote auth unavailable (${err.code || err.message}), access denied`);
-      resolve('invalid');
+      console.warn(`[AUTH] Remote auth unavailable (${err.code || err.message})`);
+      resolve('unavailable');
     });
     req.on('timeout', () => {
       req.destroy();
-      console.warn('[AUTH] Remote auth timeout, access denied');
-      resolve('invalid');
+      console.warn('[AUTH] Remote auth timeout');
+      resolve('unavailable');
     });
   });
 }
@@ -129,6 +129,9 @@ exports.verifyToken = async (req, res, next) => {
     if (remoteResult === 'invalid') {
       return res.status(401).json({ error: 'Session expired or account blocked.' });
     }
+    if (remoteResult === 'unavailable') {
+      return res.status(503).json({ error: 'Authentication service unavailable.' });
+    }
     decoded = jwt.decode(token);
   } else {
     try {
@@ -143,6 +146,13 @@ exports.verifyToken = async (req, res, next) => {
   if (!decoded || typeof decoded === 'string')
     return res.status(401).json({ error: 'Invalid token payload' });
 
+  if (useRemoteVerify) {
+    // Remote auth owns this identity. A local user can have the same numeric id,
+    // so local account flags must not override a remotely verified session.
+    req.user = { id: decoded.id, email: decoded.email, role: decoded.role || 'user' };
+    return next();
+  }
+
   try {
     const db = await getDB();
     const user = await db.get('SELECT * FROM users WHERE id = ?', [decoded.id]);
@@ -151,12 +161,8 @@ exports.verifyToken = async (req, res, next) => {
       if (user.is_blocked) return res.status(401).json({ error: 'Account is blocked' });
       if (user.is_deleted) return res.status(401).json({ error: 'Account is deleted' });
 
-      // Critical check: Only 1 active session allowed (for local auth only)
-      if (
-        !useRemoteVerify &&
-        decoded.tokenVersion !== undefined &&
-        decoded.tokenVersion !== user.token_version
-      ) {
+      // Critical check: Only 1 active local session allowed.
+      if (decoded.tokenVersion !== undefined && decoded.tokenVersion !== user.token_version) {
         return res.status(401).json({ error: 'Session expired. Please log in again.' });
       }
 
@@ -164,13 +170,7 @@ exports.verifyToken = async (req, res, next) => {
       return next();
     }
 
-    if (!useRemoteVerify) {
-      return res.status(401).json({ error: 'User not found.' });
-    }
-
-    // Remote auth server verified the exact active session token.
-    req.user = { id: decoded.id, email: decoded.email, role: decoded.role || 'user' };
-    next();
+    return res.status(401).json({ error: 'User not found.' });
   } catch (dbError) {
     console.error('DB Error in auth middleware:', dbError);
     return res.status(500).json({ error: 'Internal server error' });

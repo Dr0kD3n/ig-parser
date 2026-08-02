@@ -131,10 +131,12 @@ export default function App() {
       signal: controller.signal,
     })
       .then((response) => {
-        if (!response.ok) clearSession();
+        if (response.status === 401 || response.status === 403) clearSession();
       })
       .catch((error) => {
-        if (error.name !== 'AbortError') clearSession();
+        if (error.name !== 'AbortError') {
+          console.warn('[AUTH] Session verification unavailable:', error.message);
+        }
       });
     return () => controller.abort();
   }, [token, clearSession]);
