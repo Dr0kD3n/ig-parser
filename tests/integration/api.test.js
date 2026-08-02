@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-// process.env.APP_ROOT = path.resolve(__dirname, '../../');
+
+// Keep integration tests independent from stale/locked SQLite WAL files on Windows.
+process.env.DATABASE_URL = ':memory:';
+
 const request = require('supertest');
 const app = require('../../backend/server');
 const { getDB, resetDB } = require('../../backend/lib/db');

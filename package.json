@@ -1,6 +1,6 @@
 {
   "name": "ig-bot",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "scripts": {
     "dev": "concurrently \"cross-env PORT=5001 HOST=127.0.0.1 npm start --workspace=backend\" \"cross-env PORT=5000 node ../ig-bot-backend/server.js\" \"npm run dev --workspace=frontend\"",
     "locale": "concurrently \"cross-env PORT=5001 AUTH_SERVER_URL=http://127.0.0.1:5000 npm start --workspace=backend\" \"cross-env PORT=5000 node ../ig-bot-backend/server.js\" \"npm run locale --workspace=frontend\"",
