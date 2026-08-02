@@ -1,5 +1,11 @@
 const RELEASES = [
   {
+    version: '1.9.4',
+    changes: [
+      'Ускорено резервное DNS-разрешение: ожидание Windows DNS больше не прерывает проверку авторизации.',
+    ],
+  },
+  {
     version: '1.9.3',
     changes: [
       'Добавлен резервный DNS-over-HTTPS для связи portable backend с сервером авторизации.',

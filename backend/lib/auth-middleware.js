@@ -74,18 +74,50 @@ function resolveAuthHostnameWithDoh(hostname) {
 }
 
 function lookupAuthHostname(hostname, options, callback) {
-  dns.lookup(hostname, options, (error, address, family) => {
-    if (!error) return callback(null, address, family);
+  let settled = false;
+  let nativeError = null;
+  let dohError = null;
+  let dohStarted = false;
+
+  const finishWithAddress = (address, family = 4) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(dohTimer);
+    if (options?.all) return callback(null, [{ address, family }]);
+    return callback(null, address, family);
+  };
+
+  const finishIfFailed = () => {
+    if (settled || !nativeError || !dohError) return;
+    settled = true;
+    callback(nativeError);
+  };
+
+  const startDohLookup = () => {
+    if (settled || dohStarted) return;
+    dohStarted = true;
     resolveAuthHostnameWithDoh(hostname)
-      .then((fallbackAddress) => {
-        console.warn(`[AUTH] Native DNS failed for ${hostname}; using DNS-over-HTTPS`);
-        if (options?.all) return callback(null, [{ address: fallbackAddress, family: 4 }]);
-        return callback(null, fallbackAddress, 4);
+      .then((address) => {
+        console.warn(
+          `[AUTH] Native DNS is unavailable or slow for ${hostname}; using DNS-over-HTTPS`
+        );
+        finishWithAddress(address);
       })
-      .catch((fallbackError) => {
-        console.warn(`[AUTH] DNS-over-HTTPS failed (${fallbackError.message})`);
-        callback(error);
+      .catch((error) => {
+        dohError = error;
+        console.warn(`[AUTH] DNS-over-HTTPS failed (${error.message})`);
+        finishIfFailed();
       });
+  };
+
+  const dohTimer = setTimeout(startDohLookup, 250);
+  dohTimer.unref?.();
+
+  dns.lookup(hostname, options, (error, address, family) => {
+    if (!error) return finishWithAddress(address, family);
+    nativeError = error;
+    startDohLookup();
+    finishIfFailed();
   });
 }
 
