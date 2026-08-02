@@ -9,7 +9,8 @@ READ: max 400 строк/вызов; offset/limit если файл >300 стр�
 SEARCH: grep -path first; SemanticSearch только после 2 неудачных grep
 EXPLORE: Task tool запрещён если символ есть в MAP.md или grep нашёл файл
 SKILLS: whitelist .agents/skills/{nodejs-backend-patterns,react-best-practices,javascript-pro,lint-and-validate,commit} — только по задаче
-COMMITS: только по явному запросу пользователя
+COMMITS: перед новой задачей проверить остаток завершённой предыдущей задачи; обновить changelog; закоммитить только известные файлы этой задачи | чужие/неизвестные изменения не stage; если отделить безопасно нельзя — спросить пользователя
+CHANGELOG: каждую завершённую задачу отражать в `frontend/src/components/settings/ChangesSection.jsx` | краткий пользовательский текст без hash/дат | patch добавлять в текущую minor-группу; новая возможность начинает следующую minor-версию | актуальная версия первая и выделена | версию синхронизировать в root/backend/frontend package.json и package-lock.json
 </gates>
 
 <rules>
