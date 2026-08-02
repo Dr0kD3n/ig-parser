@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const dns = require('dns');
 const http = require('http');
 const https = require('https');
 const { getDB } = require('./db');
@@ -8,17 +9,84 @@ const { JWT_SECRET, JWT_PUBLIC_KEY, IS_ASYMMETRIC } = require('./auth-config');
 const PROD_URL = 'https://botback-production-1011.up.railway.app';
 const REMOTE_VERIFY_CACHE_MS = 15_000;
 const REMOTE_VERIFY_CACHE_LIMIT = 100;
+const DOH_HOST = 'cloudflare-dns.com';
+const DOH_IP = '1.1.1.1';
+const DOH_TIMEOUT_MS = 5_000;
 const remoteVerifyCache = new Map();
 const remoteVerificationsInFlight = new Map();
+const authDnsCache = new Map();
 const remoteAuthAgents = {
   http: new http.Agent({ keepAlive: true }),
   https: new https.Agent({ keepAlive: true }),
 };
+const dohAgent = new https.Agent({ keepAlive: true });
 
 function getAuthServerUrl() {
   if (process.env.AUTH_SERVER_URL) return process.env.AUTH_SERVER_URL;
   if (process.env.VITE_AUTH_URL) return process.env.VITE_AUTH_URL;
   return PROD_URL;
+}
+
+function resolveAuthHostnameWithDoh(hostname) {
+  const cached = authDnsCache.get(hostname);
+  if (cached?.expiresAt > Date.now()) return Promise.resolve(cached.address);
+  if (cached) authDnsCache.delete(hostname);
+
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      {
+        hostname: DOH_IP,
+        servername: DOH_HOST,
+        path: `/dns-query?name=${encodeURIComponent(hostname)}&type=A`,
+        headers: { Accept: 'application/dns-json', Host: DOH_HOST },
+        timeout: DOH_TIMEOUT_MS,
+        agent: dohAgent,
+      },
+      (response) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => {
+          body += chunk;
+          if (body.length > 65_536) request.destroy(new Error('DNS response too large'));
+        });
+        response.on('end', () => {
+          if (response.statusCode !== 200) {
+            return reject(new Error(`DNS-over-HTTPS HTTP ${response.statusCode}`));
+          }
+          try {
+            const payload = JSON.parse(body);
+            const answer = payload.Answer?.find(
+              (entry) => entry.type === 1 && typeof entry.data === 'string'
+            );
+            if (!answer) return reject(new Error('DNS-over-HTTPS returned no IPv4 address'));
+            const ttlMs = Math.max(10, Math.min(Number(answer.TTL) || 60, 300)) * 1000;
+            authDnsCache.set(hostname, { address: answer.data, expiresAt: Date.now() + ttlMs });
+            resolve(answer.data);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      }
+    );
+    request.on('error', reject);
+    request.on('timeout', () => request.destroy(new Error('DNS-over-HTTPS timeout')));
+  });
+}
+
+function lookupAuthHostname(hostname, options, callback) {
+  dns.lookup(hostname, options, (error, address, family) => {
+    if (!error) return callback(null, address, family);
+    resolveAuthHostnameWithDoh(hostname)
+      .then((fallbackAddress) => {
+        console.warn(`[AUTH] Native DNS failed for ${hostname}; using DNS-over-HTTPS`);
+        if (options?.all) return callback(null, [{ address: fallbackAddress, family: 4 }]);
+        return callback(null, fallbackAddress, 4);
+      })
+      .catch((fallbackError) => {
+        console.warn(`[AUTH] DNS-over-HTTPS failed (${fallbackError.message})`);
+        callback(error);
+      });
+  });
 }
 
 /** valid | invalid | unavailable */
@@ -32,6 +100,7 @@ function verifyRemoteToken(token, authUrl) {
         headers: { Authorization: `Bearer ${token}` },
         timeout: 8000,
         agent: authUrl.startsWith('http://') ? remoteAuthAgents.http : remoteAuthAgents.https,
+        lookup: lookupAuthHostname,
       },
       (response) => {
         response.resume();

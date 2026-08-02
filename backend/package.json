@@ -1,6 +1,6 @@
 {
   "name": "ig-bot-local-backend",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "description": "",
   "main": "server.js",
   "bin": "server.js",

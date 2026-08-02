@@ -1,5 +1,11 @@
 const RELEASES = [
   {
+    version: '1.9.3',
+    changes: [
+      'Добавлен резервный DNS-over-HTTPS для связи portable backend с сервером авторизации.',
+    ],
+  },
+  {
     version: '1.9.2',
     changes: [
       'Интеграционные тесты изолированы от заблокированных временных файлов SQLite.',
