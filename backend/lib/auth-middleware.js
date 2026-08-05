@@ -1,14 +1,17 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const dns = require('dns');
+const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const path = require('path');
 const { getDB } = require('./db');
 const { JWT_SECRET, JWT_PUBLIC_KEY, IS_ASYMMETRIC } = require('./auth-config');
+const { getRootPath } = require('./utils');
 
 const PROD_URL = 'https://botback-production-1011.up.railway.app';
 const REMOTE_VERIFY_CACHE_MS = 15_000;
-const REMOTE_VERIFY_STALE_MS = 5 * 60_000;
+const REMOTE_VERIFY_FALLBACK_MS = 5 * 60_000;
 const REMOTE_VERIFY_CACHE_LIMIT = 100;
 const REMOTE_VERIFY_ATTEMPTS = 2;
 const REMOTE_VERIFY_TIMEOUT_MS = 4_000;
@@ -16,6 +19,7 @@ const REMOTE_VERIFY_RETRY_DELAY_MS = 300;
 const DOH_HOST = 'cloudflare-dns.com';
 const DOH_IP = '1.1.1.1';
 const DOH_TIMEOUT_MS = 5_000;
+const REMOTE_VERIFY_CACHE_FILE = path.join(getRootPath(), 'config', '.auth-session-cache.json');
 const remoteVerifyCache = new Map();
 const remoteVerificationsInFlight = new Map();
 const authDnsCache = new Map();
@@ -171,32 +175,75 @@ function getRemoteVerificationKey(token, authUrl) {
   return crypto.createHash('sha256').update(`${authUrl}\0${token}`).digest('hex');
 }
 
+function persistRemoteVerifyCache() {
+  const now = Date.now();
+  const sessions = [...remoteVerifyCache.entries()]
+    .filter(([, cached]) => cached.staleUntil > now)
+    .map(([key, cached]) => ({ key, staleUntil: cached.staleUntil }));
+
+  try {
+    fs.mkdirSync(path.dirname(REMOTE_VERIFY_CACHE_FILE), { recursive: true });
+    fs.writeFileSync(REMOTE_VERIFY_CACHE_FILE, JSON.stringify({ version: 1, sessions }), {
+      mode: 0o600,
+    });
+  } catch (error) {
+    console.warn(`[AUTH] Cannot persist verified sessions (${error.message})`);
+  }
+}
+
+function loadRemoteVerifyCache() {
+  try {
+    const payload = JSON.parse(fs.readFileSync(REMOTE_VERIFY_CACHE_FILE, 'utf8'));
+    const now = Date.now();
+    const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
+    for (const session of sessions.slice(-REMOTE_VERIFY_CACHE_LIMIT)) {
+      if (!/^[a-f0-9]{64}$/.test(session?.key)) continue;
+      if (!Number.isFinite(session.staleUntil) || session.staleUntil <= now) continue;
+      remoteVerifyCache.set(session.key, { expiresAt: 0, staleUntil: session.staleUntil });
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn(`[AUTH] Cannot load verified sessions (${error.message})`);
+    }
+  }
+}
+
+function deleteCachedVerification(key) {
+  if (!remoteVerifyCache.delete(key)) return;
+  persistRemoteVerifyCache();
+}
+
 function cacheValidVerification(key, token) {
   const now = Date.now();
   const decoded = jwt.decode(token);
   const tokenExpiresAt =
     decoded && typeof decoded !== 'string' && Number.isFinite(decoded.exp)
       ? decoded.exp * 1000
-      : now + REMOTE_VERIFY_CACHE_MS;
+      : now + REMOTE_VERIFY_FALLBACK_MS;
   const expiresAt = Math.min(now + REMOTE_VERIFY_CACHE_MS, tokenExpiresAt);
-  const staleUntil = Math.min(now + REMOTE_VERIFY_STALE_MS, tokenExpiresAt);
+  const staleUntil = tokenExpiresAt;
   if (expiresAt <= now) return;
 
+  let cacheChanged = remoteVerifyCache.get(key)?.staleUntil !== staleUntil;
   if (remoteVerifyCache.size >= REMOTE_VERIFY_CACHE_LIMIT) {
     for (const [cachedKey, cached] of remoteVerifyCache) {
-      if (cached.expiresAt <= now || remoteVerifyCache.size >= REMOTE_VERIFY_CACHE_LIMIT) {
+      if (cached.staleUntil <= now || remoteVerifyCache.size >= REMOTE_VERIFY_CACHE_LIMIT) {
         remoteVerifyCache.delete(cachedKey);
+        cacheChanged = true;
       }
     }
   }
   remoteVerifyCache.set(key, { expiresAt, staleUntil });
+  if (cacheChanged) persistRemoteVerifyCache();
 }
+
+loadRemoteVerifyCache();
 
 function verifyRemoteTokenCached(token, authUrl) {
   const key = getRemoteVerificationKey(token, authUrl);
   const cached = remoteVerifyCache.get(key);
   if (cached?.expiresAt > Date.now()) return Promise.resolve('valid');
-  if (cached?.staleUntil <= Date.now()) remoteVerifyCache.delete(key);
+  if (cached?.staleUntil <= Date.now()) deleteCachedVerification(key);
 
   const existing = remoteVerificationsInFlight.get(key);
   if (existing) return existing;
@@ -204,7 +251,7 @@ function verifyRemoteTokenCached(token, authUrl) {
   const verification = verifyRemoteToken(token, authUrl)
     .then((result) => {
       if (result === 'valid') cacheValidVerification(key, token);
-      if (result === 'invalid') remoteVerifyCache.delete(key);
+      if (result === 'invalid') deleteCachedVerification(key);
       if (result === 'unavailable' && cached?.staleUntil > Date.now()) {
         console.warn('[AUTH] Remote verify unavailable; using recently verified session');
         return 'valid';
@@ -245,6 +292,15 @@ exports.verifyToken = async (req, res, next) => {
   let decoded;
 
   if (useRemoteVerify) {
+    const tokenPayload = jwt.decode(token);
+    if (
+      tokenPayload &&
+      typeof tokenPayload !== 'string' &&
+      Number.isFinite(tokenPayload.exp) &&
+      tokenPayload.exp * 1000 <= Date.now()
+    ) {
+      return res.status(401).json({ error: 'Session expired.' });
+    }
     const remoteResult = await verifyRemoteTokenCached(token, authUrl);
     if (remoteResult === 'invalid') {
       return res.status(401).json({ error: 'Session expired or account blocked.' });
