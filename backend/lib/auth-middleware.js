@@ -8,7 +8,11 @@ const { JWT_SECRET, JWT_PUBLIC_KEY, IS_ASYMMETRIC } = require('./auth-config');
 
 const PROD_URL = 'https://botback-production-1011.up.railway.app';
 const REMOTE_VERIFY_CACHE_MS = 15_000;
+const REMOTE_VERIFY_STALE_MS = 5 * 60_000;
 const REMOTE_VERIFY_CACHE_LIMIT = 100;
+const REMOTE_VERIFY_ATTEMPTS = 2;
+const REMOTE_VERIFY_TIMEOUT_MS = 4_000;
+const REMOTE_VERIFY_RETRY_DELAY_MS = 300;
 const DOH_HOST = 'cloudflare-dns.com';
 const DOH_IP = '1.1.1.1';
 const DOH_TIMEOUT_MS = 5_000;
@@ -122,7 +126,7 @@ function lookupAuthHostname(hostname, options, callback) {
 }
 
 /** valid | invalid | unavailable */
-function verifyRemoteToken(token, authUrl) {
+function verifyRemoteTokenOnce(token, authUrl) {
   return new Promise((resolve) => {
     const httpModule = authUrl.startsWith('http://') ? http : https;
     const verifyUrl = new URL('/api/auth/verify', authUrl).toString();
@@ -130,7 +134,7 @@ function verifyRemoteToken(token, authUrl) {
       verifyUrl,
       {
         headers: { Authorization: `Bearer ${token}` },
-        timeout: 8000,
+        timeout: REMOTE_VERIFY_TIMEOUT_MS,
         agent: authUrl.startsWith('http://') ? remoteAuthAgents.http : remoteAuthAgents.https,
         lookup: lookupAuthHostname,
       },
@@ -154,6 +158,15 @@ function verifyRemoteToken(token, authUrl) {
   });
 }
 
+async function verifyRemoteToken(token, authUrl) {
+  for (let attempt = 1; attempt <= REMOTE_VERIFY_ATTEMPTS; attempt++) {
+    const result = await verifyRemoteTokenOnce(token, authUrl);
+    if (result !== 'unavailable' || attempt === REMOTE_VERIFY_ATTEMPTS) return result;
+    await new Promise((resolve) => setTimeout(resolve, REMOTE_VERIFY_RETRY_DELAY_MS));
+  }
+  return 'unavailable';
+}
+
 function getRemoteVerificationKey(token, authUrl) {
   return crypto.createHash('sha256').update(`${authUrl}\0${token}`).digest('hex');
 }
@@ -166,6 +179,7 @@ function cacheValidVerification(key, token) {
       ? decoded.exp * 1000
       : now + REMOTE_VERIFY_CACHE_MS;
   const expiresAt = Math.min(now + REMOTE_VERIFY_CACHE_MS, tokenExpiresAt);
+  const staleUntil = Math.min(now + REMOTE_VERIFY_STALE_MS, tokenExpiresAt);
   if (expiresAt <= now) return;
 
   if (remoteVerifyCache.size >= REMOTE_VERIFY_CACHE_LIMIT) {
@@ -175,14 +189,14 @@ function cacheValidVerification(key, token) {
       }
     }
   }
-  remoteVerifyCache.set(key, { expiresAt });
+  remoteVerifyCache.set(key, { expiresAt, staleUntil });
 }
 
 function verifyRemoteTokenCached(token, authUrl) {
   const key = getRemoteVerificationKey(token, authUrl);
   const cached = remoteVerifyCache.get(key);
   if (cached?.expiresAt > Date.now()) return Promise.resolve('valid');
-  if (cached) remoteVerifyCache.delete(key);
+  if (cached?.staleUntil <= Date.now()) remoteVerifyCache.delete(key);
 
   const existing = remoteVerificationsInFlight.get(key);
   if (existing) return existing;
@@ -190,6 +204,11 @@ function verifyRemoteTokenCached(token, authUrl) {
   const verification = verifyRemoteToken(token, authUrl)
     .then((result) => {
       if (result === 'valid') cacheValidVerification(key, token);
+      if (result === 'invalid') remoteVerifyCache.delete(key);
+      if (result === 'unavailable' && cached?.staleUntil > Date.now()) {
+        console.warn('[AUTH] Remote verify unavailable; using recently verified session');
+        return 'valid';
+      }
       return result;
     })
     .finally(() => remoteVerificationsInFlight.delete(key));
