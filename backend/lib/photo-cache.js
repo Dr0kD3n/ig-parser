@@ -9,6 +9,12 @@ const { getRootPath } = require('./utils');
 const PHOTO_DIR = path.join(getRootPath(), 'config', 'profile-photos');
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15000;
+const ANONYMOUS_PHOTO_URL_MARKERS = [
+  'anonymous_profile_pic',
+  'yw5vbnltb3vzx3byb2zpbgvfcglj',
+  '44884218_345707102882519_2446069589734326272_n',
+  '11906329_960233084022564_1448528159_n',
+];
 
 const EXT_BY_TYPE = {
   'image/jpeg': 'jpg',
@@ -22,9 +28,26 @@ function normalizePhotoUrl(photoUrl) {
   if (!photoUrl || typeof photoUrl !== 'string') return '';
   try {
     return new URL(photoUrl).toString();
-  } catch (e) {
+  } catch {
     return '';
   }
+}
+
+function isAnonymousPhotoUrl(photoUrl) {
+  if (!photoUrl || typeof photoUrl !== 'string') return false;
+
+  let searchable = photoUrl.toLowerCase();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const decoded = decodeURIComponent(searchable);
+      if (decoded === searchable) break;
+      searchable = decoded;
+    } catch {
+      break;
+    }
+  }
+
+  return ANONYMOUS_PHOTO_URL_MARKERS.some((marker) => searchable.includes(marker));
 }
 
 function getPhotoHash(photoUrl) {
@@ -32,7 +55,10 @@ function getPhotoHash(photoUrl) {
 }
 
 function getExtension(contentType) {
-  const cleanType = String(contentType || '').split(';')[0].trim().toLowerCase();
+  const cleanType = String(contentType || '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase();
   return EXT_BY_TYPE[cleanType] || 'jpg';
 }
 
@@ -68,10 +94,18 @@ async function cacheProfilePhoto(photoUrl) {
   if (!normalizedUrl) {
     return { success: false, status: 'missing', error: 'Empty photo url' };
   }
+  if (isAnonymousPhotoUrl(normalizedUrl)) {
+    return { success: false, status: 'missing', error: 'Anonymous profile photo' };
+  }
 
   const cached = await findCachedPhoto(normalizedUrl);
   if (cached) {
-    return { success: true, status: 'cached', localPath: cached, cachedAt: new Date().toISOString() };
+    return {
+      success: true,
+      status: 'cached',
+      localPath: cached,
+      cachedAt: new Date().toISOString(),
+    };
   }
 
   await fsp.mkdir(PHOTO_DIR, { recursive: true });
@@ -172,13 +206,20 @@ async function savePhotoBuffer(photoUrl, buffer, contentType) {
   if (!normalizedUrl) {
     return { success: false, status: 'missing', error: 'Empty photo url' };
   }
+  if (isAnonymousPhotoUrl(normalizedUrl)) {
+    return { success: false, status: 'missing', error: 'Anonymous profile photo' };
+  }
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
     return { success: false, status: 'failed', error: 'Empty image buffer' };
   }
   if (buffer.length > MAX_PHOTO_BYTES) {
     return { success: false, status: 'failed', error: 'Image is too large' };
   }
-  if (!String(contentType || '').toLowerCase().startsWith('image/')) {
+  if (
+    !String(contentType || '')
+      .toLowerCase()
+      .startsWith('image/')
+  ) {
     return { success: false, status: 'failed', error: 'Response is not an image' };
   }
 
@@ -203,10 +244,18 @@ async function cacheProfilePhotoFromPage(page, photoUrl) {
   if (!normalizedUrl) {
     return { success: false, status: 'missing', error: 'Empty photo url' };
   }
+  if (isAnonymousPhotoUrl(normalizedUrl)) {
+    return { success: false, status: 'missing', error: 'Anonymous profile photo' };
+  }
 
   const cached = await findCachedPhoto(normalizedUrl);
   if (cached) {
-    return { success: true, status: 'cached', localPath: cached, cachedAt: new Date().toISOString() };
+    return {
+      success: true,
+      status: 'cached',
+      localPath: cached,
+      cachedAt: new Date().toISOString(),
+    };
   }
 
   if (page.request) {
@@ -229,7 +278,7 @@ async function cacheProfilePhotoFromPage(page, photoUrl) {
 
       const buffer = await res.body();
       return savePhotoBuffer(normalizedUrl, buffer, contentType);
-    } catch (e) {
+    } catch {
       // Если request API не смог скачать CDN-ссылку, пробуем старый способ из DOM-контекста.
     }
   }
@@ -267,9 +316,11 @@ async function cacheProfilePhotoFromPage(page, photoUrl) {
 }
 
 module.exports = {
+  ANONYMOUS_PHOTO_URL_MARKERS,
   PHOTO_DIR,
   cacheProfilePhoto,
   cacheProfilePhotoFromPage,
   findCachedPhoto,
   getLocalPhotoPath,
+  isAnonymousPhotoUrl,
 };

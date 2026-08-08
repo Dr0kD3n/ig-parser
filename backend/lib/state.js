@@ -3,7 +3,7 @@ Object.defineProperty(exports, '__esModule', { value: true });
 exports.PATHS = exports.StateManager = void 0;
 const db_1 = require('./db');
 const config_1 = require('./config');
-const { cacheProfilePhoto } = require('./photo-cache');
+const { cacheProfilePhoto, isAnonymousPhotoUrl } = require('./photo-cache');
 const {
   normalizeUsername,
   findProfileByUsername,
@@ -30,7 +30,7 @@ function pumpDeferredPhotoQueue() {
           [
             result.localPath || '',
             result.cachedAt || null,
-            result.success ? 'cached' : (result.status || 'failed'),
+            result.success ? 'cached' : result.status || 'failed',
             job.profileUrl,
             job.photoUrl,
           ]
@@ -76,14 +76,14 @@ exports.StateManager = {
       INNER JOIN checked_searches c ON c.donor_url = h.url
       WHERE h.type = 'history'
     `);
-    const processedDonorRows = await db.all(
-      `SELECT url FROM urls WHERE type = 'processed_donor'`
-    );
+    const processedDonorRows = await db.all(`SELECT url FROM urls WHERE type = 'processed_donor'`);
     this.processedDonors = new Set(processedDonorRows.map((r) => r.url));
 
     // Load checked searches
     const checkedRows = await db.all(`SELECT donor_url, search_term FROM checked_searches`);
-    this.checkedSearches = new Set(checkedRows.map(r => `${config_1.normalizeUrl(r.donor_url)}|${r.search_term}`));
+    this.checkedSearches = new Set(
+      checkedRows.map((r) => `${config_1.normalizeUrl(r.donor_url)}|${r.search_term}`)
+    );
     console.log(`🗄️ [ИСТОРИЯ] Загружено проверенных имен у доноров: ${this.checkedSearches.size}`);
 
     const profiles = await db.all(`SELECT * FROM profiles`);
@@ -125,8 +125,13 @@ exports.StateManager = {
     this.checkedSearches.add(key);
     const db = await (0, db_1.getDB)();
     try {
-      await db.run(`INSERT OR IGNORE INTO checked_searches (donor_url, search_term) VALUES (?, ?)`, [normUrl, searchTerm]);
-    } catch (e) { }
+      await db.run(
+        `INSERT OR IGNORE INTO checked_searches (donor_url, search_term) VALUES (?, ?)`,
+        [normUrl, searchTerm]
+      );
+    } catch {
+      // Ignore duplicate checked-search records.
+    }
   },
   has(url) {
     return this.processed.has(config_1.normalizeUrl(url));
@@ -138,7 +143,7 @@ exports.StateManager = {
     const db = await (0, db_1.getDB)();
     try {
       await db.run(`INSERT INTO urls (type, url) VALUES (?, ?)`, ['history', normUrl]);
-    } catch (e) {
+    } catch {
       // Already exists constraint
     }
   },
@@ -153,10 +158,10 @@ exports.StateManager = {
     this.processedDonors.add(normUrl);
     const db = await (0, db_1.getDB)();
     try {
-      await db.run(
-        `INSERT OR IGNORE INTO urls (type, url) VALUES (?, ?)`,
-        ['processed_donor', normUrl]
-      );
+      await db.run(`INSERT OR IGNORE INTO urls (type, url) VALUES (?, ?)`, [
+        'processed_donor',
+        normUrl,
+      ]);
     } catch (e) {
       this.processedDonors.delete(normUrl);
       throw e;
@@ -174,6 +179,16 @@ exports.StateManager = {
     }
   },
   async saveResult(profileData) {
+    if (isAnonymousPhotoUrl(profileData.photo)) {
+      profileData = {
+        ...profileData,
+        photo: '',
+        photo_local: '',
+        photo_cached_at: null,
+        photo_status: 'missing',
+        deferPhotoCache: false,
+      };
+    }
     const db = await (0, db_1.getDB)();
     const usernameNorm = normalizeUsername(profileData.username);
     let existing = await db.get(`SELECT * FROM profiles WHERE url = ?`, [profileData.url]);
@@ -217,29 +232,31 @@ exports.StateManager = {
     const photoUrl = profileData.photo || existing?.photo || '';
     const photoCache = profileData.photo_local
       ? {
-        success: true,
-        status: profileData.photo_status || 'cached',
-        localPath: profileData.photo_local,
-        cachedAt: profileData.photo_cached_at || ts,
-      }
+          success: true,
+          status: profileData.photo_status || 'cached',
+          localPath: profileData.photo_local,
+          cachedAt: profileData.photo_cached_at || ts,
+        }
       : existing?.photo_local && existing.photo === photoUrl
         ? {
-          success: true,
-          status: existing.photo_status || 'cached',
-          localPath: existing.photo_local,
-          cachedAt: existing.photo_cached_at || ts,
-        }
-      : profileData.deferPhotoCache && photoUrl
-        ? { success: false, status: 'pending', deferred: true }
-      : photoUrl
-        ? await cacheProfilePhoto(photoUrl).catch((e) => ({
-        success: false,
-        status: 'failed',
-        error: e.message,
-      }))
-        : { success: false, status: 'missing' };
+            success: true,
+            status: existing.photo_status || 'cached',
+            localPath: existing.photo_local,
+            cachedAt: existing.photo_cached_at || ts,
+          }
+        : profileData.deferPhotoCache && photoUrl
+          ? { success: false, status: 'pending', deferred: true }
+          : photoUrl
+            ? await cacheProfilePhoto(photoUrl).catch((e) => ({
+                success: false,
+                status: 'failed',
+                error: e.message,
+              }))
+            : { success: false, status: 'missing' };
     if (photoUrl && !photoCache.success && !photoCache.deferred) {
-      console.warn(`⚠️ [PHOTO CACHE] Не удалось сохранить фото профиля ${profileData.username || profileData.url}: ${photoCache.error || photoCache.status}`);
+      console.warn(
+        `⚠️ [PHOTO CACHE] Не удалось сохранить фото профиля ${profileData.username || profileData.url}: ${photoCache.error || photoCache.status}`
+      );
     }
     const pubCount =
       profileData.publications_count !== undefined
@@ -294,12 +311,14 @@ exports.StateManager = {
       enqueueDeferredProfilePhoto(profileData.url, photoUrl);
     }
     console.log(
-      `   ${profileData.isInCity ? "✅" : "🏆"} [НАЙДЕНА] ${profileData.name || profileData.url} (от ${profileData.donor || '?'}) -> сохранена в базу!`
+      `   ${profileData.isInCity ? '✅' : '🏆'} [НАЙДЕНА] ${profileData.name || profileData.url} (от ${profileData.donor || '?'}) -> сохранена в базу!`
     );
   },
   async loadDonors() {
     const db = await (0, db_1.getDB)();
-    const rows = await db.all(`SELECT url, niche, city, keyword FROM urls WHERE type = 'donor' ORDER BY id DESC`);
+    const rows = await db.all(
+      `SELECT url, niche, city, keyword FROM urls WHERE type = 'donor' ORDER BY id DESC`
+    );
     return rows;
   },
   async saveDonor(url, niche = null, city = null, keyword = null) {
@@ -309,15 +328,12 @@ exports.StateManager = {
 
     try {
       await this.unmarkDonor(normUrl);
-      await db.run(`INSERT OR REPLACE INTO urls (type, url, niche, city, keyword) VALUES (?, ?, ?, ?, ?)`, [
-        'donor',
-        normUrl,
-        niche,
-        city,
-        kw,
-      ]);
+      await db.run(
+        `INSERT OR REPLACE INTO urls (type, url, niche, city, keyword) VALUES (?, ?, ?, ?, ?)`,
+        ['donor', normUrl, niche, city, kw]
+      );
       console.log(`✅ Сохранен новый донор: ${normUrl} (${kw || ''})`);
-    } catch (e) {
+    } catch {
       // Ignore if already exists in donor table
     }
   },
@@ -328,8 +344,7 @@ exports.StateManager = {
     try {
       for (const donor of donors) {
         const normUrl = (0, config_1.normalizeUrl)(donor.url);
-        const keyword =
-          donor.keyword || `${donor.city || ''} ${donor.niche || ''}`.trim() || null;
+        const keyword = donor.keyword || `${donor.city || ''} ${donor.niche || ''}`.trim() || null;
         await db.run(
           `INSERT OR REPLACE INTO urls (type, url, niche, city, keyword)
            VALUES (?, ?, ?, ?, ?)`,
@@ -346,9 +361,7 @@ exports.StateManager = {
     const db = await (0, db_1.getDB)();
     try {
       const existingRows = await db.all(`SELECT url FROM urls WHERE type = 'donor'`);
-      const existingUrls = new Set(
-        existingRows.map((row) => (0, config_1.normalizeUrl)(row.url))
-      );
+      const existingUrls = new Set(existingRows.map((row) => (0, config_1.normalizeUrl)(row.url)));
       await db.run(`DELETE FROM urls WHERE type = 'donor'`);
       for (const donor of donors) {
         const url = typeof donor === 'string' ? donor : donor.url;
@@ -357,13 +370,10 @@ exports.StateManager = {
         const keyword = donor.keyword || `${city || ''} ${niche || ''}`.trim() || null;
         const normUrl = (0, config_1.normalizeUrl)(url);
         if (!existingUrls.has(normUrl)) await this.unmarkDonor(normUrl);
-        await db.run(`INSERT OR REPLACE INTO urls (type, url, niche, city, keyword) VALUES (?, ?, ?, ?, ?)`, [
-          'donor',
-          normUrl,
-          niche,
-          city,
-          keyword,
-        ]);
+        await db.run(
+          `INSERT OR REPLACE INTO urls (type, url, niche, city, keyword) VALUES (?, ?, ?, ?, ?)`,
+          ['donor', normUrl, niche, city, keyword]
+        );
       }
     } catch (e) {
       console.error('Ошибка при сохранении списка доноров:', e);
@@ -371,26 +381,37 @@ exports.StateManager = {
     }
   },
   async saveDonorInfo(donorData) {
+    if (isAnonymousPhotoUrl(donorData.photo)) {
+      donorData = {
+        ...donorData,
+        photo: '',
+        photo_local: '',
+        photo_cached_at: null,
+        photo_status: 'missing',
+      };
+    }
     const db = await (0, db_1.getDB)();
     const ts = new Date().toISOString();
     const existing = await db.get(`SELECT * FROM donors WHERE username = ?`, [donorData.username]);
     const photoUrl = donorData.photo || existing?.photo || '';
     const photoCache = donorData.photo_local
       ? {
-        success: true,
-        status: donorData.photo_status || 'cached',
-        localPath: donorData.photo_local,
-        cachedAt: donorData.photo_cached_at || ts,
-      }
+          success: true,
+          status: donorData.photo_status || 'cached',
+          localPath: donorData.photo_local,
+          cachedAt: donorData.photo_cached_at || ts,
+        }
       : photoUrl
         ? await cacheProfilePhoto(photoUrl).catch((e) => ({
-        success: false,
-        status: 'failed',
-        error: e.message,
-      }))
+            success: false,
+            status: 'failed',
+            error: e.message,
+          }))
         : { success: false, status: 'missing' };
     if (photoUrl && !photoCache.success) {
-      console.warn(`⚠️ [PHOTO CACHE] Не удалось сохранить фото донора ${donorData.username}: ${photoCache.error || photoCache.status}`);
+      console.warn(
+        `⚠️ [PHOTO CACHE] Не удалось сохранить фото донора ${donorData.username}: ${photoCache.error || photoCache.status}`
+      );
     }
     if (existing) {
       await db.run(

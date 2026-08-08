@@ -3,20 +3,12 @@ const { getDB } = require('./lib/db');
 const { getAllAccounts, getSetting } = require('./lib/config');
 const { StateManager } = require('./lib/state');
 const { createBrowserContext, startLiveView, takeLiveScreenshot } = require('./lib/browser');
-const { wait, shuffleArray } = require('./lib/utils');
+const { wait } = require('./lib/utils');
 const logger = require('./lib/logger');
 const { saveCrashReport } = require('./lib/reporter');
+const { isAnonymousPhotoUrl } = require('./lib/photo-cache');
 
-const isAnonymousPhoto = (url) => {
-  if (!url) return true;
-  // Base64 of 'anonymous_profile_pic' in ig_cache_key
-  if (url.includes('YW5vbnltb3VzX3Byb2ZpbGVfcGlj')) return true;
-  // Common default/anonymous avatar patterns
-  if (/\/\d+_\d+_\d+_n\.(jpg|png)/.test(url) === false && url.includes('anonymous')) return true;
-  // Very small default profile pics (44x44, 110x110, 150x150)
-  if (url.includes('s150x150') && url.includes('_nc_cat=1&')) return false; // real pic
-  return false;
-};
+const isAnonymousPhoto = (url) => !url || isAnonymousPhotoUrl(url);
 
 const getDynamicConfig = async () => {
   const width = 1920 + Math.floor(Math.random() * 150);
@@ -38,7 +30,7 @@ const refreshProfile = async (context, profile, config) => {
     await takeLiveScreenshot(page);
     await page.waitForSelector('header', { timeout: 15000 });
     // Wait for profile image to appear in the header
-    await page.waitForSelector('header img', { timeout: 10000 }).catch(() => { });
+    await page.waitForSelector('header img', { timeout: 10000 }).catch(() => {});
     // Give extra time for the IG API to respond with HD photo data
     await wait(3000 + Math.random() * 1000);
 
@@ -68,7 +60,9 @@ const refreshProfile = async (context, profile, config) => {
               name = u.full_name || uname;
             }
           }
-        } catch (e) { }
+        } catch {
+          // Ignore API errors and continue with page fallbacks.
+        }
 
         if (!pUrl) {
           // Fallback to HTML scraping
@@ -78,7 +72,7 @@ const refreshProfile = async (context, profile, config) => {
             const rawUrl = matches[matches.length - 1][1];
             try {
               pUrl = JSON.parse('"' + rawUrl + '"');
-            } catch (e) {
+            } catch {
               pUrl = rawUrl.replace(/\\u0026/g, '&').replace(/\\\//g, '/');
             }
           }
@@ -144,7 +138,7 @@ const refreshProfile = async (context, profile, config) => {
     logger.error(`         ❌ Ошибка: ${e.message.split('\n')[0]}`);
     await saveCrashReport(page, e, `restore_${url.split('/').filter(Boolean).pop()}`);
   } finally {
-    await page.close().catch(() => { });
+    await page.close().catch(() => {});
   }
 };
 

@@ -13,15 +13,15 @@ const DB_PATH =
   process.env.DATABASE_URL ||
   (process.env.APP_ROOT
     ? path_1.join(
-      process.env.APP_ROOT,
-      'config',
-      process.env.NODE_ENV === 'test' ? 'database_test.sqlite' : 'database.sqlite'
-    )
+        process.env.APP_ROOT,
+        'config',
+        process.env.NODE_ENV === 'test' ? 'database_test.sqlite' : 'database.sqlite'
+      )
     : path_1.join(
-      (0, utils_1.getRootPath)(),
-      'config',
-      process.env.NODE_ENV === 'test' ? 'database_test.sqlite' : 'database.sqlite'
-    ));
+        (0, utils_1.getRootPath)(),
+        'config',
+        process.env.NODE_ENV === 'test' ? 'database_test.sqlite' : 'database.sqlite'
+      ));
 const CONFIG_DIR = path_1.dirname(DB_PATH);
 let dbInstance = null;
 let dbInitialization = null;
@@ -160,6 +160,12 @@ async function initializeDB() {
             photo_cached_at TEXT,
             photo_status TEXT,
             last_updated TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS failed_images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT UNIQUE,
+            created_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS presets (
@@ -315,6 +321,28 @@ async function initializeDB() {
       'photo_cached_at TEXT',
       'photo_status TEXT',
     ]);
+  }
+
+  const { ANONYMOUS_PHOTO_URL_MARKERS } = require('./photo-cache');
+  for (const marker of ANONYMOUS_PHOTO_URL_MARKERS) {
+    const pattern = `%${marker.toLowerCase()}%`;
+    await dbInstance.run(
+      `INSERT OR IGNORE INTO failed_images (url, created_at)
+       SELECT url, ? FROM profiles WHERE LOWER(photo) LIKE ?`,
+      [new Date().toISOString(), pattern]
+    );
+    await dbInstance.run(
+      `UPDATE profiles
+       SET photo = '', photo_local = '', photo_cached_at = NULL, photo_status = 'missing'
+       WHERE LOWER(photo) LIKE ?`,
+      [pattern]
+    );
+    await dbInstance.run(
+      `UPDATE donors
+       SET photo = '', photo_local = '', photo_cached_at = NULL, photo_status = 'missing'
+       WHERE LOWER(photo) LIKE ?`,
+      [pattern]
+    );
   }
 
   await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_profiles_username ON profiles(username)`);

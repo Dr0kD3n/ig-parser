@@ -1,15 +1,8 @@
 'use strict';
 const { getDB } = require('./db');
-const {
-  createBrowserContext,
-  optimizeContextForScraping,
-  takeLiveScreenshot,
-  checkLoginPage,
-} = require('./browser');
-const { wait } = require('./utils');
-const { saveCrashReport } = require('./reporter');
-const { getSetting, getAllAccounts, getList } = require('./config');
-const { cacheProfilePhotoFromPage } = require('./photo-cache');
+const { createBrowserContext, optimizeContextForScraping, checkLoginPage } = require('./browser');
+const { getSetting, getAllAccounts } = require('./config');
+const { cacheProfilePhotoFromPage, isAnonymousPhotoUrl } = require('./photo-cache');
 
 let stopRequested = false;
 
@@ -37,9 +30,7 @@ async function restorePhotos(onProgress, options = {}) {
   const db = await getDB();
 
   // 1. Берем только те профили, у которых картинки не загрузились
-  const failedRecords = await db.all(
-    `SELECT url FROM failed_images`
-  );
+  const failedRecords = await db.all(`SELECT url FROM failed_images`);
 
   if (failedRecords.length === 0) {
     console.log('⚠️ В таблице failed_images нет ссылок для восстановления.');
@@ -47,12 +38,12 @@ async function restorePhotos(onProgress, options = {}) {
   }
 
   // Превращаем в массив чистых объектов для пула воркеров
-  const profiles = failedRecords.map(rec => {
+  const profiles = failedRecords.map((rec) => {
     const username = rec.url.split('/').filter(Boolean).pop() || '';
     return {
       url: rec.url,
       username: username,
-      name: username
+      name: username,
     };
   });
 
@@ -177,35 +168,38 @@ async function restorePhotos(onProgress, options = {}) {
               publications: 0,
               name: '',
             };
-            try {
-              const res = await fetch(`/api/v1/users/web_profile_info/?username=${uname}`, {
-                headers: { 'X-IG-App-ID': '936619743392459' },
-              });
-              if (res.ok) {
-                const json = await res.json();
-                const user = json?.data?.user;
-                if (user) {
-                  result.photo = user.profile_pic_url_hd || '';
-                  result.bio = user.biography || '';
-                  result.followers = user.edge_followed_by?.count || 0;
-                  result.following = user.edge_follow?.count || 0;
-                  result.publications = user.edge_owner_to_timeline_media?.count || 0;
-                  result.name = user.full_name || '';
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const res = await fetch(
+                  `/api/v1/users/web_profile_info/?username=${encodeURIComponent(uname)}`,
+                  {
+                    headers: { 'X-IG-App-ID': '936619743392459' },
+                  }
+                );
+                if (res.ok) {
+                  const json = await res.json();
+                  const user = json?.data?.user;
+                  if (user) {
+                    result.photo = user.profile_pic_url_hd || user.profile_pic_url || '';
+                    result.bio = user.biography || '';
+                    result.followers = user.edge_followed_by?.count || 0;
+                    result.following = user.edge_follow?.count || 0;
+                    result.publications = user.edge_owner_to_timeline_media?.count || 0;
+                    result.name = user.full_name || '';
+                    break;
+                  }
                 }
+              } catch {
+                // Retry transient Instagram API failures below.
               }
-            } catch (e) { }
+              if (attempt < 2) {
+                await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+              }
+            }
 
             if (!result.photo) {
-              const html = document.documentElement.innerHTML;
-              const matches = [...html.matchAll(/"profile_pic_url_hd":"([^"]+)"/g)];
-              if (matches.length > 0) {
-                const rawUrl = matches[matches.length - 1][1];
-                try {
-                  result.photo = JSON.parse('"' + rawUrl + '"');
-                } catch (e) {
-                  result.photo = rawUrl.replace(/\\u0026/g, '&').replace(/\\\//g, '/');
-                }
-              }
+              result.photo =
+                document.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
             }
 
             if (!result.photo) {
@@ -227,12 +221,14 @@ async function restorePhotos(onProgress, options = {}) {
           }, username);
 
           // Проверяем, удалось ли на этот раз найти фото (или хотя бы био)
-          if (profileData.photo && !profileData.photo.includes('placeholder')) {
-            const photoCache = await cacheProfilePhotoFromPage(page, profileData.photo).catch((e) => ({
-              success: false,
-              status: 'failed',
-              error: e.message,
-            }));
+          if (profileData.photo && !isAnonymousPhotoUrl(profileData.photo)) {
+            const photoCache = await cacheProfilePhotoFromPage(page, profileData.photo).catch(
+              (e) => ({
+                success: false,
+                status: 'failed',
+                error: e.message,
+              })
+            );
 
             // 1. Обновляем основную таблицу profiles
             await db.run(
@@ -300,7 +296,9 @@ async function restorePhotos(onProgress, options = {}) {
               updatedCount++;
               console.log(`   ✅ [Поток ${workerId}] Фото восстановлено локально: ${username}`);
             } else {
-              console.log(`   ⚠️ [Поток ${workerId}] URL фото найден, но локально не сохранен: ${username}`);
+              console.log(
+                `   ⚠️ [Поток ${workerId}] URL фото найден, но локально не сохранен: ${username}`
+              );
             }
           } else {
             console.log(`   ⚠️ [Поток ${workerId}] Фото всё еще не доступно для ${username}`);
@@ -317,7 +315,7 @@ async function restorePhotos(onProgress, options = {}) {
       console.error(`CRITICAL worker error [${workerId}]:`, workerErr);
     } finally {
       console.log(`👷 [Поток ${workerId}] Завершен`);
-      await page.close().catch(() => { });
+      await page.close().catch(() => {});
     }
   };
 
@@ -331,8 +329,8 @@ async function restorePhotos(onProgress, options = {}) {
     await Promise.all(workers);
   } finally {
     if (!existingContext) {
-      await context.close().catch(() => { });
-      await browser.close().catch(() => { });
+      await context.close().catch(() => {});
+      await browser.close().catch(() => {});
     }
     const finalStatus = stopRequested ? 'ПРЕРВАНО' : 'ЗАВЕРШЕНО';
     console.log(
