@@ -21,9 +21,7 @@ describe('ig-selectors', () => {
       }),
     });
     const page = {
-      locator: vi.fn()
-        .mockReturnValueOnce(mkLoc(false))
-        .mockReturnValueOnce(mkLoc(true)),
+      locator: vi.fn().mockReturnValueOnce(mkLoc(false)).mockReturnValueOnce(mkLoc(true)),
     };
 
     const result = await IG.findFirstVisible(page, 'a, b');
@@ -38,12 +36,17 @@ describe('ig-selectors', () => {
       getAttribute: vi.fn().mockResolvedValue('/TestUser/'),
     };
     const scope = {
-      count: vi.fn().mockResolvedValue(1),
-      locator: vi.fn().mockReturnValue({ first: () => link }),
-      getByRole: vi.fn().mockReturnValue({ first: () => ({ count: vi.fn().mockResolvedValue(0) }) }),
+      isVisible: vi.fn().mockResolvedValue(true),
+      locator: vi.fn().mockReturnValue({
+        count: vi.fn().mockResolvedValue(1),
+        nth: vi.fn().mockReturnValue(link),
+      }),
     };
     const page = {
-      locator: vi.fn().mockReturnValue({ first: () => scope }),
+      locator: vi.fn().mockReturnValue({
+        count: vi.fn().mockResolvedValue(1),
+        nth: vi.fn().mockReturnValue(scope),
+      }),
     };
 
     const found = await IG.findProfileLink(page, 'testuser');
