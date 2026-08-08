@@ -75,6 +75,24 @@ if not exist "dist\ig-bot.exe" (
     exit /b 1
 )
 
+if not exist "backend\ig-bot-local-backend-macos-x64" (
+    echo [ERROR] Intel macOS executable not found in backend folder!
+    pause
+    exit /b 1
+)
+if not exist "backend\ig-bot-local-backend-macos-arm64" (
+    echo [ERROR] Apple Silicon macOS executable not found in backend folder!
+    pause
+    exit /b 1
+)
+copy /Y "backend\ig-bot-local-backend-macos-x64" "dist\ig-bot-macos-x64" >nul
+copy /Y "backend\ig-bot-local-backend-macos-arm64" "dist\ig-bot-macos-arm64" >nul
+if errorlevel 1 (
+    echo [ERROR] Failed to copy macOS executables to dist!
+    pause
+    exit /b 1
+)
+
 echo.
 echo ===================================
 echo [4/6] Copying Support Files
@@ -82,6 +100,7 @@ echo ===================================
 copy "backend\package.json" "dist\package.json" >nul
 copy "backend\scripts\patch-playwright-mcp.js" "dist\scripts\" >nul
 copy "install.sh" "dist\" >nul
+copy "start-macos.sh" "dist\" >nul
 echo.
 echo ===================================
 echo [5/6] Creating Deployment Scripts

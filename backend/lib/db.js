@@ -1,10 +1,12 @@
 'use strict';
-const sqlite3_1 = require('sqlite3');
 Object.defineProperty(exports, '__esModule', { value: true });
 exports.getDB = getDB;
 
 const sqlite_1 = require('sqlite');
 const path_1 = require('path');
+const sqlite3_1 = require(
+  process.pkg ? path_1.join(path_1.dirname(process.execPath), 'node_modules', 'sqlite3') : 'sqlite3'
+);
 const promises_1 = require('fs/promises');
 const utils_1 = require('./utils');
 const DB_PATH =

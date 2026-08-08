@@ -1,6 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -e
+
+cd "$(dirname "$0")"
+
 echo "=============================================="
-echo "   IG-Bot Linux Installation Script"
+echo "   IG-Bot Unix Installation Script"
 echo "=============================================="
 
 # 1. Check for Node.js
@@ -16,7 +20,7 @@ npm install --omit=dev --legacy-peer-deps
 
 # 3. Patch Playwright
 echo "[2/3] Patching Playwright..."
-node backend/scripts/patch-playwright-mcp.js
+node scripts/patch-playwright-mcp.js
 
 # 4. Install Playwright browsers and deps
 echo "[3/3] Cleaning old browsers and installing current Playwright version..."
@@ -26,10 +30,18 @@ if [ "$PW_VER" = "undefined" ]; then PW_VER="latest"; fi
 echo "Cleaning old versions..."
 npx playwright@$PW_VER uninstall --all
 echo "Installing current browsers..."
-npx playwright@$PW_VER install chromium --with-deps
+if [ "$(uname -s)" = "Darwin" ]; then
+    npx playwright@$PW_VER install chromium
+else
+    npx playwright@$PW_VER install chromium --with-deps
+fi
 
 echo ""
 echo "=============================================="
 echo "   Installation Complete!"
-echo "   Run 'npm start' to begin."
+if [ "$(uname -s)" = "Darwin" ]; then
+    echo "   Run './start-macos.sh' to begin."
+else
+    echo "   Installation finished."
+fi
 echo "=============================================="
