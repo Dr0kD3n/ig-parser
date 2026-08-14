@@ -3,6 +3,7 @@
   --content-gutter: 16px;
   --content-section-gap: 16px;
   --profile-grid-gap: 24px;
+  --profile-grid-columns: 2;
 }
 
 .app {
@@ -60,6 +61,7 @@
 }
 
 .profiles-grid {
+  grid-template-columns: repeat(var(--profile-grid-columns), minmax(0, 1fr));
   justify-content: start;
   gap: var(--profile-grid-gap);
 }
@@ -187,6 +189,7 @@
     --content-gutter: 24px;
     --content-section-gap: 18px;
     --profile-grid-gap: 28px;
+    --profile-grid-columns: 3;
   }
 }
 
@@ -196,18 +199,21 @@
     --content-gutter: 32px;
     --content-section-gap: 20px;
     --profile-grid-gap: 32px;
+    --profile-grid-columns: 4;
   }
 }
 
 @media (min-width: 1280px) {
   :root {
     --app-container-width: 1120px;
+    --profile-grid-columns: 5;
   }
 }
 
 @media (min-width: 1440px) {
   :root {
     --app-container-width: 1280px;
+    --profile-grid-gap: 40px;
   }
 }
 
@@ -215,6 +221,7 @@
   :root {
     --app-container-width: 1440px;
     --profile-grid-gap: 40px;
+    --profile-grid-columns: 6;
   }
 }
 
@@ -222,5 +229,6 @@
   :root {
     --app-container-width: 1680px;
     --profile-grid-gap: 48px;
+    --profile-grid-columns: 7;
   }
 }
