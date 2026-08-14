@@ -42,6 +42,7 @@ app.get('/api/settings', async (req, res) => {
     donors,
     checkedDonors,
     showBrowser: settings.showBrowser,
+    monochromeMode: settings.monochromeMode,
     concurrentProfiles: settings.concurrentProfiles,
     dmLimit: settings.dmLimit,
     donorFollowersMin: settings.donorFollowersMin,
@@ -157,6 +158,12 @@ app.post('/api/settings', async (req, res) => {
         await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
           'showBrowser',
           showBrowser ? 'true' : 'false',
+        ]);
+      }
+      if (Object.hasOwn(req.body, 'monochromeMode')) {
+        await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [
+          'monochromeMode',
+          req.body.monochromeMode ? 'true' : 'false',
         ]);
       }
       if (Object.hasOwn(req.body, 'concurrentProfiles')) {

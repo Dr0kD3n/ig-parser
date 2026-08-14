@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import ProfilesTab from './components/ProfilesTab';
 import ControlsTab from './components/ControlsTab';
 import SettingsTab from './components/SettingsTab';
@@ -31,6 +31,14 @@ export default function App() {
     ...DEFAULT_SETTINGS,
     ...safeStorage.parse('ig_settings', {}),
   }));
+
+  useLayoutEffect(() => {
+    document.documentElement.classList.toggle(
+      'theme-monochrome',
+      settingsData.monochromeMode === true
+    );
+    return () => document.documentElement.classList.remove('theme-monochrome');
+  }, [settingsData.monochromeMode]);
 
   const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false });
   const [activeTab, setActiveTab] = useState(() => safeStorage.getItem('ig_active_tab', 'profiles'));
@@ -239,6 +247,7 @@ export default function App() {
           targetFollowersMin: data.targetFollowersMin ?? 0,
           targetFollowersMax: data.targetFollowersMax ?? 0,
           feedbackCheckEnabled: data.feedbackCheckEnabled === true,
+          monochromeMode: data.monochromeMode === true,
           feedbackCheckIntervalMinutes: data.feedbackCheckIntervalMinutes || 60,
           nichePresets: Array.isArray(data.nichePresets)
             ? data.nichePresets

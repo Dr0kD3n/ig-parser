@@ -154,6 +154,14 @@ export default function SettingsTab({
           ))}
         </div>
         <div className="header-right gap-20">
+          <label className="checkbox-label checkbox" title="Графитовая чёрно-белая палитра">
+            <input
+              type="checkbox"
+              checked={settingsData.monochromeMode === true}
+              onChange={(e) => onSettingsChange({ monochromeMode: e.target.checked })}
+            />
+            Монохром
+          </label>
           <label className="checkbox-label checkbox">
             <input
               type="checkbox"

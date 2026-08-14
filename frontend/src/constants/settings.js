@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS = {
   donors: [],
   showBrowser: false,
   humanEmulation: false,
+  monochromeMode: false,
   concurrentProfiles: 3,
   dmLimit: 20,
   donorFollowersMin: 1000,

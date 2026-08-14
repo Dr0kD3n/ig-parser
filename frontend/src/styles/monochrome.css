@@ -1,0 +1,27 @@
+:root.theme-monochrome {
+  --bg-deep: 220 8% 4%;
+  --bg-card: 220 7% 7%;
+  --bg-elevated: 220 6% 12%;
+
+  --primary: 220 5% 68%;
+  --primary-glow: 220 5% 68% / 0.22;
+  --accent: 220 4% 56%;
+  --accent-glow: 220 4% 56% / 0.2;
+
+  --success: 0 0% 78%;
+  --danger: 0 0% 48%;
+  --warning: 0 0% 62%;
+
+  --text-main: 0 0% 96%;
+  --text-muted: 220 5% 70%;
+  --text-dim: 220 4% 46%;
+
+  --border: 220 5% 17%;
+  --border-bright: 220 5% 30%;
+
+  --glass: rgba(18, 19, 21, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.09);
+
+  color-scheme: dark;
+  filter: grayscale(1);
+}

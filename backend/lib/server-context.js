@@ -83,6 +83,10 @@ async function getSettings() {
     .map((r) => r.id);
   const showBrowserStr = await database.get(`SELECT value FROM settings WHERE key = 'showBrowser'`);
   const showBrowser = showBrowserStr ? showBrowserStr.value === 'true' : false;
+  const monochromeModeStr = await database.get(
+    `SELECT value FROM settings WHERE key = 'monochromeMode'`
+  );
+  const monochromeMode = monochromeModeStr ? monochromeModeStr.value === 'true' : false;
   const concurrentProfilesStr = await database.get(`SELECT value FROM settings WHERE key = 'concurrentProfiles'`);
   const concurrentProfiles = concurrentProfilesStr ? parseInt(concurrentProfilesStr.value) : 3;
   const dmLimitStr = await database.get(`SELECT value FROM settings WHERE key = 'dmLimit'`);
@@ -125,6 +129,7 @@ async function getSettings() {
     activeProfilesAccountIds: activeProfilesIds,
     activeCheckerAccountIds: activeCheckerIds,
     showBrowser,
+    monochromeMode,
     concurrentProfiles,
     dmLimit,
     donorFollowersMin: followerLimits.donorFollowersMin ?? 1000,
