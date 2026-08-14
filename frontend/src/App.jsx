@@ -657,6 +657,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
+        <div className="header-content">
         <div className="header-left">
           <div className="stats">
             <span>
@@ -686,8 +687,10 @@ export default function App() {
             {"Выйти"}
           </button>
         </div>
+        </div>
       </header>
 
+      <div className="app-content">
       <nav className="tabs-nav">
         <div className="tab-btn-wrapper">
           {TABS.map(({ id, label }) => (
@@ -797,6 +800,7 @@ export default function App() {
         {activeTab === 'schedule' && (
           <ScheduleTab authFetch={authFetch} />
         )}
+      </div>
       </div>
     </div>
   );

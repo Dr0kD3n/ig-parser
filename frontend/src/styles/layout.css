@@ -6,14 +6,41 @@
 }
 
 .app {
+  width: 100%;
+}
+
+.app-content,
+.header-content {
   width: var(--app-container-width);
   margin-inline: auto;
+}
+
+.header {
+  display: block;
+  width: 100%;
+  padding: 0;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px var(--content-gutter);
 }
 
 .tabs-nav {
   width: 100%;
   margin: 24px 0 var(--content-section-gap);
   overflow-x: auto;
+}
+
+.tab-btn-wrapper {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.nav-extra-actions {
+  flex-shrink: 0;
 }
 
 .toolbar,
@@ -24,6 +51,71 @@
 .profiles-grid {
   justify-content: start;
   gap: var(--profile-grid-gap);
+}
+
+.toolbar > .search-input,
+.toolbar > .select-input {
+  min-width: 0;
+  width: 100%;
+}
+
+.toolbar > .count-badge {
+  margin-left: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 1279px) {
+  .toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .toolbar > .count-badge {
+    justify-self: end;
+  }
+}
+
+@media (max-width: 1023px) {
+  .header-content,
+  .stats {
+    flex-wrap: wrap;
+  }
+
+  .header-content {
+    gap: 12px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) repeat(3, minmax(0, 1fr)) auto auto;
+  }
+}
+
+@media (max-width: 1599px) {
+  .tabs-nav {
+    flex-wrap: wrap;
+  }
+
+  .tab-btn-wrapper {
+    flex: 1 0 100%;
+    overflow-x: auto;
+  }
+
+  .nav-extra-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 767px) {
+  .toolbar > .search-input,
+  .toolbar > .select-input {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (min-width: 768px) {
