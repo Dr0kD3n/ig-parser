@@ -69,12 +69,16 @@
 
 .profile-primary-filters,
 .profile-primary-filter-fields,
-.settings-compact-menu {
+.settings-compact-menu,
+.header-stats-menu,
+.main-tabs-menu {
   display: contents;
 }
 
 .profile-primary-filter-trigger,
-.settings-menu-summary {
+.settings-menu-summary,
+.header-stats-summary,
+.main-tabs-summary {
   display: none;
 }
 
@@ -182,13 +186,92 @@
 @media (max-width: 1599px) {
   .tabs-nav {
     align-items: center;
+    justify-content: space-between;
     overflow: visible;
   }
 
-  .tab-btn-wrapper {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow-x: auto;
+  .main-tabs-menu,
+  .header-stats-menu {
+    position: relative;
+    display: block;
+  }
+
+  .main-tabs-summary {
+    display: flex;
+    min-width: 190px;
+  }
+
+  .main-tabs-menu .tab-btn-wrapper {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 50;
+    display: flex;
+    width: 240px;
+    padding: 8px;
+    flex-direction: column;
+    align-items: stretch;
+    border: 1px solid hsl(var(--border));
+    border-radius: 14px;
+    background: hsl(var(--bg-elevated));
+    box-shadow: var(--shadow-lg);
+  }
+
+  .main-tabs-menu:not([open]) .tab-btn-wrapper {
+    display: none;
+  }
+
+  .main-tabs-menu .tab-btn {
+    width: 100%;
+    text-align: left;
+  }
+
+  .header-stats-summary {
+    display: flex;
+    width: 38px;
+    height: 38px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid hsl(var(--border));
+    border-radius: 50%;
+    background: hsl(var(--bg-card));
+    color: hsl(var(--text-main));
+    font-weight: 700;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .header-stats-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .header-stats-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 110;
+    display: grid;
+    width: 260px;
+    padding: 12px;
+    gap: 10px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 14px;
+    background: hsl(var(--bg-elevated));
+    box-shadow: var(--shadow-lg);
+  }
+
+  .header-stats-menu:not([open]) .header-stats-popover {
+    display: none;
+  }
+
+  .header-stats-popover span {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+  }
+
+  .header-stats-popover .stats-divider {
+    display: none;
   }
 
   .nav-extra-actions {
@@ -312,6 +395,10 @@
   .settings-quick-controls {
     right: auto;
     left: 0;
+  }
+
+  .main-tabs-summary {
+    min-width: 150px;
   }
 }
 

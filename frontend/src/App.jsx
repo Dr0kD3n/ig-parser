@@ -42,9 +42,11 @@ export default function App() {
 
   const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false });
   const [activeTab, setActiveTab] = useState(() => safeStorage.getItem('ig_active_tab', 'profiles'));
+  const mainTabsMenuRef = useRef(null);
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     safeStorage.setItem('ig_active_tab', tab);
+    mainTabsMenuRef.current?.removeAttribute('open');
   };
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState('idle');
@@ -659,7 +661,14 @@ export default function App() {
       <header className="header">
         <div className="header-content">
         <div className="header-left">
-          <div className="stats">
+          <details
+            className="header-stats-menu"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute('open');
+            }}
+          >
+            <summary className="header-stats-summary" aria-label="Статистика профилей">?</summary>
+            <div className="stats header-stats-popover">
             <span>
               {"Ранее не открыты:"} <b>{unopenedCount}</b>
             </span>
@@ -673,7 +682,8 @@ export default function App() {
             <span>
               {"Лайков:"} <b className="color-success">{likesCount}</b>
             </span>
-          </div>
+            </div>
+          </details>
         </div>
         <div className="header-right">
           {saveStatus !== 'idle' && (
@@ -692,6 +702,16 @@ export default function App() {
 
       <div className="app-content">
       <nav className="tabs-nav">
+        <details
+          className="main-tabs-menu"
+          ref={mainTabsMenuRef}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute('open');
+          }}
+        >
+          <summary className="compact-menu-trigger main-tabs-summary">
+            {TABS.find(({ id }) => id === activeTab)?.label}
+          </summary>
         <div className="tab-btn-wrapper">
           {TABS.map(({ id, label }) => (
             <button
@@ -703,6 +723,7 @@ export default function App() {
             </button>
           ))}
         </div>
+        </details>
 
         {activeTab === 'profiles' && (
           <details className="nav-extra-actions">
