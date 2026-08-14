@@ -1,6 +1,14 @@
 /* Inputs & Forms */
+:root {
+  --content-gutter: clamp(20px, 4vw, 56px);
+}
+
+.tabs-nav {
+  margin-inline: var(--content-gutter);
+}
+
 .toolbar {
-  padding: 0 32px 32px;
+  padding: 0 var(--content-gutter) 32px;
   display: flex;
   gap: 16px;
   align-items: center;
@@ -166,7 +174,7 @@
   grid-template-columns: repeat(auto-fit, minmax(180px, 210px));
   justify-content: center;
   gap: clamp(28px, 3vw, 52px);
-  padding: 0 clamp(32px, 5vw, 80px);
+  padding: 0 var(--content-gutter);
 }
 
 .card {
@@ -280,14 +288,17 @@
 }
 
 .profile-card:hover .profile-card-controls,
-.profile-card:focus-within .profile-card-controls,
+.profile-card:focus-visible .profile-card-controls,
+.profile-card:has(:focus-visible) .profile-card-controls,
 .profile-card:hover .profile-card-overlay,
-.profile-card:focus-within .profile-card-overlay {
+.profile-card:focus-visible .profile-card-overlay,
+.profile-card:has(:focus-visible) .profile-card-overlay {
   opacity: 1;
 }
 
 .profile-card:hover .profile-card-controls,
-.profile-card:focus-within .profile-card-controls {
+.profile-card:focus-visible .profile-card-controls,
+.profile-card:has(:focus-visible) .profile-card-controls {
   pointer-events: auto;
 }
 
