@@ -49,11 +49,12 @@ const ProfileCard = memo(function ProfileCard({
   const isLiked = votes[g.url] === 'like';
   const isDisliked = votes[g.url] === 'dislike';
   const [checkingTg, setCheckingTg] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const photoSrc = getProfilePhotoSrc(g.photo_local, g.photo);
 
   const handleTgClick = async (e) => {
     e.stopPropagation();
-    e.currentTarget.closest('details')?.removeAttribute('open');
+    setMenuOpen(false);
     const tgUser = getTelegramUsername(g);
     if (!tgUser) return;
     const tgUrl = getTelegramUrl(g);
@@ -134,17 +135,30 @@ const ProfileCard = memo(function ProfileCard({
               </div>
             )}
           </div>
-          <details
+          <div
             className="profile-card-menu"
-            onMouseEnter={(e) => e.currentTarget.setAttribute('open', '')}
-            onMouseLeave={(e) => e.currentTarget.removeAttribute('open')}
+            onMouseEnter={() => setMenuOpen(true)}
+            onMouseLeave={() => setMenuOpen(false)}
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget)) setMenuOpen(false);
+            }}
           >
-            <summary aria-label="Другие действия" title="Другие действия">
+            <button
+              type="button"
+              className="profile-card-menu-trigger"
+              aria-label="Другие действия"
+              aria-expanded={menuOpen}
+              title="Другие действия"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
               <span />
               <span />
               <span />
-            </summary>
-            <div className="profile-card-menu-popover">
+            </button>
+            <div
+              className={`profile-card-menu-popover${menuOpen ? ' open' : ''}`}
+              aria-hidden={!menuOpen}
+            >
               {getTelegramUsername(g) && g.tg_status !== 'invalid' ? (
                 <button type="button" onClick={handleTgClick} disabled={checkingTg}>
                   <TelegramIcon />
@@ -154,8 +168,8 @@ const ProfileCard = memo(function ProfileCard({
               ) : null}
               <button
                 type="button"
-                onClick={(e) => {
-                  e.currentTarget.closest('details')?.removeAttribute('open');
+                onClick={() => {
+                  setMenuOpen(false);
                   onOpen(g);
                 }}
               >
@@ -164,8 +178,8 @@ const ProfileCard = memo(function ProfileCard({
               </button>
               <button
                 type="button"
-                onClick={(e) => {
-                  e.currentTarget.closest('details')?.removeAttribute('open');
+                onClick={() => {
+                  setMenuOpen(false);
                   onSaveAsDonor(g.url);
                 }}
               >
@@ -175,8 +189,8 @@ const ProfileCard = memo(function ProfileCard({
               <button
                 type="button"
                 className={`profile-card-menu-tg${g.tgTagged === 1 ? ' active' : ''}`}
-                onClick={(e) => {
-                  e.currentTarget.closest('details')?.removeAttribute('open');
+                onClick={() => {
+                  setMenuOpen(false);
                   onTagTg(g);
                 }}
               >
@@ -186,8 +200,8 @@ const ProfileCard = memo(function ProfileCard({
               <button
                 type="button"
                 className="profile-card-menu-danger"
-                onClick={(e) => {
-                  e.currentTarget.closest('details')?.removeAttribute('open');
+                onClick={() => {
+                  setMenuOpen(false);
                   onDeleteProfile(g.url);
                 }}
               >
@@ -195,7 +209,7 @@ const ProfileCard = memo(function ProfileCard({
                 <span>Удалить профиль</span>
               </button>
             </div>
-          </details>
+          </div>
           <div className="profile-card-bottom">
             <div className="profile-card-identity">
               <strong>{g.name}</strong>
