@@ -271,15 +271,19 @@ export default function ProfilesTab({
 }) {
   const filters = usePersistedFilters();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [primaryFiltersOpen, setPrimaryFiltersOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const filtersRef = useRef(null);
+  const primaryFiltersRef = useRef(null);
 
   const resetPage = () => setCurrentPage(1);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (!filtersRef.current || filtersRef.current.contains(event.target)) return;
-      setFiltersOpen(false);
+      if (filtersRef.current && !filtersRef.current.contains(event.target)) setFiltersOpen(false);
+      if (primaryFiltersRef.current && !primaryFiltersRef.current.contains(event.target)) {
+        setPrimaryFiltersOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -304,6 +308,16 @@ export default function ProfilesTab({
   return (
     <div className="tab-content-fade">
       <div className="toolbar">
+        <div className="profile-primary-filters" ref={primaryFiltersRef}>
+          <button
+            type="button"
+            className="compact-menu-trigger profile-primary-filter-trigger"
+            onClick={() => setPrimaryFiltersOpen((open) => !open)}
+            aria-expanded={primaryFiltersOpen}
+          >
+            Поиск и фильтры
+          </button>
+          <div className={`profile-primary-filter-fields${primaryFiltersOpen ? ' open' : ''}`}>
         <input
           className="search-input"
           placeholder="Поиск профилей..."
@@ -358,6 +372,8 @@ export default function ProfilesTab({
             </option>
           ))}
         </select>
+          </div>
+        </div>
         <div className="profile-toolbar-meta">
           <span className="count-badge">
           {filtered.length} {plural(filtered.length, 'профиль', 'профиля', 'профилей')}

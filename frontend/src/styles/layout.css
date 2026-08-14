@@ -48,6 +48,36 @@
   display: none;
 }
 
+.compact-menu-trigger {
+  align-items: center;
+  min-height: 42px;
+  padding: 9px 14px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 11px;
+  background: hsl(var(--bg-card));
+  color: hsl(var(--text-main));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.compact-menu-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.profile-primary-filters,
+.profile-primary-filter-fields,
+.settings-compact-menu {
+  display: contents;
+}
+
+.profile-primary-filter-trigger,
+.settings-menu-summary {
+  display: none;
+}
+
 .nav-extra-actions-list,
 .profile-toolbar-meta {
   display: flex;
@@ -66,8 +96,8 @@
   gap: var(--profile-grid-gap);
 }
 
-.toolbar > .search-input,
-.toolbar > .select-input {
+.profile-primary-filter-fields > .search-input,
+.profile-primary-filter-fields > .select-input {
   min-width: 0;
   width: 100%;
 }
@@ -82,13 +112,52 @@
 
 @media (max-width: 1279px) {
   .toolbar {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    justify-content: space-between;
   }
 
   .profile-toolbar-meta {
-    grid-column: 1 / -1;
-    justify-self: end;
+    margin-left: auto;
+  }
+
+  .profile-primary-filters {
+    position: relative;
+    display: block;
+  }
+
+  .profile-primary-filter-trigger {
+    display: flex;
+  }
+
+  .profile-primary-filter-fields {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 45;
+    display: grid;
+    width: min(340px, calc(100vw - 48px));
+    padding: 12px;
+    gap: 10px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 14px;
+    background: hsl(var(--bg-elevated));
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-5px);
+    transition:
+      opacity 0.16s ease,
+      transform 0.16s ease,
+      visibility 0s linear 0.16s;
+  }
+
+  .profile-primary-filter-fields.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
+    transition-delay: 0s;
   }
 }
 
@@ -170,16 +239,79 @@
     width: 100%;
     justify-content: center;
   }
+
+  .settings-header {
+    align-items: center;
+    gap: 10px;
+  }
+
+  .settings-compact-menu {
+    position: relative;
+    display: block;
+  }
+
+  .settings-menu-summary {
+    display: flex;
+  }
+
+  .settings-menu-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    z-index: 45;
+    min-width: 240px;
+    padding: 8px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 14px;
+    background: hsl(var(--bg-elevated));
+    box-shadow: var(--shadow-lg);
+  }
+
+  .settings-compact-menu:not([open]) .settings-menu-popover {
+    display: none;
+  }
+
+  .settings-sections-menu .settings-menu-popover {
+    left: 0;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-sections-menu .tab-btn {
+    width: 100%;
+    text-align: left;
+  }
+
+  .settings-quick-menu {
+    margin-left: auto;
+  }
+
+  .settings-quick-controls {
+    right: 0;
+    width: 290px;
+    margin-left: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .settings-quick-controls .checkbox-label {
+    justify-content: space-between;
+  }
 }
 
 @media (max-width: 767px) {
-  .toolbar > .search-input,
-  .toolbar > .select-input {
-    grid-column: 1 / -1;
+  .settings-header {
+    padding-inline: var(--content-gutter);
+    flex-wrap: wrap;
   }
 
-  .profile-toolbar-meta {
-    grid-column: 1 / -1;
+  .settings-quick-menu {
+    margin-left: 0;
+  }
+
+  .settings-quick-controls {
+    right: auto;
+    left: 0;
   }
 }
 

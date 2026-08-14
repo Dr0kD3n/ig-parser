@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, startTransition } from 'react';
+import { useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import { toast } from 'react-hot-toast';
 import { CITIES_PRESETS } from '../constants/cities';
 import SkeletonSettings from './settings/SkeletonSettings';
@@ -40,6 +40,7 @@ export default function SettingsTab({
   failedUrls,
 }) {
   const [settingsTab, setSettingsTab] = useState(() => localStorage.getItem('ig_settings_tab') || 'accounts');
+  const settingsNavMenuRef = useRef(null);
   const [donorsMounted, setDonorsMounted] = useState(
     () => localStorage.getItem('ig_settings_tab') === 'donors'
   );
@@ -57,6 +58,7 @@ export default function SettingsTab({
     if (tab === 'donors') setDonorsMounted(true);
     startTransition(() => setSettingsTab(tab));
     localStorage.setItem('ig_settings_tab', tab);
+    settingsNavMenuRef.current?.removeAttribute('open');
   };
 
   useEffect(() => {
@@ -142,7 +144,17 @@ export default function SettingsTab({
   return (
     <div className="settings-wrap tab-content-fade">
       <div className="settings-header">
-        <div className="settings-nested-tabs">
+        <details
+          className="settings-compact-menu settings-sections-menu"
+          ref={settingsNavMenuRef}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute('open');
+          }}
+        >
+          <summary className="compact-menu-trigger settings-menu-summary">
+            {SETTINGS_TAB_LABELS[settingsTab]}
+          </summary>
+          <div className="settings-nested-tabs settings-menu-popover">
           {SETTINGS_TABS.map((tab) => (
             <button
               key={tab}
@@ -152,8 +164,16 @@ export default function SettingsTab({
               {SETTINGS_TAB_LABELS[tab]}
             </button>
           ))}
-        </div>
-        <div className="header-right gap-20">
+          </div>
+        </details>
+        <details
+          className="settings-compact-menu settings-quick-menu"
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute('open');
+          }}
+        >
+          <summary className="compact-menu-trigger settings-menu-summary">Быстрые настройки</summary>
+          <div className="header-right gap-20 settings-quick-controls settings-menu-popover">
           <label className="checkbox-label checkbox" title="Графитовая чёрно-белая палитра">
             <input
               type="checkbox"
@@ -202,7 +222,8 @@ export default function SettingsTab({
               onChange={(e) => onSettingsChange({ dmLimit: parseInt(e.target.value, 10) || 1 })}
             />
           </label>
-        </div>
+          </div>
+        </details>
       </div>
 
       {settingsTab === 'accounts' && (
