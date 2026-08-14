@@ -358,7 +358,8 @@ export default function ProfilesTab({
             </option>
           ))}
         </select>
-        <span className="count-badge ml-auto">
+        <div className="profile-toolbar-meta">
+          <span className="count-badge">
           {filtered.length} {plural(filtered.length, 'профиль', 'профиля', 'профилей')}
         </span>
         <div className="profile-filters-menu" ref={filtersRef}>
@@ -453,6 +454,7 @@ export default function ProfilesTab({
               </label>
             </div>
           )}
+          </div>
         </div>
       </div>
 

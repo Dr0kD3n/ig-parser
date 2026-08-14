@@ -705,7 +705,9 @@ export default function App() {
         </div>
 
         {activeTab === 'profiles' && (
-          <div className="nav-extra-actions">
+          <details className="nav-extra-actions">
+            <summary className="nav-actions-summary">Действия</summary>
+            <div className="nav-extra-actions-list">
             <button
               className={`btn-primary btn-sm btn-restore ${massMessagingStatus.running ? 'running' : ''}`}
               style={{ backgroundColor: 'var(--color-primary-alt)' }}
@@ -741,7 +743,8 @@ export default function App() {
             >
               {"Обновить"}
             </button>
-          </div>
+            </div>
+          </details>
         )}
       </nav>
 
