@@ -204,7 +204,27 @@
 
 .profile-card {
   height: auto;
+  border: 0;
   outline: none;
+  isolation: isolate;
+}
+
+.profile-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  pointer-events: none;
+}
+
+.profile-card:hover::after {
+  box-shadow: inset 0 0 0 1px hsla(var(--primary), 0.5);
+}
+
+.profile-card.status-like::after {
+  box-shadow: inset 0 0 0 1px hsl(var(--success));
 }
 
 .profile-card:hover {
@@ -212,10 +232,13 @@
 }
 
 .profile-card:focus-visible {
-  border-color: hsl(var(--primary));
   box-shadow:
     0 0 0 3px hsla(var(--primary), 0.25),
     var(--shadow-lg);
+}
+
+.profile-card:focus-visible::after {
+  box-shadow: inset 0 0 0 1px hsl(var(--primary));
 }
 
 .photoWrap {
