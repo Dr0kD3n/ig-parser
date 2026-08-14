@@ -1,14 +1,16 @@
 /* Inputs & Forms */
 :root {
   --content-gutter: clamp(20px, 4vw, 56px);
+  --content-section-gap: clamp(16px, 2vw, 22px);
 }
 
 .tabs-nav {
   margin-inline: var(--content-gutter);
+  margin-bottom: var(--content-section-gap);
 }
 
 .toolbar {
-  padding: 0 var(--content-gutter) 32px;
+  padding: 0 var(--content-gutter) var(--content-section-gap);
   display: flex;
   gap: 16px;
   align-items: center;
