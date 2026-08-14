@@ -1,0 +1,71 @@
+:root {
+  --app-container-width: 100%;
+  --content-gutter: 16px;
+  --content-section-gap: 16px;
+  --profile-grid-gap: 24px;
+}
+
+.app {
+  width: var(--app-container-width);
+  margin-inline: auto;
+}
+
+.tabs-nav {
+  width: 100%;
+  margin: 24px 0 var(--content-section-gap);
+  overflow-x: auto;
+}
+
+.toolbar,
+.profiles-grid {
+  padding-inline: var(--content-gutter);
+}
+
+.profiles-grid {
+  justify-content: start;
+  gap: var(--profile-grid-gap);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --app-container-width: 720px;
+    --content-gutter: 24px;
+    --content-section-gap: 18px;
+    --profile-grid-gap: 28px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --app-container-width: 960px;
+    --content-gutter: 32px;
+    --content-section-gap: 20px;
+    --profile-grid-gap: 32px;
+  }
+}
+
+@media (min-width: 1280px) {
+  :root {
+    --app-container-width: 1120px;
+  }
+}
+
+@media (min-width: 1440px) {
+  :root {
+    --app-container-width: 1280px;
+  }
+}
+
+@media (min-width: 1600px) {
+  :root {
+    --app-container-width: 1440px;
+    --profile-grid-gap: 40px;
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --app-container-width: 1680px;
+    --profile-grid-gap: 48px;
+  }
+}
