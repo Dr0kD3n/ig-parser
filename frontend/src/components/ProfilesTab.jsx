@@ -10,8 +10,13 @@ import {
   SaveIcon,
 } from './Icons';
 import { plural } from '../utils/text';
-import { parseSmartBio, getProfilePhotoSrc, getDmErrorLabel, getTelegramUsername, getTelegramUrl, hasTelegram } from '../utils/profile';
-import DonorInfo from './DonorInfo';
+import {
+  getProfilePhotoSrc,
+  getDmErrorLabel,
+  getTelegramUsername,
+  getTelegramUrl,
+  hasTelegram,
+} from '../utils/profile';
 import { filterProfiles } from '../utils/profileFilters';
 import { usePersistedFilters } from '../hooks/usePersistedFilters';
 
@@ -19,17 +24,9 @@ const ITEMS_PER_PAGE = 60;
 
 const SkeletonCard = memo(function SkeletonCard() {
   return (
-    <div className="card skeleton-card">
-      <div className="skeleton skeleton-img" />
-      <div className="skeleton-body">
-        <div className="skeleton skeleton-line" />
-        <div className="skeleton skeleton-line short" />
-        <div className="skeleton-actions">
-          <div className="skeleton skeleton-btn" />
-          <div className="skeleton skeleton-btn" />
-          <div className="skeleton skeleton-btn" />
-        </div>
-        <div className="skeleton skeleton-btn w-full" style={{ marginTop: 4 }} />
+    <div className="card profile-card skeleton-card">
+      <div className="photoWrap profile-photo-wrap">
+        <div className="skeleton skeleton-img" />
       </div>
     </div>
   );
@@ -49,7 +46,6 @@ const ProfileCard = memo(function ProfileCard({
   onTgCheck,
   authFetch,
 }) {
-  const { bio, stats } = parseSmartBio(g.bio, g.name);
   const isLiked = votes[g.url] === 'like';
   const isDisliked = votes[g.url] === 'dislike';
   const [checkingTg, setCheckingTg] = useState(false);
@@ -88,8 +84,13 @@ const ProfileCard = memo(function ProfileCard({
   };
 
   return (
-    <div className={`card ${isLiked ? 'status-like' : isDisliked ? 'status-dislike' : ''}`}>
-      <div className="photoWrap">
+    <div
+      className={`card profile-card ${isLiked ? 'status-like' : isDisliked ? 'status-dislike' : ''}`}
+      tabIndex={0}
+      role="group"
+      aria-label={`Профиль ${g.name}`}
+    >
+      <div className="photoWrap profile-photo-wrap">
         {photoSrc && !failedImages.has(g.url) ? (
           <img
             src={photoSrc}
@@ -102,143 +103,111 @@ const ProfileCard = memo(function ProfileCard({
         ) : (
           <div className="no-photo-placeholder">No Photo</div>
         )}
-        <div className="overlay" />
-        <div className="statusStack">
-          {g.matchScore !== undefined && (
-            <div className={`badge ${g.matchScore > 80 ? 'badge-match-high' : 'badge-match-low'}`}>
-              🎯 {g.matchScore}%
-            </div>
-          )}
-          {isLiked && <div className="badge likedTag">Лайк</div>}
-          {isDisliked && <div className="badge dislikedTag">Скип</div>}
-          {g.viewed && <div className="badge viewedTag">Чекалась</div>}
-          {g.dmSent && !g.dmError && !g.dm_status && <div className="badge dmTag">Написал</div>}
-          {g.dm_status === 'replied' && (
-            <div className="badge dmTag" style={{ background: 'hsl(var(--success))' }}>✨ Ответил</div>
-          )}
-          {g.dm_status === 'liked' && <div className="badge likedTag">❤️ Лайкнул</div>}
-          {g.dm_status === 'ignored' && <div className="badge ignoredTag">Игнор</div>}
-          {g.dm_status === 'drain' && <div className="badge drainTag">Слив</div>}
-          {g.tg_status === 'valid' && <div className="badge tgTag">TG</div>}
-          {g.tg_status === 'channel' && <div className="badge tgChannelTag">TG канал</div>}
-          {g.dmError && (
-            <div className="badge tgNotSentTag" title={getDmErrorLabel(g.dmError)}>
-              ⚠️ Не написал в тг
-            </div>
-          )}
-        </div>
-        <div className="linksStack">
-          {getTelegramUsername(g) && g.tg_status !== 'invalid' && (
-            <div
-              className={`socialBtn ${g.tg_status === 'valid' ? 'tg-valid' : ''} ${g.tg_status === 'channel' ? 'tg-channel' : ''} ${checkingTg ? 'loading' : ''}`}
-              title="Telegram"
-              onClick={handleTgClick}
+        <div className="overlay profile-card-overlay" />
+        <div className="profile-card-controls">
+          <div className="statusStack">
+            {g.matchScore !== undefined && (
+              <div
+                className={`badge ${g.matchScore > 80 ? 'badge-match-high' : 'badge-match-low'}`}
+              >
+                🎯 {g.matchScore}%
+              </div>
+            )}
+            {isLiked && <div className="badge likedTag">Лайк</div>}
+            {isDisliked && <div className="badge dislikedTag">Скип</div>}
+            {g.viewed && <div className="badge viewedTag">Чекалась</div>}
+            {g.dmSent && !g.dmError && !g.dm_status && <div className="badge dmTag">Написал</div>}
+            {g.dm_status === 'replied' && (
+              <div className="badge dmTag" style={{ background: 'hsl(var(--success))' }}>
+                ✨ Ответил
+              </div>
+            )}
+            {g.dm_status === 'liked' && <div className="badge likedTag">❤️ Лайкнул</div>}
+            {g.dm_status === 'ignored' && <div className="badge ignoredTag">Игнор</div>}
+            {g.dm_status === 'drain' && <div className="badge drainTag">Слив</div>}
+            {g.tg_status === 'valid' && <div className="badge tgTag">TG</div>}
+            {g.tg_status === 'channel' && <div className="badge tgChannelTag">TG канал</div>}
+            {g.dmError && (
+              <div className="badge tgNotSentTag" title={getDmErrorLabel(g.dmError)}>
+                ⚠️ Не написал в тг
+              </div>
+            )}
+          </div>
+          <div className="linksStack">
+            {getTelegramUsername(g) && g.tg_status !== 'invalid' && (
+              <button
+                type="button"
+                className={`socialBtn ${g.tg_status === 'valid' ? 'tg-valid' : ''} ${g.tg_status === 'channel' ? 'tg-channel' : ''} ${checkingTg ? 'loading' : ''}`}
+                title="Telegram"
+                onClick={handleTgClick}
+              >
+                <TelegramIcon />
+                {!g.tg_status && !checkingTg && (
+                  <div className="status-badge-mini-help">
+                    <HelpIcon />
+                  </div>
+                )}
+              </button>
+            )}
+            <button type="button" className="socialBtn" title="Instagram" onClick={() => onOpen(g)}>
+              <InstagramIcon />
+            </button>
+          </div>
+
+          <div className="card-overlay-corner">
+            <button
+              type="button"
+              className="socialBtn mini-btn"
+              onClick={() => onSaveAsDonor(g.url)}
+              title="Save as Donor"
             >
-              <TelegramIcon />
-              {!g.tg_status && !checkingTg && (
-                <div className="status-badge-mini-help">
-                  <HelpIcon />
-                </div>
-              )}
+              <SaveIcon />
+            </button>
+            <button
+              type="button"
+              className="socialBtn mini-btn mini-btn-danger"
+              onClick={() => onDeleteProfile(g.url)}
+              title="Delete Profile"
+            >
+              <TrashIcon />
+            </button>
+          </div>
+          <div className="profile-card-bottom">
+            <div className="profile-card-identity">
+              <strong>{g.name}</strong>
+              {g.username && g.username !== g.name ? <span>@{g.username}</span> : null}
             </div>
-          )}
-          <div className="socialBtn" title="Instagram" onClick={() => onOpen(g)}>
-            <InstagramIcon />
+            <div className="actions profile-card-actions">
+              <button
+                type="button"
+                className={`actionBtn likeBtn${isLiked ? ' active' : ''}`}
+                onClick={() => onVote(g, 'like')}
+                title="Лайк"
+              >
+                <HeartIcon filled={isLiked} />
+              </button>
+              <button
+                type="button"
+                className={`actionBtn dislikeBtn${isDisliked ? ' active' : ''}`}
+                onClick={() => onVote(g, 'dislike')}
+                title="Скип"
+              >
+                <XIcon />
+              </button>
+              <button
+                type="button"
+                className={`actionBtn tgBtn${g.tgTagged === 1 ? ' active' : ''}`}
+                onClick={() => onTagTg(g)}
+                title="Написал в тг"
+              >
+                <TelegramIcon />
+              </button>
+            </div>
+            <button type="button" className="btn-primary full-send-btn" onClick={() => onSendDM(g)}>
+              <SendIcon /> Написать
+            </button>
           </div>
         </div>
-
-        <div className="card-overlay-corner">
-          <button
-            type="button"
-            className="socialBtn mini-btn"
-            onClick={() => onSaveAsDonor(g.url)}
-            title="Save as Donor"
-          >
-            <SaveIcon />
-          </button>
-          <button
-            type="button"
-            className="socialBtn mini-btn mini-btn-danger"
-            onClick={() => onDeleteProfile(g.url)}
-            title="Delete Profile"
-          >
-            <TrashIcon />
-          </button>
-        </div>
-      </div>
-
-      <div className="cardBody">
-        <div className="name-row">
-          <div className="name">
-            <span>{g.name}</span>
-            <span className="timestamp">{new Date(g.timestamp).toLocaleDateString()}</span>
-          </div>
-          {g.username && g.username !== g.name && <div className="username-sub">@{g.username}</div>}
-        </div>
-
-        <DonorInfo
-          donor={g.donor}
-          donorName={g.donor_name}
-          donorPhoto={g.donor_photo}
-          donorPhotoLocal={g.donor_photo_local}
-          donorBio={g.donor_bio}
-          donorFollowersCount={g.donor_followers_count}
-          donorPostsCount={g.donor_posts_count || g.donor_publications_count}
-        />
-
-        <div className="bio-container">
-          <div className="bio-text" title={g.bio}>
-            {bio}
-          </div>
-          <div className="profile-stats-row">
-            {g.followers_count > 0 && (
-              <span className="followers-text">👥 {g.followers_count.toLocaleString()}</span>
-            )}
-            {g.following_count > 0 && (
-              <span className="followers-text">👣 {g.following_count.toLocaleString()}</span>
-            )}
-            {g.publications_count > 0 && (
-              <span className="followers-text">📸 {g.publications_count.toLocaleString()}</span>
-            )}
-            {!g.followers_count &&
-              stats.map((s, i) => (
-                <span key={i} className="followers-text">
-                  {s}
-                </span>
-              ))}
-          </div>
-        </div>
-
-        <div className="actions">
-          <button
-            type="button"
-            className={`actionBtn likeBtn${isLiked ? ' active' : ''}`}
-            onClick={() => onVote(g, 'like')}
-            title="Лайк"
-          >
-            <HeartIcon filled={isLiked} />
-          </button>
-          <button
-            type="button"
-            className={`actionBtn dislikeBtn${isDisliked ? ' active' : ''}`}
-            onClick={() => onVote(g, 'dislike')}
-            title="Скип"
-          >
-            <XIcon />
-          </button>
-          <button
-            type="button"
-            className={`actionBtn tgBtn${g.tgTagged === 1 ? ' active' : ''}`}
-            onClick={() => onTagTg(g)}
-            title="Написал в тг"
-          >
-            <TelegramIcon />
-          </button>
-        </div>
-
-        <button type="button" className="btn-primary full-send-btn" onClick={() => onSendDM(g)}>
-          <SendIcon /> Написать
-        </button>
       </div>
     </div>
   );
@@ -452,7 +421,7 @@ export default function ProfilesTab({
         </div>
       </div>
 
-      <main className="grid">
+      <main className="grid profiles-grid">
         {isLoading
           ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
           : pageData.map((g) => (

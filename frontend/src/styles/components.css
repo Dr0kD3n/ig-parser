@@ -76,9 +76,7 @@
   padding: 18px;
   border: 1px solid hsl(var(--border-bright));
   border-radius: 20px;
-  background:
-    linear-gradient(180deg, hsl(240 12% 12%), hsl(240 12% 7%)),
-    hsl(var(--bg-card));
+  background: linear-gradient(180deg, hsl(240 12% 12%), hsl(240 12% 7%)), hsl(var(--bg-card));
   box-shadow:
     0 24px 70px rgba(0, 0, 0, 0.65),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -164,6 +162,13 @@
   padding: 0 32px;
 }
 
+.profiles-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 210px));
+  justify-content: center;
+  gap: clamp(28px, 3vw, 52px);
+  padding: 0 clamp(32px, 5vw, 80px);
+}
+
 .card {
   background: hsl(var(--bg-card));
   border-radius: var(--radius-lg);
@@ -197,6 +202,22 @@
   opacity: 1;
 }
 
+.profile-card {
+  height: auto;
+  outline: none;
+}
+
+.profile-card:hover {
+  transform: translateY(-3px);
+}
+
+.profile-card:focus-visible {
+  border-color: hsl(var(--primary));
+  box-shadow:
+    0 0 0 3px hsla(var(--primary), 0.25),
+    var(--shadow-lg);
+}
+
 .photoWrap {
   position: relative;
   aspect-ratio: 4/5;
@@ -208,6 +229,140 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.profile-photo-wrap {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+}
+
+.profile-card-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.profile-card-overlay {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.profile-card:hover .profile-card-controls,
+.profile-card:focus-within .profile-card-controls,
+.profile-card:hover .profile-card-overlay,
+.profile-card:focus-within .profile-card-overlay {
+  opacity: 1;
+}
+
+.profile-card:hover .profile-card-controls,
+.profile-card:focus-within .profile-card-controls {
+  pointer-events: auto;
+}
+
+.profile-card-bottom {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.profile-card-identity {
+  min-width: 0;
+  color: #fff;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.8);
+}
+
+.profile-card-identity strong,
+.profile-card-identity span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-card-identity strong {
+  font-size: 14px;
+}
+
+.profile-card-identity span {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.profile-card .statusStack {
+  top: 10px;
+  left: 10px;
+  gap: 5px;
+  max-width: calc(100% - 58px);
+}
+
+.profile-card .badge {
+  overflow: hidden;
+  max-width: 100%;
+  padding: 3px 8px;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-card .linksStack {
+  top: 10px;
+  right: 10px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-card .socialBtn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 9px;
+}
+
+.profile-card .card-overlay-corner {
+  top: 86px;
+  right: 10px;
+  bottom: auto;
+  flex-direction: column;
+}
+
+.profile-card-actions {
+  gap: 6px;
+  margin: 0;
+}
+
+.profile-card-actions .actionBtn {
+  padding: 7px;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  backdrop-filter: blur(8px);
+}
+
+.profile-card .full-send-btn {
+  min-height: 32px;
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.profile-card.skeleton-card .skeleton-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+@media (max-width: 480px) {
+  .profiles-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    padding: 0 20px;
+  }
 }
 
 .overlay {
@@ -282,7 +437,6 @@
   background: hsla(30, 80%, 45%, 0.8);
   cursor: help;
 }
-
 
 .linksStack {
   position: absolute;
@@ -731,4 +885,3 @@
     opacity: 1;
   }
 }
-
