@@ -53,6 +53,7 @@ const ProfileCard = memo(function ProfileCard({
 
   const handleTgClick = async (e) => {
     e.stopPropagation();
+    e.currentTarget.closest('details')?.removeAttribute('open');
     const tgUser = getTelegramUsername(g);
     if (!tgUser) return;
     const tgUrl = getTelegramUrl(g);
@@ -133,45 +134,67 @@ const ProfileCard = memo(function ProfileCard({
               </div>
             )}
           </div>
-          <div className="linksStack">
-            {getTelegramUsername(g) && g.tg_status !== 'invalid' && (
+          <details
+            className="profile-card-menu"
+            onMouseLeave={(e) => e.currentTarget.removeAttribute('open')}
+          >
+            <summary aria-label="Другие действия" title="Другие действия">
+              <span />
+              <span />
+              <span />
+            </summary>
+            <div className="profile-card-menu-popover">
+              {getTelegramUsername(g) && g.tg_status !== 'invalid' ? (
+                <button type="button" onClick={handleTgClick} disabled={checkingTg}>
+                  <TelegramIcon />
+                  <span>{g.tg_status ? 'Открыть Telegram' : 'Проверить Telegram'}</span>
+                  {!g.tg_status && !checkingTg ? <HelpIcon /> : null}
+                </button>
+              ) : null}
               <button
                 type="button"
-                className={`socialBtn ${g.tg_status === 'valid' ? 'tg-valid' : ''} ${g.tg_status === 'channel' ? 'tg-channel' : ''} ${checkingTg ? 'loading' : ''}`}
-                title="Telegram"
-                onClick={handleTgClick}
+                onClick={(e) => {
+                  e.currentTarget.closest('details')?.removeAttribute('open');
+                  onOpen(g);
+                }}
+              >
+                <InstagramIcon />
+                <span>Открыть Instagram</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.currentTarget.closest('details')?.removeAttribute('open');
+                  onSaveAsDonor(g.url);
+                }}
+              >
+                <SaveIcon />
+                <span>Сохранить как донора</span>
+              </button>
+              <button
+                type="button"
+                className={`profile-card-menu-tg${g.tgTagged === 1 ? ' active' : ''}`}
+                onClick={(e) => {
+                  e.currentTarget.closest('details')?.removeAttribute('open');
+                  onTagTg(g);
+                }}
               >
                 <TelegramIcon />
-                {!g.tg_status && !checkingTg && (
-                  <div className="status-badge-mini-help">
-                    <HelpIcon />
-                  </div>
-                )}
+                <span>Написал в Telegram</span>
               </button>
-            )}
-            <button type="button" className="socialBtn" title="Instagram" onClick={() => onOpen(g)}>
-              <InstagramIcon />
-            </button>
-          </div>
-
-          <div className="card-overlay-corner">
-            <button
-              type="button"
-              className="socialBtn mini-btn"
-              onClick={() => onSaveAsDonor(g.url)}
-              title="Save as Donor"
-            >
-              <SaveIcon />
-            </button>
-            <button
-              type="button"
-              className="socialBtn mini-btn mini-btn-danger"
-              onClick={() => onDeleteProfile(g.url)}
-              title="Delete Profile"
-            >
-              <TrashIcon />
-            </button>
-          </div>
+              <button
+                type="button"
+                className="profile-card-menu-danger"
+                onClick={(e) => {
+                  e.currentTarget.closest('details')?.removeAttribute('open');
+                  onDeleteProfile(g.url);
+                }}
+              >
+                <TrashIcon />
+                <span>Удалить профиль</span>
+              </button>
+            </div>
+          </details>
           <div className="profile-card-bottom">
             <div className="profile-card-identity">
               <strong>{g.name}</strong>
@@ -180,11 +203,11 @@ const ProfileCard = memo(function ProfileCard({
             <div className="actions profile-card-actions">
               <button
                 type="button"
-                className={`actionBtn likeBtn${isLiked ? ' active' : ''}`}
-                onClick={() => onVote(g, 'like')}
-                title="Лайк"
+                className="actionBtn send-action"
+                onClick={() => onSendDM(g)}
+                title="Написать"
               >
-                <HeartIcon filled={isLiked} />
+                <SendIcon />
               </button>
               <button
                 type="button"
@@ -196,16 +219,13 @@ const ProfileCard = memo(function ProfileCard({
               </button>
               <button
                 type="button"
-                className={`actionBtn tgBtn${g.tgTagged === 1 ? ' active' : ''}`}
-                onClick={() => onTagTg(g)}
-                title="Написал в тг"
+                className={`actionBtn likeBtn${isLiked ? ' active' : ''}`}
+                onClick={() => onVote(g, 'like')}
+                title="Лайк"
               >
-                <TelegramIcon />
+                <HeartIcon filled={isLiked} />
               </button>
             </div>
-            <button type="button" className="btn-primary full-send-btn" onClick={() => onSendDM(g)}>
-              <SendIcon /> Написать
-            </button>
           </div>
         </div>
       </div>
