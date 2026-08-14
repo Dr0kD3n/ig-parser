@@ -136,6 +136,7 @@ const ProfileCard = memo(function ProfileCard({
           </div>
           <details
             className="profile-card-menu"
+            onMouseEnter={(e) => e.currentTarget.setAttribute('open', '')}
             onMouseLeave={(e) => e.currentTarget.removeAttribute('open')}
           >
             <summary aria-label="Другие действия" title="Другие действия">
