@@ -273,7 +273,9 @@
   .header-stats-popover .stats-divider {
     display: none;
   }
+}
 
+@media (max-width: 1023px) {
   .nav-extra-actions {
     position: relative;
     width: auto;
@@ -285,13 +287,20 @@
     min-height: 40px;
     padding: 8px 14px;
     align-items: center;
-    border: 1px solid hsl(var(--border));
+    justify-content: center;
+    border: 1px solid hsl(var(--primary));
     border-radius: 10px;
-    color: hsl(var(--text-main));
+    background: hsl(var(--primary));
+    color: #fff;
+    box-shadow: 0 4px 12px hsla(var(--primary), 0.3);
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     list-style: none;
+  }
+
+  .nav-actions-summary:hover {
+    filter: brightness(1.08);
   }
 
   .nav-actions-summary::-webkit-details-marker {
