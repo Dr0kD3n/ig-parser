@@ -5,10 +5,33 @@ const crypto = require('crypto');
 
 const { JWT_SECRET } = require('./auth-config');
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const REGISTRATION_CODE_PATTERN = /^[A-Z0-9-]{6,64}$/;
+
 exports.signup = async (req, res) => {
-  const { email, password, registrationCode } = req.body;
-  if (!email || !password || !registrationCode) {
-    return res.status(400).json({ error: 'All fields are required including registration code' });
+  const email = String(req.body?.email || '')
+    .trim()
+    .toLowerCase();
+  const password = req.body?.password;
+  const registrationCode = String(req.body?.registrationCode || '')
+    .trim()
+    .toUpperCase();
+  const fieldErrors = {};
+
+  if (!email) fieldErrors.email = 'Введите email.';
+  else if (email.length > 254 || !EMAIL_PATTERN.test(email)) {
+    fieldErrors.email = 'Введите корректный email.';
+  }
+  if (!password) fieldErrors.password = 'Введите пароль.';
+  else if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
+    fieldErrors.password = 'Пароль должен содержать от 12 до 128 символов.';
+  }
+  if (!registrationCode) fieldErrors.registrationCode = 'Введите код регистрации.';
+  else if (!REGISTRATION_CODE_PATTERN.test(registrationCode)) {
+    fieldErrors.registrationCode = 'Код должен содержать 6–64 латинских букв, цифр или дефисов.';
+  }
+  if (Object.keys(fieldErrors).length > 0) {
+    return res.status(400).json({ error: 'Проверьте поля регистрации.', fieldErrors });
   }
 
   try {
@@ -20,7 +43,10 @@ exports.signup = async (req, res) => {
       [registrationCode]
     );
     if (!codeRecord) {
-      return res.status(400).json({ error: 'Invalid or already used registration code' });
+      return res.status(400).json({
+        error: 'Код регистрации неверный или уже использован.',
+        fieldErrors: { registrationCode: 'Код регистрации неверный или уже использован.' },
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -42,8 +68,13 @@ exports.signup = async (req, res) => {
     res.status(201).json({ message: 'User created successfully' });
   } catch (error) {
     console.error('Signup error:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Internal server error' });
+    if (String(error.code || '').startsWith('SQLITE_CONSTRAINT')) {
+      return res.status(409).json({
+        error: 'Аккаунт с таким email уже существует.',
+        fieldErrors: { email: 'Аккаунт с таким email уже существует.' },
+      });
+    }
+    res.status(500).json({ error: 'Не удалось зарегистрироваться. Попробуйте позже.' });
   }
 };
 

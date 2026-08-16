@@ -49,6 +49,33 @@
   box-shadow: 0 0 0 4px hsla(var(--primary), 0.1);
 }
 
+.text-input[aria-invalid='true'] {
+  border-color: hsl(var(--danger));
+  box-shadow: 0 0 0 3px hsla(var(--danger), 0.12);
+}
+
+.auth-field-error,
+.auth-form-error {
+  margin: 0;
+  color: hsl(var(--danger));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.auth-field-hint {
+  margin: 0;
+  color: hsl(var(--text-dim));
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.auth-form-error {
+  padding: 10px 12px;
+  background: hsla(var(--danger), 0.08);
+  border: 1px solid hsla(var(--danger), 0.2);
+  border-radius: 10px;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
