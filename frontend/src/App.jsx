@@ -42,11 +42,11 @@ export default function App() {
 
   const [botStatus, setBotStatus] = useState({ index: false, parser: false, checker: false });
   const [activeTab, setActiveTab] = useState(() => safeStorage.getItem('ig_active_tab', 'profiles'));
-  const mainTabsMenuRef = useRef(null);
+  const [compactMenu, setCompactMenu] = useState(null);
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     safeStorage.setItem('ig_active_tab', tab);
-    mainTabsMenuRef.current?.removeAttribute('open');
+    setCompactMenu(null);
   };
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState('idle');
@@ -661,13 +661,21 @@ export default function App() {
       <header className="header">
         <div className="header-content">
         <div className="header-left">
-          <details
-            className="header-stats-menu"
+          <div
+            className={`header-stats-menu${compactMenu === 'stats' ? ' open' : ''}`}
             onBlur={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute('open');
+              if (!event.currentTarget.contains(event.relatedTarget)) setCompactMenu(null);
             }}
           >
-            <summary className="header-stats-summary" aria-label="Статистика профилей">?</summary>
+            <button
+              type="button"
+              className="header-stats-summary"
+              aria-label="Статистика профилей"
+              aria-expanded={compactMenu === 'stats'}
+              onClick={() => setCompactMenu((current) => current === 'stats' ? null : 'stats')}
+            >
+              ?
+            </button>
             <div className="stats header-stats-popover">
             <span>
               {"Ранее не открыты:"} <b>{unopenedCount}</b>
@@ -683,7 +691,7 @@ export default function App() {
               {"Лайков:"} <b className="color-success">{likesCount}</b>
             </span>
             </div>
-          </details>
+          </div>
         </div>
         <div className="header-right">
           {saveStatus !== 'idle' && (
@@ -702,16 +710,20 @@ export default function App() {
 
       <div className="app-content">
       <nav className="tabs-nav">
-        <details
-          className="main-tabs-menu"
-          ref={mainTabsMenuRef}
+        <div
+          className={`main-tabs-menu${compactMenu === 'tabs' ? ' open' : ''}`}
           onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute('open');
+            if (!event.currentTarget.contains(event.relatedTarget)) setCompactMenu(null);
           }}
         >
-          <summary className="compact-menu-trigger main-tabs-summary">
+          <button
+            type="button"
+            className="compact-menu-trigger main-tabs-summary"
+            aria-expanded={compactMenu === 'tabs'}
+            onClick={() => setCompactMenu((current) => current === 'tabs' ? null : 'tabs')}
+          >
             {TABS.find(({ id }) => id === activeTab)?.label}
-          </summary>
+          </button>
         <div className="tab-btn-wrapper">
           {TABS.map(({ id, label }) => (
             <button
@@ -723,11 +735,23 @@ export default function App() {
             </button>
           ))}
         </div>
-        </details>
+        </div>
 
         {activeTab === 'profiles' && (
-          <details className="nav-extra-actions">
-            <summary className="nav-actions-summary">Действия</summary>
+          <div
+            className={`nav-extra-actions${compactMenu === 'actions' ? ' open' : ''}`}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setCompactMenu(null);
+            }}
+          >
+            <button
+              type="button"
+              className="nav-actions-summary"
+              aria-expanded={compactMenu === 'actions'}
+              onClick={() => setCompactMenu((current) => current === 'actions' ? null : 'actions')}
+            >
+              Действия
+            </button>
             <div className="nav-extra-actions-list">
             <button
               className={`btn-primary btn-sm btn-restore ${massMessagingStatus.running ? 'running' : ''}`}
@@ -765,7 +789,7 @@ export default function App() {
               {"Обновить"}
             </button>
             </div>
-          </details>
+          </div>
         )}
       </nav>
 

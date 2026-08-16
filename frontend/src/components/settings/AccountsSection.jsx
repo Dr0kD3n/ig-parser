@@ -22,6 +22,7 @@ export default function AccountsSection({
 
   const setAccounts = (accounts) => onSettingsChange({ accounts });
   const handleAdd = () => {
+    document.getElementById('new-account-advanced')?.removeAttribute('open');
     const nameEl = document.getElementById('new-acc-name');
     const proxyEl = document.getElementById('new-acc-proxy');
     const cookiesEl = document.getElementById('new-acc-cookies');
@@ -216,38 +217,54 @@ export default function AccountsSection({
   return (
           <div className="settings-grid">
             <div className="tasks-columns">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                {renderTaskSection('activeParserAccountIds', "Парсер")}
-                {renderTaskSection('activeIndexAccountIds', "Скрапер")}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                {renderTaskSection('activeServerAccountIds', "Сендер")}
-                {renderTaskSection('activeProfilesAccountIds', "Профили")}
-              </div>
+              {renderTaskSection('activeParserAccountIds', "Для профилей")}
+              {renderTaskSection('activeIndexAccountIds', "Для доноров")}
+              {renderTaskSection('activeServerAccountIds', "Сендер")}
               <div className="add-acc-card">
-                <h4 className="mb-20 fs-18">{"Добавить аккаунт"}</h4>
-                <div className="flex gap-16 mb-16">
+                <div className="add-account-header">
+                  <h4 className="fs-18">{"Добавить аккаунт"}</h4>
+                  <button
+                    type="button"
+                    className="add-account-button"
+                    onClick={handleAdd}
+                    aria-label="Добавить аккаунт"
+                    title="Добавить аккаунт"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="add-account-fields">
                   <input
                     type="text"
                     id="new-acc-name"
                     placeholder={"Имя (напр. Аккаунт 1)"}
                     className="search-input w-full"
                   />
-                  <input
-                    type="text"
-                    id="new-acc-proxy"
-                    placeholder={"Прокси: IP:PORT:USER:PASS"}
-                    className="search-input w-full"
-                  />
+                  <details
+                    id="new-account-advanced"
+                    className="account-advanced-settings"
+                    onBlur={(event) => {
+                      if (!event.currentTarget.contains(event.relatedTarget)) {
+                        event.currentTarget.removeAttribute('open');
+                      }
+                    }}
+                  >
+                    <summary>Дополнительно</summary>
+                    <div className="account-advanced-fields">
+                      <input
+                        type="text"
+                        id="new-acc-proxy"
+                        placeholder={"Прокси: IP:PORT:USER:PASS"}
+                        className="search-input w-full"
+                      />
+                      <textarea
+                        id="new-acc-cookies"
+                        placeholder={"Куки (raw text)"}
+                        className="msg-textarea cookies h-100"
+                      />
+                    </div>
+                  </details>
                 </div>
-                <textarea
-                  id="new-acc-cookies"
-                  placeholder={"Куки (raw text)"}
-                  className="msg-textarea cookies h-100 mb-20"
-                />
-                <button className="btn-primary w-full" onClick={handleAdd}>
-                  {"Добавить"}
-                </button>
               </div>
             </div>
 
@@ -380,10 +397,9 @@ export default function AccountsSection({
                         <div className="flex-between align-end">
                           <div className="flex-wrap gap-6 flex-1">
                             {[
-                              { field: 'activeParserAccountIds', label: "Парсер" },
-                              { field: 'activeIndexAccountIds', label: "Скрапер" },
+                              { field: 'activeParserAccountIds', label: "Для профилей" },
+                              { field: 'activeIndexAccountIds', label: "Для доноров" },
                               { field: 'activeServerAccountIds', label: "Сендер" },
-                              { field: 'activeProfilesAccountIds', label: "Профили" },
                               { field: 'activeCheckerAccountIds', label: "Чекер" },
                             ].map((t) => {
                               const isActive = (settingsData[t.field] || []).includes(acc.id);

@@ -908,9 +908,11 @@
 }
 
 .tasks-columns {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
+  align-items: start;
+  align-content: start;
 }
 
 .all-accounts-column {
@@ -1577,8 +1579,95 @@
   border: 1px solid hsl(var(--border));
 }
 
+.tasks-columns .add-acc-card {
+  padding: 20px;
+}
+
 .add-acc-card h4 {
-  margin-top: 0;
+  margin: 0;
+}
+
+.add-account-header {
+  display: flex;
+  margin-bottom: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.add-account-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid hsl(var(--primary));
+  border-radius: 9px;
+  background: hsl(var(--primary));
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.add-account-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.add-account-fields > .search-input,
+.account-advanced-settings {
+  min-width: 0;
+  height: 44px;
+  box-sizing: border-box;
+}
+
+.account-advanced-settings {
+  position: relative;
+  overflow: visible;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--bg-elevated) / 0.45);
+}
+
+.account-advanced-settings > summary {
+  display: flex;
+  padding: 11px 14px;
+  align-items: center;
+  color: hsl(var(--text-muted));
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.account-advanced-settings > summary::-webkit-details-marker {
+  display: none;
+}
+
+.account-advanced-settings > summary::after {
+  content: '+';
+  margin-left: auto;
+  color: hsl(var(--text-dim));
+  font-size: 16px;
+}
+
+.account-advanced-settings[open] > summary::after {
+  content: '−';
+}
+
+.account-advanced-fields {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  display: grid;
+  width: min(360px, calc(100vw - 48px));
+  padding: 12px;
+  gap: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  background: hsl(var(--bg-elevated));
+  box-shadow: var(--shadow-lg);
 }
 
 .acc-card-score {

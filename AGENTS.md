@@ -22,6 +22,7 @@ READ: не re-read неизменённые; index.css целиком запре
 READ_BANNED: full-repo-scan | read-all-skills | agent-transcripts | logs без запроса | бинарники/БД
 
 TESTS: npm test/vitest только по явной просьбе или CI/коммит
+BUILD: любые сборки (`npm run build`, Vite, package, build scripts) — только по явной просьбе пользователя
 PARALLEL: независимые tool-calls одним batch
 DIFF: минимальный scope | стиль окружения | исправлять причину, не симптом
 DESIGN: простота > cleverness; переиспользовать существующее; новая абстракция — только если без неё сложнее; «упростим потом» запрещено

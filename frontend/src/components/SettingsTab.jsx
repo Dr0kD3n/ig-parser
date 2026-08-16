@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, startTransition } from 'react';
+import { useState, useEffect, useCallback, startTransition } from 'react';
 import { toast } from 'react-hot-toast';
 import { CITIES_PRESETS } from '../constants/cities';
 import SkeletonSettings from './settings/SkeletonSettings';
@@ -40,7 +40,7 @@ export default function SettingsTab({
   failedUrls,
 }) {
   const [settingsTab, setSettingsTab] = useState(() => localStorage.getItem('ig_settings_tab') || 'accounts');
-  const settingsNavMenuRef = useRef(null);
+  const [compactMenu, setCompactMenu] = useState(null);
   const [donorsMounted, setDonorsMounted] = useState(
     () => localStorage.getItem('ig_settings_tab') === 'donors'
   );
@@ -58,7 +58,7 @@ export default function SettingsTab({
     if (tab === 'donors') setDonorsMounted(true);
     startTransition(() => setSettingsTab(tab));
     localStorage.setItem('ig_settings_tab', tab);
-    settingsNavMenuRef.current?.removeAttribute('open');
+    setCompactMenu(null);
   };
 
   useEffect(() => {
@@ -144,16 +144,20 @@ export default function SettingsTab({
   return (
     <div className="settings-wrap tab-content-fade">
       <div className="settings-header">
-        <details
-          className="settings-compact-menu settings-sections-menu"
-          ref={settingsNavMenuRef}
+        <div
+          className={`settings-compact-menu settings-sections-menu${compactMenu === 'sections' ? ' open' : ''}`}
           onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute('open');
+            if (!event.currentTarget.contains(event.relatedTarget)) setCompactMenu(null);
           }}
         >
-          <summary className="compact-menu-trigger settings-menu-summary">
+          <button
+            type="button"
+            className="compact-menu-trigger settings-menu-summary"
+            aria-expanded={compactMenu === 'sections'}
+            onClick={() => setCompactMenu((current) => current === 'sections' ? null : 'sections')}
+          >
             {SETTINGS_TAB_LABELS[settingsTab]}
-          </summary>
+          </button>
           <div className="settings-nested-tabs settings-menu-popover">
           {SETTINGS_TABS.map((tab) => (
             <button
@@ -165,14 +169,21 @@ export default function SettingsTab({
             </button>
           ))}
           </div>
-        </details>
-        <details
-          className="settings-compact-menu settings-quick-menu"
+        </div>
+        <div
+          className={`settings-compact-menu settings-quick-menu${compactMenu === 'quick' ? ' open' : ''}`}
           onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute('open');
+            if (!event.currentTarget.contains(event.relatedTarget)) setCompactMenu(null);
           }}
         >
-          <summary className="compact-menu-trigger settings-menu-summary">Быстрые настройки</summary>
+          <button
+            type="button"
+            className="compact-menu-trigger settings-menu-summary"
+            aria-expanded={compactMenu === 'quick'}
+            onClick={() => setCompactMenu((current) => current === 'quick' ? null : 'quick')}
+          >
+            Настройки
+          </button>
           <div className="header-right gap-20 settings-quick-controls settings-menu-popover">
           <label className="checkbox-label checkbox" title="Графитовая чёрно-белая палитра">
             <input
@@ -223,7 +234,7 @@ export default function SettingsTab({
             />
           </label>
           </div>
-        </details>
+        </div>
       </div>
 
       {settingsTab === 'accounts' && (

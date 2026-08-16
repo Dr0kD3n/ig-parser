@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, memo } from 'react';
 import { FileIcon } from './Icons';
-import { useCollapsed } from '../hooks/useCollapsed';
 
 const LogGroup = memo(function LogGroup({ group }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -86,10 +85,6 @@ export default function ControlsTab({
 }) {
   const logBoxRef = useRef(null);
   const liveViewUrlRef = useRef('');
-  const [scraperCollapsed, toggleScraper] = useCollapsed('ig_scraper_collapsed', false);
-  const [parserCollapsed, toggleParser] = useCollapsed('ig_parser_collapsed', false);
-  const [logsCollapsed, toggleLogs] = useCollapsed('ig_logs_collapsed', false);
-  const [streamCollapsed, toggleStream] = useCollapsed('ig_stream_collapsed', false);
   const [liveViewSrc, setLiveViewSrc] = useState('');
   const [isZoomed, setIsZoomed] = useState(false);
 
@@ -169,73 +164,67 @@ export default function ControlsTab({
   return (
     <div className="controls-panel tab-content-fade">
       <div className="control-card">
-        <h3 className="control-header-content" onClick={toggleScraper}>
+        <h3 className="control-header-content">
           Фарм профилей
           <div className="control-status-group">
             <div className={`status-dot${botStatus.index ? ' active' : ''}`} />
-            <span className="count-badge">{scraperCollapsed ? '▼' : '▲'}</span>
           </div>
         </h3>
-        {!scraperCollapsed && (
-          <div className="flex-v gap-12 mt-12">
-            <p className="control-desc">Сбор профилей по донорам.</p>
-            {botStatus.index ? (
-              <div className="flex gap-12">
-                <button
-                  type="button"
-                  className="btn-primary btn-danger btn-ghost"
-                  onClick={() => onBotControl('index', 'stop')}
-                >
-                  Остановить
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary btn-warning btn-ghost"
-                  onClick={handleSkipDonor}
-                >
-                  Пропустить донора
-                </button>
-              </div>
-            ) : (
-              <button type="button" className="btn-primary" onClick={() => onBotControl('index', 'start')}>
-                Запустить
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="control-card">
-        <h3 className="control-header-content" onClick={toggleParser}>
-          Фарм доноров
-          <div className="control-status-group">
-            <div className={`status-dot${botStatus.parser ? ' active' : ''}`} />
-            <span className="count-badge">{parserCollapsed ? '▼' : '▲'}</span>
-          </div>
-        </h3>
-        {!parserCollapsed && (
-          <div className="flex-v gap-12 mt-12">
-            <p className="control-desc">Поиск активных доноров.</p>
-            {botStatus.parser ? (
+        <div className="flex-v gap-12 mt-12">
+          <p className="control-desc">Сбор профилей по донорам.</p>
+          {botStatus.index ? (
+            <div className="flex gap-12">
               <button
                 type="button"
                 className="btn-primary btn-danger btn-ghost"
-                onClick={() => onBotControl('parser', 'stop')}
+                onClick={() => onBotControl('index', 'stop')}
               >
                 Остановить
               </button>
-            ) : (
-              <button type="button" className="btn-primary" onClick={() => onBotControl('parser', 'start')}>
-                Запустить
+              <button
+                type="button"
+                className="btn-primary btn-warning btn-ghost"
+                onClick={handleSkipDonor}
+              >
+                Пропустить донора
               </button>
-            )}
-          </div>
-        )}
+            </div>
+          ) : (
+            <button type="button" className="btn-primary" onClick={() => onBotControl('index', 'start')}>
+              Запустить
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className={`control-card logs-card${logsCollapsed ? ' collapsed' : ''}`}>
-        <div className="logs-header" style={{ marginBottom: logsCollapsed ? 0 : 12 }}>
-          <h3 className="control-header-content gap-10" onClick={toggleLogs}>
+      <div className="control-card">
+        <h3 className="control-header-content">
+          Фарм доноров
+          <div className="control-status-group">
+            <div className={`status-dot${botStatus.parser ? ' active' : ''}`} />
+          </div>
+        </h3>
+        <div className="flex-v gap-12 mt-12">
+          <p className="control-desc">Поиск активных доноров.</p>
+          {botStatus.parser ? (
+            <button
+              type="button"
+              className="btn-primary btn-danger btn-ghost"
+              onClick={() => onBotControl('parser', 'stop')}
+            >
+              Остановить
+            </button>
+          ) : (
+            <button type="button" className="btn-primary" onClick={() => onBotControl('parser', 'start')}>
+              Запустить
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="control-card logs-card">
+        <div className="logs-header" style={{ marginBottom: 12 }}>
+          <h3 className="control-header-content gap-10">
             <FileIcon /> Логи
           </h3>
           <div className="control-status-group">
@@ -250,13 +239,9 @@ export default function ControlsTab({
               Очистить
             </button>
             <div className="badge viewedTag live-badge">Live</div>
-            <span className="count-badge cursor-pointer" onClick={toggleLogs}>
-              {logsCollapsed ? '▼' : '▲'}
-            </span>
           </div>
         </div>
-        {!logsCollapsed && (
-          <div ref={logBoxRef} id="log-box" className="logs-container">
+        <div ref={logBoxRef} id="log-box" className="logs-container">
             {groups.length === 0 && (
               <div style={{ color: 'hsl(var(--text-dim))', textAlign: 'center', padding: '40px' }}>
                 Логи пусты. Запустите ботов...
@@ -271,26 +256,15 @@ export default function ControlsTab({
                 style={{ marginLeft: 18, background: 'hsl(var(--primary))' }}
               />
             )}
-          </div>
-        )}
+        </div>
       </div>
 
-      <div className={`stream-card${streamCollapsed ? ' collapsed' : ''}`}>
-        <div
-          className="logs-header"
-          style={{ marginBottom: streamCollapsed ? 0 : 0, cursor: 'pointer' }}
-          onClick={toggleStream}
-        >
+      <div className="stream-card">
+        <div className="logs-header">
           <h3 style={{ margin: 0 }}>Стрим</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div className={`status-dot${botsRunning ? ' active' : ''}`} />
-            <span style={{ color: 'hsl(var(--text-muted))', fontSize: '14px' }}>
-              {streamCollapsed ? '▼' : '▲'}
-            </span>
-          </div>
+          <div className={`status-dot${botsRunning ? ' active' : ''}`} />
         </div>
-        {!streamCollapsed && (
-          <div className="stream-container" onClick={() => setIsZoomed(true)}>
+        <div className="stream-container" onClick={() => setIsZoomed(true)}>
             <img
               src={liveViewSrc}
               className={botsRunning && liveViewSrc ? 'block' : 'hidden'}
@@ -307,8 +281,7 @@ export default function ControlsTab({
             <div className="stream-placeholder">
               {botsRunning ? 'Ожидание трансляции...' : 'Браузер не запущен'}
             </div>
-          </div>
-        )}
+        </div>
       </div>
 
       {isZoomed && (

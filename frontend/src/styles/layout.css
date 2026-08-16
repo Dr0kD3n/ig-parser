@@ -2,7 +2,7 @@
   --app-container-width: 100%;
   --content-gutter: 16px;
   --content-section-gap: 16px;
-  --profile-grid-gap: 24px;
+  --profile-grid-gap: 12px;
   --profile-grid-columns: 2;
 }
 
@@ -217,7 +217,7 @@
     box-shadow: var(--shadow-lg);
   }
 
-  .main-tabs-menu:not([open]) .tab-btn-wrapper {
+  .main-tabs-menu:not(.open) .tab-btn-wrapper {
     display: none;
   }
 
@@ -260,7 +260,7 @@
     box-shadow: var(--shadow-lg);
   }
 
-  .header-stats-menu:not([open]) .header-stats-popover {
+  .header-stats-menu:not(.open) .header-stats-popover {
     display: none;
   }
 
@@ -314,7 +314,7 @@
     box-shadow: var(--shadow-lg);
   }
 
-  .nav-extra-actions:not([open]) .nav-extra-actions-list {
+  .nav-extra-actions:not(.open) .nav-extra-actions-list {
     display: none;
   }
 
@@ -322,26 +322,30 @@
     width: 100%;
     justify-content: center;
   }
+}
 
+@media (max-width: 2199px) {
   .settings-header {
     align-items: center;
     gap: 10px;
   }
 
-  .settings-compact-menu {
+  .settings-quick-menu {
     position: relative;
     display: block;
+    margin-left: auto;
   }
 
-  .settings-menu-summary {
+  .settings-quick-menu .settings-menu-summary {
     display: flex;
   }
 
-  .settings-menu-popover {
+  .settings-quick-menu .settings-menu-popover {
     position: absolute;
     top: calc(100% + 8px);
+    right: 0;
     z-index: 45;
-    min-width: 240px;
+    width: 290px;
     padding: 8px;
     border: 1px solid hsl(var(--border));
     border-radius: 14px;
@@ -349,28 +353,11 @@
     box-shadow: var(--shadow-lg);
   }
 
-  .settings-compact-menu:not([open]) .settings-menu-popover {
+  .settings-quick-menu:not(.open) .settings-menu-popover {
     display: none;
   }
 
-  .settings-sections-menu .settings-menu-popover {
-    left: 0;
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .settings-sections-menu .tab-btn {
-    width: 100%;
-    text-align: left;
-  }
-
-  .settings-quick-menu {
-    margin-left: auto;
-  }
-
   .settings-quick-controls {
-    right: 0;
-    width: 290px;
     margin-left: 0;
     flex-direction: column;
     align-items: stretch;
@@ -379,6 +366,41 @@
 
   .settings-quick-controls .checkbox-label {
     justify-content: space-between;
+  }
+}
+
+@media (max-width: 1599px) {
+  .settings-sections-menu {
+    position: relative;
+    display: block;
+  }
+
+  .settings-sections-menu .settings-menu-summary {
+    display: flex;
+  }
+
+  .settings-sections-menu .settings-menu-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 45;
+    min-width: 240px;
+    padding: 8px;
+    flex-direction: column;
+    align-items: stretch;
+    border: 1px solid hsl(var(--border));
+    border-radius: 14px;
+    background: hsl(var(--bg-elevated));
+    box-shadow: var(--shadow-lg);
+  }
+
+  .settings-sections-menu:not(.open) .settings-menu-popover {
+    display: none;
+  }
+
+  .settings-sections-menu .tab-btn {
+    width: 100%;
+    text-align: left;
   }
 }
 
@@ -407,7 +429,7 @@
     --app-container-width: 720px;
     --content-gutter: 24px;
     --content-section-gap: 18px;
-    --profile-grid-gap: 28px;
+    --profile-grid-gap: 16px;
     --profile-grid-columns: 3;
   }
 }
@@ -417,7 +439,7 @@
     --app-container-width: 960px;
     --content-gutter: 32px;
     --content-section-gap: 20px;
-    --profile-grid-gap: 32px;
+    --profile-grid-gap: 16px;
     --profile-grid-columns: 4;
   }
 }
@@ -425,29 +447,31 @@
 @media (min-width: 1280px) {
   :root {
     --app-container-width: 1120px;
-    --profile-grid-columns: 5;
+    --profile-grid-gap: 16px;
+    --profile-grid-columns: 4;
   }
 }
 
 @media (min-width: 1440px) {
   :root {
     --app-container-width: 1280px;
-    --profile-grid-gap: 40px;
+    --profile-grid-gap: 16px;
+    --profile-grid-columns: 5;
   }
 }
 
 @media (min-width: 1600px) {
   :root {
     --app-container-width: 1440px;
-    --profile-grid-gap: 40px;
-    --profile-grid-columns: 6;
+    --profile-grid-gap: 16px;
+    --profile-grid-columns: 5;
   }
 }
 
 @media (min-width: 1920px) {
   :root {
     --app-container-width: 1680px;
-    --profile-grid-gap: 48px;
-    --profile-grid-columns: 7;
+    --profile-grid-gap: 16px;
+    --profile-grid-columns: 6;
   }
 }

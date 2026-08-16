@@ -96,10 +96,6 @@
   }
 }
 
-.logs-card.collapsed {
-  height: auto;
-}
-
 .logs-header {
   padding: 16px 24px;
   background: hsl(var(--bg-elevated));
