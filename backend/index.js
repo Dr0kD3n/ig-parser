@@ -146,10 +146,22 @@ const fetchProfileInfo = async (page, username) => {
         const u = json.data?.user;
         if (!u) return null;
 
+        const photoVersions = [
+          ...(Array.isArray(u.hd_profile_pic_versions) ? u.hd_profile_pic_versions : []),
+          u.hd_profile_pic_url_info,
+          u.profile_pic_url_info,
+        ]
+          .filter((entry) => entry?.url)
+          .sort(
+            (left, right) =>
+              (Number(right.width) || 0) * (Number(right.height) || 0) -
+              (Number(left.width) || 0) * (Number(left.height) || 0)
+          );
+
         return {
           name: u.full_name || uname,
           bio: u.biography || '',
-          photo: u.profile_pic_url_hd || u.profile_pic_url || '',
+          photo: photoVersions[0]?.url || u.profile_pic_url_hd || u.profile_pic_url || '',
           fCount: u.edge_followed_by?.count || 0,
           pCount: u.edge_owner_to_timeline_media?.count || 0,
           isPrivate: u.is_private,
@@ -869,7 +881,22 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
           if (res.ok) {
             const json = await res.json();
             if (json?.data?.user) {
-              if (json.data.user.profile_pic_url_hd) photo = json.data.user.profile_pic_url_hd;
+              const user = json.data.user;
+              const photoVersions = [
+                ...(Array.isArray(user.hd_profile_pic_versions)
+                  ? user.hd_profile_pic_versions
+                  : []),
+                user.hd_profile_pic_url_info,
+                user.profile_pic_url_info,
+              ]
+                .filter((entry) => entry?.url)
+                .sort(
+                  (left, right) =>
+                    (Number(right.width) || 0) * (Number(right.height) || 0) -
+                    (Number(left.width) || 0) * (Number(left.height) || 0)
+                );
+              photo =
+                photoVersions[0]?.url || user.profile_pic_url_hd || user.profile_pic_url || '';
               if (json.data.user.edge_followed_by?.count !== undefined) {
                 fCount = json.data.user.edge_followed_by.count;
                 followersResolved = true;

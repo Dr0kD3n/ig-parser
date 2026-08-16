@@ -180,7 +180,24 @@ async function restorePhotos(onProgress, options = {}) {
                   const json = await res.json();
                   const user = json?.data?.user;
                   if (user) {
-                    result.photo = user.profile_pic_url_hd || user.profile_pic_url || '';
+                    const photoVersions = [
+                      ...(Array.isArray(user.hd_profile_pic_versions)
+                        ? user.hd_profile_pic_versions
+                        : []),
+                      user.hd_profile_pic_url_info,
+                      user.profile_pic_url_info,
+                    ]
+                      .filter((entry) => entry?.url)
+                      .sort(
+                        (left, right) =>
+                          (Number(right.width) || 0) * (Number(right.height) || 0) -
+                          (Number(left.width) || 0) * (Number(left.height) || 0)
+                      );
+                    result.photo =
+                      photoVersions[0]?.url ||
+                      user.profile_pic_url_hd ||
+                      user.profile_pic_url ||
+                      '';
                     result.bio = user.biography || '';
                     result.followers = user.edge_followed_by?.count || 0;
                     result.following = user.edge_follow?.count || 0;
