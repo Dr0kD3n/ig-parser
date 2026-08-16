@@ -1,6 +1,6 @@
 {
   "name": "ig-bot-local-backend",
-  "version": "1.12.0",
+  "version": "1.12.1",
   "description": "",
   "main": "server.js",
   "bin": "server.js",
@@ -9,7 +9,7 @@
     "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "npm run build:windows && npm run build:macos",
-    "build:windows": "pkg . --targets node18-win-x64 --output ig-bot-local-backend.exe",
+    "build:windows": "pkg . --targets node18-win-x64 --output ig-bot-local-backend.exe --no-bytecode --public-packages \"*\" --public",
     "build:macos": "pkg . --targets node18-macos-x64,node18-macos-arm64 --output ig-bot-local-backend-macos --no-bytecode --public-packages \"*\" --public",
     "postinstall": "node ./scripts/patch-playwright-mcp.js"
   },

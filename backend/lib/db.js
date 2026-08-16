@@ -4,8 +4,9 @@ exports.getDB = getDB;
 
 const sqlite_1 = require('sqlite');
 const path_1 = require('path');
-const sqlite3_1 = require(
-  process.pkg ? path_1.join(path_1.dirname(process.execPath), 'node_modules', 'sqlite3') : 'sqlite3'
+const module_1 = require('module');
+const sqlite3_1 = (0, module_1.createRequire)(process.pkg ? process.execPath : __filename)(
+  'sqlite3'
 );
 const promises_1 = require('fs/promises');
 const utils_1 = require('./utils');

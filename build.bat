@@ -97,6 +97,15 @@ echo.
 echo ===================================
 echo [4/6] Copying Support Files
 echo ===================================
+mkdir "dist\node_modules"
+xcopy /E /I /Y "node_modules\sqlite3" "dist\node_modules\sqlite3\" >nul
+xcopy /E /I /Y "node_modules\bindings" "dist\node_modules\bindings\" >nul
+xcopy /E /I /Y "node_modules\file-uri-to-path" "dist\node_modules\file-uri-to-path\" >nul
+if not exist "dist\node_modules\sqlite3\build\Release\node_sqlite3.node" (
+    echo [ERROR] SQLite native runtime was not copied to dist!
+    pause
+    exit /b 1
+)
 copy "backend\package.json" "dist\package.json" >nul
 copy "backend\scripts\patch-playwright-mcp.js" "dist\scripts\" >nul
 copy "install.sh" "dist\" >nul
