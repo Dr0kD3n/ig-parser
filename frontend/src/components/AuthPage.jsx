@@ -14,8 +14,8 @@ function validateFields({ isLogin, email, password, registrationCode }) {
   }
 
   if (!password) errors.password = 'Введите пароль.';
-  else if (!isLogin && password.length < 12) {
-    errors.password = 'Пароль должен содержать минимум 12 символов.';
+  else if (!isLogin && password.length < 6) {
+    errors.password = 'Пароль должен содержать минимум 6 символов.';
   } else if (!isLogin && password.length > 128) {
     errors.password = 'Пароль не должен превышать 128 символов.';
   }
@@ -30,26 +30,26 @@ function validateFields({ isLogin, email, password, registrationCode }) {
   return errors;
 }
 
-function mapServerErrors(response, data, isLogin) {
-  if (data?.fieldErrors && typeof data.fieldErrors === 'object') return data.fieldErrors;
-  if (response.status === 429) return { form: 'Слишком много попыток. Попробуйте позже.' };
-  if (response.status >= 500) return { form: 'Сервис временно недоступен. Попробуйте позже.' };
+function mapServerError(response, data, isLogin) {
+  if (data?.fieldErrors && typeof data.fieldErrors === 'object') {
+    return Object.values(data.fieldErrors)[0] || 'Проверьте данные формы.';
+  }
+  if (response.status === 429) return 'Слишком много попыток. Попробуйте позже.';
+  if (response.status >= 500) return 'Сервис временно недоступен. Попробуйте позже.';
 
   const message = String(data?.error || '');
   if (!isLogin && /invalid.*registration code|registration code.*(invalid|used)/i.test(message)) {
-    return { registrationCode: 'Код регистрации неверный или уже использован.' };
+    return 'Код регистрации неверный или уже использован.';
   }
   if (!isLogin && /unable to create account/i.test(message)) {
-    return { email: 'Аккаунт с таким email уже существует.' };
+    return 'Аккаунт с таким email уже существует.';
   }
   if (!isLogin && /valid email.*password.*registration code/i.test(message)) {
-    return { form: 'Проверьте email, пароль и код регистрации.' };
+    return 'Проверьте email, пароль и код регистрации.';
   }
-  if (/invalid credentials/i.test(message)) return { form: 'Неверный email или пароль.' };
-  if (/account is blocked/i.test(message)) return { form: 'Аккаунт заблокирован.' };
-  return {
-    form: isLogin ? 'Не удалось войти. Попробуйте ещё раз.' : 'Не удалось зарегистрироваться.',
-  };
+  if (/invalid credentials/i.test(message)) return 'Неверный email или пароль.';
+  if (/account is blocked/i.test(message)) return 'Аккаунт заблокирован.';
+  return isLogin ? 'Не удалось войти. Попробуйте ещё раз.' : 'Не удалось зарегистрироваться.';
 }
 
 export default function AuthPage({ onLoginSuccess }) {
@@ -58,34 +58,19 @@ export default function AuthPage({ onLoginSuccess }) {
   const [password, setPassword] = useState('');
   const [registrationCode, setRegistrationCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-
-  const updateField = (field, value, setter) => {
-    setter(value);
-    setFieldErrors((current) => {
-      if (!current[field] && !current.form) return current;
-      const next = { ...current };
-      delete next[field];
-      delete next.form;
-      return next;
-    });
-  };
 
   const switchMode = (loginMode) => {
     setIsLogin(loginMode);
-    setFieldErrors({});
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const clientErrors = validateFields({ isLogin, email, password, registrationCode });
     if (Object.keys(clientErrors).length > 0) {
-      setFieldErrors(clientErrors);
       toast.error(Object.values(clientErrors)[0]);
       return;
     }
 
-    setFieldErrors({});
     setIsLoading(true);
 
     const endpoint = isLogin ? '/api/auth/login' : '/api/auth/signup';
@@ -117,15 +102,11 @@ export default function AuthPage({ onLoginSuccess }) {
           setIsLogin(true);
         }
       } else {
-        const errors = mapServerErrors(res, data, isLogin);
-        setFieldErrors(errors);
-        toast.error(Object.values(errors)[0]);
+        toast.error(mapServerError(res, data, isLogin));
       }
     } catch (error) {
       console.error('Auth error:', error);
-      const errors = { form: 'Не удалось соединиться с сервером. Попробуйте позже.' };
-      setFieldErrors(errors);
-      toast.error(errors.form);
+      toast.error('Не удалось соединиться с сервером. Попробуйте позже.');
     } finally {
       setIsLoading(false);
     }
@@ -159,11 +140,6 @@ export default function AuthPage({ onLoginSuccess }) {
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          {fieldErrors.form && (
-            <p className="auth-form-error" role="alert">
-              {fieldErrors.form}
-            </p>
-          )}
           <div className="input-group">
             <label className="label" htmlFor="auth-email">
               Email
@@ -174,17 +150,10 @@ export default function AuthPage({ onLoginSuccess }) {
               className="text-input"
               placeholder="email@example.com"
               value={email}
-              onChange={(e) => updateField('email', e.target.value, setEmail)}
+              onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              aria-invalid={Boolean(fieldErrors.email)}
-              aria-describedby={fieldErrors.email ? 'auth-email-error' : undefined}
             />
-            {fieldErrors.email && (
-              <p id="auth-email-error" className="auth-field-error" role="alert">
-                {fieldErrors.email}
-              </p>
-            )}
           </div>
 
           <div className="input-group">
@@ -197,28 +166,10 @@ export default function AuthPage({ onLoginSuccess }) {
               className="text-input"
               placeholder="••••••••••••"
               value={password}
-              onChange={(e) => updateField('password', e.target.value, setPassword)}
+              onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete={isLogin ? 'current-password' : 'new-password'}
-              aria-invalid={Boolean(fieldErrors.password)}
-              aria-describedby={
-                fieldErrors.password
-                  ? 'auth-password-error'
-                  : !isLogin
-                    ? 'auth-password-hint'
-                    : undefined
-              }
             />
-            {!isLogin && !fieldErrors.password && (
-              <p id="auth-password-hint" className="auth-field-hint">
-                От 12 до 128 символов.
-              </p>
-            )}
-            {fieldErrors.password && (
-              <p id="auth-password-error" className="auth-field-error" role="alert">
-                {fieldErrors.password}
-              </p>
-            )}
           </div>
 
           {!isLogin && (
@@ -232,19 +183,10 @@ export default function AuthPage({ onLoginSuccess }) {
                 className="text-input"
                 placeholder="ABC123"
                 value={registrationCode}
-                onChange={(e) =>
-                  updateField('registrationCode', e.target.value, setRegistrationCode)
-                }
+                onChange={(e) => setRegistrationCode(e.target.value)}
                 required
                 autoComplete="off"
-                aria-invalid={Boolean(fieldErrors.registrationCode)}
-                aria-describedby={fieldErrors.registrationCode ? 'auth-code-error' : undefined}
               />
-              {fieldErrors.registrationCode && (
-                <p id="auth-code-error" className="auth-field-error" role="alert">
-                  {fieldErrors.registrationCode}
-                </p>
-              )}
             </div>
           )}
 

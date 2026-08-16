@@ -23,8 +23,8 @@ exports.signup = async (req, res) => {
     fieldErrors.email = 'Введите корректный email.';
   }
   if (!password) fieldErrors.password = 'Введите пароль.';
-  else if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
-    fieldErrors.password = 'Пароль должен содержать от 12 до 128 символов.';
+  else if (typeof password !== 'string' || password.length < 6 || password.length > 128) {
+    fieldErrors.password = 'Пароль должен содержать от 6 до 128 символов.';
   }
   if (!registrationCode) fieldErrors.registrationCode = 'Введите код регистрации.';
   else if (!REGISTRATION_CODE_PATTERN.test(registrationCode)) {
