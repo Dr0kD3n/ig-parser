@@ -1,5 +1,9 @@
 const RELEASES = [
   {
+    version: '1.12.6',
+    changes: ['Windows build полностью исключает проверку и копирование macOS-файлов.'],
+  },
+  {
     version: '1.12.5',
     changes: ['Сборка приложения на Windows больше не запускает создание macOS-версий.'],
   },
