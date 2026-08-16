@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const jwt = require('jsonwebtoken');
@@ -6,11 +7,12 @@ const { getDB } = require('./db');
 const { JWT_SECRET, JWT_PUBLIC_KEY, IS_ASYMMETRIC } = require('./auth-config');
 
 const PROD_URL = 'https://botback-production-1011.up.railway.app';
-const SYSTEM_VERIFIER_PREFERENCE_MS = 10 * 60_000;
-const VERIFY_TIMEOUT_MS = 6_000;
-const VERIFY_RETRY_DELAY_MS = 350;
+const READ_VERIFICATION_CACHE_MS = 10_000;
+const READ_VERIFICATION_CACHE_LIMIT = 100;
+const VERIFY_TIMEOUT_MS = 3_000;
+const VERIFY_RETRY_DELAY_MS = 200;
+const readVerificationCache = new Map();
 const remoteVerificationsInFlight = new Map();
-let systemVerifierPreferredUntil = 0;
 const remoteAuthAgents = {
   http: new http.Agent({ keepAlive: true }),
   https: new https.Agent({ keepAlive: true }),
@@ -68,7 +70,7 @@ function verifyRemoteTokenWithPowerShell(token, authUrl) {
       '$inputData = [Console]::In.ReadToEnd() | ConvertFrom-Json',
       '$token = $inputData.token',
       '$uri = $inputData.uri',
-      "try { $response = Invoke-WebRequest -UseBasicParsing -Uri $uri -Headers @{ Authorization = ('Bearer ' + $token) } -TimeoutSec 15; [Console]::Out.Write([int]$response.StatusCode) }",
+      "try { $response = Invoke-WebRequest -UseBasicParsing -Uri $uri -Headers @{ Authorization = ('Bearer ' + $token) } -TimeoutSec 6; [Console]::Out.Write([int]$response.StatusCode) }",
       'catch { if ($_.Exception.Response) { [Console]::Out.Write([int]$_.Exception.Response.StatusCode) } else { exit 2 } }',
     ].join('\n');
     const child = spawn(
@@ -83,7 +85,7 @@ function verifyRemoteTokenWithPowerShell(token, authUrl) {
       settled = true;
       resolve(result);
     };
-    const killTimer = setTimeout(() => child.kill(), 20_000);
+    const killTimer = setTimeout(() => child.kill(), 8_000);
     killTimer.unref?.();
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk) => {
@@ -140,11 +142,8 @@ function verifyRemoteTokenWithCurl(token, authUrl) {
         'show-error',
         'output = "/dev/null"',
         'write-out = "%{http_code}"',
-        'connect-timeout = 6',
-        'max-time = 15',
-        'retry = 2',
-        'retry-delay = 1',
-        'retry-all-errors',
+        'connect-timeout = 3',
+        'max-time = 6',
         `header = "Authorization: Bearer ${token}"`,
         `url = "${escapeCurlConfig(verifyUrl)}"`,
       ].join('\n')
@@ -159,33 +158,81 @@ function verifyRemoteTokenWithSystem(token, authUrl) {
 }
 
 async function verifyRemoteToken(token, authUrl) {
-  if (systemVerifierPreferredUntil > Date.now()) {
-    const systemResult = await verifyRemoteTokenWithSystem(token, authUrl);
-    if (systemResult !== 'unavailable') return systemResult;
-    systemVerifierPreferredUntil = 0;
-  }
-
   const firstResult = await verifyRemoteTokenWithNode(token, authUrl);
   if (firstResult !== 'unavailable') return firstResult;
   await new Promise((resolve) => setTimeout(resolve, VERIFY_RETRY_DELAY_MS));
-  const retryResult = await verifyRemoteTokenWithNode(token, authUrl);
-  if (retryResult !== 'unavailable') return retryResult;
-  console.warn('[AUTH] Switching to system HTTP verifier');
-  const systemResult = await verifyRemoteTokenWithSystem(token, authUrl);
-  if (systemResult !== 'unavailable') {
-    systemVerifierPreferredUntil = Date.now() + SYSTEM_VERIFIER_PREFERENCE_MS;
+  console.warn('[AUTH] Retrying with Node and system HTTP verifiers');
+  return firstConclusiveVerification([
+    verifyRemoteTokenWithNode(token, authUrl),
+    verifyRemoteTokenWithSystem(token, authUrl),
+  ]);
+}
+
+function firstConclusiveVerification(verifications) {
+  return new Promise((resolve) => {
+    let pending = verifications.length;
+    let settled = false;
+    for (const verification of verifications) {
+      Promise.resolve(verification).then((result) => {
+        if (settled) return;
+        if (result !== 'unavailable') {
+          settled = true;
+          resolve(result);
+          return;
+        }
+        pending -= 1;
+        if (pending === 0) resolve('unavailable');
+      });
+    }
+  });
+}
+
+function getVerificationKey(token, authUrl) {
+  return crypto.createHash('sha256').update(`${authUrl}\0${token}`).digest('hex');
+}
+
+function pruneReadVerificationCache(now = Date.now()) {
+  for (const [key, expiresAt] of readVerificationCache) {
+    if (expiresAt <= now || readVerificationCache.size >= READ_VERIFICATION_CACHE_LIMIT) {
+      readVerificationCache.delete(key);
+    }
   }
-  return systemResult;
+}
+
+function cacheReadVerification(key, token) {
+  const decoded = jwt.decode(token);
+  const tokenExpiresAt =
+    decoded && typeof decoded !== 'string' && Number.isFinite(decoded.exp) ? decoded.exp * 1000 : 0;
+  const expiresAt = Math.min(Date.now() + READ_VERIFICATION_CACHE_MS, tokenExpiresAt);
+  if (expiresAt <= Date.now()) return;
+  if (readVerificationCache.size >= READ_VERIFICATION_CACHE_LIMIT) {
+    pruneReadVerificationCache();
+  }
+  readVerificationCache.set(key, expiresAt);
 }
 
 function verifyRemoteTokenOncePerBurst(token, authUrl) {
-  const existing = remoteVerificationsInFlight.get(token);
+  const key = getVerificationKey(token, authUrl);
+  const existing = remoteVerificationsInFlight.get(key);
   if (existing) return existing;
-  const verification = verifyRemoteToken(token, authUrl).finally(() => {
-    remoteVerificationsInFlight.delete(token);
-  });
-  remoteVerificationsInFlight.set(token, verification);
+  const verification = verifyRemoteToken(token, authUrl)
+    .then((result) => {
+      if (result === 'valid') cacheReadVerification(key, token);
+      if (result === 'invalid') readVerificationCache.delete(key);
+      return result;
+    })
+    .finally(() => remoteVerificationsInFlight.delete(key));
+  remoteVerificationsInFlight.set(key, verification);
   return verification;
+}
+
+function hasRecentReadVerification(token, authUrl) {
+  const key = getVerificationKey(token, authUrl);
+  const expiresAt = readVerificationCache.get(key);
+  if (!expiresAt) return false;
+  if (expiresAt > Date.now()) return true;
+  readVerificationCache.delete(key);
+  return false;
 }
 
 exports.verifyToken = async (req, res, next) => {
@@ -209,16 +256,25 @@ exports.verifyToken = async (req, res, next) => {
   const useRemoteVerify = Boolean(authUrl) && !skipRemote;
 
   if (useRemoteVerify) {
-    const remoteResult = await verifyRemoteTokenOncePerBurst(token, authUrl);
+    const decoded = jwt.decode(token);
+    if (
+      !decoded ||
+      typeof decoded === 'string' ||
+      !Number.isFinite(decoded.exp) ||
+      decoded.exp * 1000 <= Date.now()
+    ) {
+      return res.status(401).json({ error: 'Invalid or expired token.' });
+    }
+    const isReadOnly = req.method === 'GET' || req.method === 'HEAD';
+    const remoteResult =
+      isReadOnly && hasRecentReadVerification(token, authUrl)
+        ? 'valid'
+        : await verifyRemoteTokenOncePerBurst(token, authUrl);
     if (remoteResult === 'invalid') {
       return res.status(401).json({ error: 'Session expired or account blocked.' });
     }
     if (remoteResult === 'unavailable') {
       return res.status(503).json({ error: 'Authentication service unavailable.' });
-    }
-    const decoded = jwt.decode(token);
-    if (!decoded || typeof decoded === 'string') {
-      return res.status(401).json({ error: 'Invalid token payload' });
     }
     req.user = { id: decoded.id, email: decoded.email, role: decoded.role || 'user' };
     return next();
