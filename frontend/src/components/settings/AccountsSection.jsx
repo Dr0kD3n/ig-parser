@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { EditIcon, TrashIcon } from '../Icons';
 import { toast } from 'react-hot-toast';
 import { useDialog } from '../../context/DialogContext';
@@ -12,6 +12,7 @@ export default function AccountsSection({
   const { confirm } = useDialog();
   const [draggedItem, setDraggedItem] = useState(null);
   const [editingAccount, setEditingAccount] = useState(null);
+  const [warmupStatuses, setWarmupStatuses] = useState({});
   const [editForm, setEditForm] = useState({
     name: '',
     proxy: '',
@@ -21,6 +22,38 @@ export default function AccountsSection({
   });
 
   const setAccounts = (accounts) => onSettingsChange({ accounts });
+  const isWarmupRunning = (acc) => warmupStatuses[acc.id]?.running ?? !!acc.warmup_running;
+  const getWarmupProgress = (acc) => {
+    const status = warmupStatuses[acc.id];
+    if (status?.total) return Math.round((status.current / status.total) * 100);
+    return acc.warmup_progress || 0;
+  };
+
+  useEffect(() => {
+    const runningIds = settingsData.accounts
+      .filter((acc) => warmupStatuses[acc.id]?.running ?? !!acc.warmup_running)
+      .map((acc) => acc.id);
+    if (runningIds.length === 0) return undefined;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const results = await Promise.all(
+        runningIds.map(async (id) => {
+          const response = await authFetch(`/api/accounts/${id}/warmup/status`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return [id, await response.json()];
+        })
+      ).catch(() => []);
+      if (!cancelled && results.length > 0) {
+        setWarmupStatuses((current) => ({ ...current, ...Object.fromEntries(results) }));
+      }
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [authFetch, settingsData.accounts, warmupStatuses]);
   const handleAdd = () => {
     document.getElementById('new-account-advanced')?.removeAttribute('open');
     const nameEl = document.getElementById('new-acc-name');
@@ -144,12 +177,23 @@ export default function AccountsSection({
     }
   };
   const handleWarmup = async (id) => {
+    const account = settingsData.accounts.find((acc) => acc.id === id);
+    const wasRunning = account ? isWarmupRunning(account) : false;
+    setWarmupStatuses((current) => ({
+      ...current,
+      [id]: { ...current[id], running: true, current: current[id]?.current || 0 },
+    }));
     try {
       const res = await authFetch(`/api/accounts/${id}/warmup`, { method: 'POST' });
       const data = await res.json();
-      if (data.success) toast.success("Прогрев запущен");
-      else toast.error(data.error);
+      if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+      setWarmupStatuses((current) => ({ ...current, [id]: data }));
+      toast.success(data.stopped ? 'Прогрев остановлен' : 'Прогрев запущен');
     } catch (e) {
+      setWarmupStatuses((current) => ({
+        ...current,
+        [id]: { ...current[id], running: wasRunning },
+      }));
       toast.error(e.message);
     }
   };
@@ -369,9 +413,9 @@ export default function AccountsSection({
                         <div className="flex-between mb-4">
                           <div className="flex-1 flex-baseline gap-8">
                             <div className="font-bold fs-15">{acc.name}</div>
-                            {acc.warmup_running && (
+                            {isWarmupRunning(acc) && (
                               <div className="acc-card-score running">
-                                {acc.warmup_progress || 0}%
+                                {getWarmupProgress(acc)}%
                               </div>
                             ) || (acc.warmup_score > 0 && (
                               <div className="acc-card-score">{acc.warmup_score}%</div>
@@ -432,7 +476,7 @@ export default function AccountsSection({
                             onClick={() => handleWarmup(acc.id)}
                             className="btn-acc-action btn-acc-warmup"
                           >
-                            {"Прогрев"}
+                            {isWarmupRunning(acc) ? 'Остановить' : 'Прогрев'}
                           </button>
                           <button
                             onClick={() => handleInstagramCooldown(acc.id)}

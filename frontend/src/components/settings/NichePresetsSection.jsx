@@ -140,7 +140,7 @@ export default function NichePresetsSection({ niches, presets, onChange }) {
         <div className="niche-section-header">
           <div>
             <h3>Пресеты ниш доноров</h3>
-            <p>Выбирайте, редактируйте и добавляйте категории внутри блоков.</p>
+            <p>Для широкого поиска в небольшом городе выбирайте «Общее» внутри нужных блоков.</p>
           </div>
           <div className="niche-section-actions">
             <span>{selectedItemsCount} выбрано</span>

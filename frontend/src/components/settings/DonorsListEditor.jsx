@@ -26,15 +26,16 @@ const DonorsListEditor = memo(function DonorsListEditor({ donors, onCommit }) {
   const commit = useCallback(
     (text) => {
       lastCommitted.current = text;
-      const lines = text.split('\n');
-      const updated = lines.map((line) => {
-        const trimmed = line.trim();
-        if (!trimmed) return line;
-        const existing = (donorsRef.current || []).find(
-          (ed) => (typeof ed === 'string' ? ed : ed.url) === trimmed
-        );
-        return existing || line;
-      });
+      const updated = text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const existing = (donorsRef.current || []).find(
+            (donor) => (typeof donor === 'string' ? donor : donor.url) === line
+          );
+          return existing || line;
+        });
       onCommit(updated);
     },
     [onCommit]

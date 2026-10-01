@@ -1,15 +1,11 @@
-const path = require('path');
-const { resolve } = path;
 const reporter_1 = require('./lib/reporter');
-const { AppError, BrowserError } = require('./lib/errors');
+const { AppError } = require('./lib/errors');
 const config_1 = require('./lib/config');
 const state_1 = require('./lib/state');
 const browser_1 = require('./lib/browser');
 const utils_1 = require('./lib/utils');
-const anti_fraud_1 = require('./lib/anti-fraud');
-const { info, warn, error: logError } = require('./lib/logger');
-const { handleError, setupProcessHandlers } = require('./lib/error-handler');
-const { getDB } = require('./lib/db');
+const { info, warn } = require('./lib/logger');
+const { handleError } = require('./lib/error-handler');
 const { evaluateDonor, rankDonorCandidates, splitAliases } = require('./lib/donor-relevance');
 
 const getDynamicConfig = async () => {
@@ -74,54 +70,190 @@ const getUsernameFromUrl = (url) => {
   }
 };
 
-const fetchDonorProfile = async (page, username, userId) => {
-  return page.evaluate(async ({ uname, uid }) => {
-    const attempts = [];
+const fetchDonorProfile = async (page, username) => {
+  return page.evaluate(async (uname) => {
     const headers = {
       'X-IG-App-ID': '936619743392459',
       'X-Requested-With': 'XMLHttpRequest',
     };
-    const normalizeUser = (user) => user ? ({
-      username: user.username || uname,
-      fullName: user.full_name || '',
-      biography: user.biography || '',
-      category: user.category_name || user.category || '',
-    }) : null;
-    const request = async (source, url, extractUser) => {
+    const normalizeUser = (user) => {
+      if (!user) return null;
+      let businessAddress = {};
       try {
-        const response = await fetch(url, { headers });
-        if (!response.ok) {
-          attempts.push(`${source}:${response.status}`);
+        businessAddress = typeof user.business_address_json === 'string'
+          ? JSON.parse(user.business_address_json)
+          : user.business_address_json || {};
+      } catch {
+        // Invalid business address must not discard otherwise usable profile data.
+      }
+      const posts = user.edge_owner_to_timeline_media?.edges || [];
+      return {
+        username: user.username || uname,
+        fullName: user.full_name || '',
+        biography: user.biography || '',
+        category: user.category_name || user.category || '',
+        userId: String(user.pk || user.pk_id || user.id || ''),
+        cityName: user.city_name || businessAddress.city_name || '',
+        address: [
+          user.address_street,
+          businessAddress.street_address,
+          businessAddress.zip_code,
+          businessAddress.city_name,
+          businessAddress.region_name,
+        ].filter(Boolean).join(' '),
+        postCaptions: posts
+          .map((edge) => edge.node?.edge_media_to_caption?.edges?.[0]?.node?.text || '')
+          .filter(Boolean),
+        postLocations: posts
+          .map((edge) => edge.node?.location?.name || '')
+          .filter(Boolean),
+      };
+    };
+    try {
+      const response = await fetch(
+        `/api/v1/users/web_profile_info/?username=${encodeURIComponent(uname)}`,
+        { headers }
+      );
+      if (!response.ok) {
+        return { profile: null, source: '', error: `web:${response.status}` };
+      }
+      const json = await response.json();
+      const profile = normalizeUser(json.data?.user);
+      return profile
+        ? { profile, source: 'web', error: '' }
+        : { profile: null, source: '', error: 'web:empty' };
+    } catch {
+      return { profile: null, source: '', error: 'web:network' };
+    }
+  }, username);
+};
+
+const SEARCH_EXCLUDED_PATHS = [
+  'accounts',
+  'about',
+  'direct',
+  'explore',
+  'legal',
+  'p',
+  'reel',
+  'reels',
+  'settings',
+  'stories',
+  'web',
+];
+
+const collectSearchPanelCandidates = async (searchInput) => {
+  return searchInput.evaluate((input, excludedPaths) => {
+    const excluded = new Set(excludedPaths);
+    const parseProfileLink = (anchor) => {
+      try {
+        const url = new URL(anchor.href, window.location.origin);
+        const parts = url.pathname.split('/').filter(Boolean);
+        if (parts.length !== 1) return null;
+        const username = parts[0];
+        if (excluded.has(username.toLowerCase()) || !/^[a-z0-9._]{1,30}$/i.test(username)) {
           return null;
         }
-        const json = await response.json();
-        const profile = normalizeUser(extractUser(json));
-        if (!profile) attempts.push(`${source}:empty`);
-        return profile;
+        const lines = String(anchor.innerText || '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const fullName = lines
+          .filter((line) => line.toLowerCase() !== username.toLowerCase())
+          .join(' ');
+        return { username, fullName, userId: '' };
       } catch {
-        attempts.push(`${source}:network`);
         return null;
       }
     };
+    const profileLinks = (root) => [...root.querySelectorAll('a[href]')]
+      .map((anchor) => ({ anchor, candidate: parseProfileLink(anchor) }))
+      .filter((item) => item.candidate);
 
-    const webProfile = await request(
-      'web',
-      `/api/v1/users/web_profile_info/?username=${encodeURIComponent(uname)}`,
-      (json) => json.data?.user
-    );
-    if (webProfile) return { profile: webProfile, source: 'web', error: '' };
-
-    if (uid) {
-      const apiProfile = await request(
-        'user-info',
-        `/api/v1/users/${encodeURIComponent(uid)}/info/`,
-        (json) => json.user
-      );
-      if (apiProfile) return { profile: apiProfile, source: 'user-info', error: '' };
+    let container = null;
+    let ancestor = input.parentElement;
+    while (ancestor && ancestor !== document.body) {
+      if (profileLinks(ancestor).length > 0) {
+        container = ancestor;
+        break;
+      }
+      ancestor = ancestor.parentElement;
     }
 
-    return { profile: null, source: '', error: attempts.join(',') || 'no-user-id' };
-  }, { uname: username, uid: userId ? String(userId) : '' });
+    if (!container) {
+      const fallbacks = [
+        ...document.querySelectorAll(
+          'div[role="dialog"], div[style*="position: fixed"], div[style*="position: absolute"]'
+        ),
+      ];
+      container = fallbacks
+        .map((element) => ({ element, count: profileLinks(element).length }))
+        .filter((item) => item.count > 0)
+        .sort((a, b) => b.count - a.count)[0]?.element || null;
+    }
+
+    if (!container) return { candidates: [], canScroll: false, container: 'panel-not-found' };
+
+    const candidates = profileLinks(container).map((item) => item.candidate);
+    const scrollTargets = [container, ...container.querySelectorAll('div')]
+      .filter((element) => element.scrollHeight - element.clientHeight > 80)
+      .map((element) => ({
+        element,
+        resultCount: profileLinks(element).length,
+        overflow: element.scrollHeight - element.clientHeight,
+      }))
+      .filter((item) => item.resultCount > 0)
+      .sort((a, b) => b.resultCount - a.resultCount || b.overflow - a.overflow);
+    const scrollTarget = scrollTargets[0]?.element;
+    let canScroll = false;
+    if (scrollTarget) {
+      const before = scrollTarget.scrollTop;
+      const distance = Math.max(400, scrollTarget.clientHeight * 0.8);
+      scrollTarget.scrollTop = Math.min(
+        scrollTarget.scrollTop + distance,
+        scrollTarget.scrollHeight - scrollTarget.clientHeight
+      );
+      scrollTarget.dispatchEvent(new Event('scroll', { bubbles: true }));
+      canScroll = scrollTarget.scrollTop > before ||
+        scrollTarget.scrollTop + scrollTarget.clientHeight < scrollTarget.scrollHeight - 5;
+    }
+
+    return {
+      candidates,
+      canScroll,
+      container: container.getAttribute('role') || container.tagName.toLowerCase(),
+    };
+  }, SEARCH_EXCLUDED_PATHS);
+};
+
+const searchProfilesInInstagramUi = async (page, searchInput, keyword) => {
+  await (0, utils_1.humanClick)(page, searchInput, { clickCount: 1 });
+  await searchInput.fill('');
+  await (0, utils_1.wait)(250);
+  await searchInput.pressSequentially(keyword, {
+    delay: Math.floor(Math.random() * 50) + 55,
+  });
+  info(`⌨️ [UI] Запрос введен в поиск Instagram: "${keyword}"`);
+  await (0, browser_1.takeLiveScreenshot)(page);
+  await (0, utils_1.wait)(3000);
+
+  const candidates = new Map();
+  let panel = 'unknown';
+  let stalledRounds = 0;
+  for (let round = 0; round < 8 && candidates.size < 50; round++) {
+    const result = await collectSearchPanelCandidates(searchInput);
+    panel = result.container;
+    const before = candidates.size;
+    for (const candidate of result.candidates) {
+      candidates.set(candidate.username.toLowerCase(), candidate);
+    }
+    stalledRounds = candidates.size === before ? stalledRounds + 1 : 0;
+    if ((!result.canScroll && round > 0) || stalledRounds >= 2) break;
+    await (0, utils_1.wait)(900 + Math.random() * 500);
+  }
+
+  info(`🔎 [UI] Панель: ${panel} | Собрано профилей: ${candidates.size}`);
+  return [...candidates.values()];
 };
 
 const run = async () => {
@@ -190,7 +322,7 @@ const run = async () => {
         timeout: CONFIG.timeouts.pageLoad,
       });
       await (0, browser_1.takeLiveScreenshot)(page);
-      await (0, anti_fraud_1.waitWithActivity)(page, 3000);
+      await (0, utils_1.wait)(3000);
       // Ищем строку поиска
       // Selectors updated to support English, Russian, French, and Spanish
       let searchInputLocator = page
@@ -215,7 +347,7 @@ const run = async () => {
         } else if ((await searchIcon.count()) > 0) {
           await searchIcon.click();
         }
-        await (0, anti_fraud_1.waitWithActivity)(page, 2000);
+        await (0, utils_1.wait)(2000);
       }
       searchInputLocator = page
         .locator(
@@ -228,86 +360,70 @@ const run = async () => {
           const { keyword, city, niche } = kwObj;
           try {
             console.log(`\n🔎 Ищем профили по запросу: "${keyword}"`);
-            await (0, anti_fraud_1.waitWithActivity)(page, 1000);
+            await (0, utils_1.wait)(1000);
 
-            // More aggressive API fetch using multiple endpoints to ensure >5 results
-            info(`📡 [API] Глубокий поиск профилей для: "${keyword}"`);
-            const apiCandidates = await page.evaluate(async (kw) => {
-              try {
-                // 1. Topsearch (Blended)
-                const topSearchUrl = `https://www.instagram.com/api/v1/web/search/topsearch/?context=blended&query=${encodeURIComponent(kw)}&rank_token=${Math.random()}`;
-                // 2. Specialized User Search
-                const userSearchUrl = `https://www.instagram.com/api/v1/users/search/?q=${encodeURIComponent(kw)}&count=50`;
-
-                const fetchResults = async (url) => {
-                  try {
-                    const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-                    if (!res.ok) return [];
-                    const json = await res.json();
-                    if (json.users && Array.isArray(json.users)) {
-                      return json.users.map(u => {
-                        const user = u.user || u;
-                        return user.username ? {
-                          username: user.username,
-                          fullName: user.full_name || '',
-                          userId: user.pk || user.pk_id || user.id || '',
-                        } : null;
-                      }).filter(Boolean);
-                    }
-                  } catch (e) { }
-                  return [];
-                };
-
-                // Один аккаунт: без burst из двух одновременных search-запросов.
-                // Topsearch нужен только когда специализированный поиск дал мало кандидатов.
-                const userResults = await fetchResults(userSearchUrl);
-                const topResults = userResults.length < 10
-                  ? await fetchResults(topSearchUrl)
-                  : [];
-
-                return [...topResults, ...userResults];
-              } catch (e) {
-                return [];
-              }
-            }, keyword).catch(() => []);
+            const uiCandidates = await searchProfilesInInstagramUi(
+              page,
+              searchInputLocator,
+              keyword
+            );
 
             await (0, browser_1.takeLiveScreenshot)(page);
-            await (0, anti_fraud_1.waitWithActivity)(page, 1000);
+            await (0, utils_1.wait)(500);
 
             const uniqueCandidates = [...new Map(
-              apiCandidates.map((candidate) => [candidate.username.toLowerCase(), candidate])
+              uiCandidates.map((candidate) => [candidate.username.toLowerCase(), candidate])
             ).values()];
             const rankedCandidates = rankDonorCandidates(uniqueCandidates, {
               city,
+              cities: CONFIG.cities,
               niche,
               cityBlacklist: CONFIG.citiesBlacklist,
               wordsBlacklist: CONFIG.wordsBlacklist,
             });
-            // Глубокая проверка дороже search API: проверяем лучшие 20, сохраняем до 10.
-            const finalCandidates = rankedCandidates.slice(0, 20);
+            // Данные поисковой панели используем первыми. Глубоко проверяем только лучшие 10.
+            const finalCandidates = rankedCandidates.slice(0, 10);
             const donorsToSave = [];
             let cacheHits = 0;
             for (const candidate of finalCandidates) {
               const link = `https://www.instagram.com/${candidate.username}/`;
               const normLink = (0, config_1.normalizeUrl)(link);
-              if (collectedUrls.has(normLink) || state_1.StateManager.has(normLink)) continue;
+              if (collectedUrls.has(normLink)) continue;
+
+              const searchRelevance = evaluateDonor(candidate, {
+                city,
+                cities: CONFIG.cities,
+                niche,
+                cityBlacklist: CONFIG.citiesBlacklist,
+                wordsBlacklist: CONFIG.wordsBlacklist,
+              });
+              if (searchRelevance.accepted) {
+                collectedUrls.add(normLink);
+                donorsToSave.push({ url: normLink, niche, city, keyword });
+                info(
+                  `⚡ @${candidate.username} добавлен из выдачи: город подтверждён через ${searchRelevance.evidence}`
+                );
+                if (donorsToSave.length >= 10) break;
+                continue;
+              }
 
               const username = getUsernameFromUrl(normLink);
               const cacheKey = username.toLowerCase();
               const cached = profileCache.has(cacheKey);
-              const profileResult = cached
-                ? profileCache.get(cacheKey)
-                : await fetchDonorProfile(page, username, candidate.userId);
+              let profileResult = profileCache.get(cacheKey);
+              if (!cached) {
+                await (0, utils_1.wait)(1800 + Math.random() * 2200);
+                profileResult = await fetchDonorProfile(page, username);
+              }
               if (profileResult?.profile && !cached) profileCache.set(cacheKey, profileResult);
               if (cached) {
                 cacheHits++;
-              } else {
-                await (0, anti_fraud_1.waitWithActivity)(page, 250 + Math.random() * 250);
               }
               let profile = profileResult?.profile;
               if (!profile) {
                 const searchFallback = evaluateDonor(candidate, {
                   city,
+                  cities: CONFIG.cities,
                   niche,
                   cityBlacklist: CONFIG.citiesBlacklist,
                   wordsBlacklist: CONFIG.wordsBlacklist,
@@ -322,6 +438,7 @@ const run = async () => {
 
               const relevance = evaluateDonor(profile, {
                 city,
+                cities: CONFIG.cities,
                 niche,
                 cityBlacklist: CONFIG.citiesBlacklist,
                 wordsBlacklist: CONFIG.wordsBlacklist,
@@ -331,13 +448,14 @@ const run = async () => {
                 continue;
               }
 
+              info(`✅ @${username} принят: город подтверждён через ${relevance.evidence}`);
               collectedUrls.add(normLink);
               donorsToSave.push({ url: normLink, niche, city, keyword });
               if (donorsToSave.length >= 10) break;
             }
             await state_1.StateManager.saveDiscoveredDonors(donorsToSave);
             info(`✅ Найдено: ${uniqueCandidates.length} | После ранжирования: ${finalCandidates.length} | Кеш: ${cacheHits} | Новых: ${donorsToSave.length}`);
-            await (0, anti_fraud_1.waitWithActivity)(page, 2000 + Math.random() * 3000);
+            await (0, utils_1.wait)(5000 + Math.random() * 4000);
           } catch (itemErr) {
             handleError(
               new AppError(`Error processing keyword "${keyword}": ${itemErr.message}`, { keyword })

@@ -152,6 +152,14 @@ const CACHE_TTL = 1000;
 async function getGirlsCached() {
   const now = Date.now();
   if (girlsCache && now - girlsCacheTime < CACHE_TTL) return girlsCache;
+  const primaryDonorSql = `LOWER(TRIM(REPLACE(
+    CASE
+      WHEN INSTR(COALESCE(p.donor, ''), ',') > 0
+        THEN SUBSTR(p.donor, 1, INSTR(p.donor, ',') - 1)
+      ELSE COALESCE(p.donor, '')
+    END,
+    '@', ''
+  )))`;
   try {
     const database = await db.getDB();
     girlsCache = await database.all(`
@@ -162,9 +170,18 @@ async function getGirlsCached() {
                    d.posts_count as donor_posts_count,
                    d.photo as donor_photo,
                    d.photo_local as donor_photo_local,
-                   d.photo_status as donor_photo_status
+                   d.photo_status as donor_photo_status,
+                   u.city as donor_city,
+                   u.niche as donor_niche,
+                   COALESCE(
+                     NULLIF(TRIM(u.keyword), ''),
+                     NULLIF(TRIM(u.city || ' ' || u.niche), '')
+                   ) as donor_keyword
             FROM profiles p
-            LEFT JOIN donors d ON p.donor = d.username
+            LEFT JOIN donors d ON LOWER(TRIM(d.username)) = ${primaryDonorSql}
+            LEFT JOIN urls u ON u.type = 'donor' AND LOWER(TRIM(REPLACE(REPLACE(REPLACE(
+              u.url, 'https://www.instagram.com/', ''), 'https://instagram.com/', ''), '/', ''
+            ))) = ${primaryDonorSql}
             ORDER BY p.timestamp DESC
         `);
     girlsCacheTime = now;

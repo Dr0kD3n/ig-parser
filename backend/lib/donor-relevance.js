@@ -74,6 +74,10 @@ function matchesKeyword(text, keyword, type) {
   );
 }
 
+function matchesAnyKeyword(text, keywords, type) {
+  return (keywords || []).some((keyword) => matchesKeyword(text, keyword, type));
+}
+
 function findBlacklistMatch(text, criteria) {
   const city = (criteria.cityBlacklist || [])
     .find((item) => matchesKeyword(text, item, 'city'));
@@ -97,7 +101,7 @@ function rankDonorCandidates(candidates, criteria) {
       const text = [candidate?.username, candidate?.fullName].filter(Boolean).join(' ');
       if (findBlacklistMatch(text, criteria)) return null;
 
-      const cityMatch = matchesKeyword(text, criteria.city, 'city');
+      const cityMatch = matchesAnyKeyword(text, criteria.cities || [criteria.city], 'city');
       const nicheMatch = matchesKeyword(text, criteria.niche, 'niche');
       const score = (cityMatch ? 4 : 0) + (nicheMatch ? 4 : 0) +
         (cityMatch && nicheMatch ? 4 : 0);
@@ -110,33 +114,48 @@ function rankDonorCandidates(candidates, criteria) {
 
 /**
  * Проверяет профиль по фактическим данным, а не по позиции в выдаче Instagram.
- * Город и ниша обязательны. Blacklist имеет приоритет.
+ * Любой город из белого списка обязателен. Blacklist имеет приоритет.
+ * Ниша используется только для ранжирования результатов поиска.
  * Для ручных синонимов поддерживается формат настройки: `кастом|custom`.
  * @param {object} profile
  * @param {object} criteria
  * @returns {{accepted: boolean, reason: string}}
  */
 function evaluateDonor(profile, criteria) {
-  const searchableText = [
-    profile?.username,
-    profile?.fullName,
-    profile?.biography,
-    profile?.category,
-  ].filter(Boolean).join(' ');
+  const evidenceSources = [
+    { source: 'username', values: [profile?.username] },
+    { source: 'fullName', values: [profile?.fullName] },
+    { source: 'biography', values: [profile?.biography] },
+    { source: 'category', values: [profile?.category] },
+    { source: 'cityName', values: [profile?.cityName] },
+    { source: 'address', values: [profile?.address] },
+    { source: 'highlightTitles', values: profile?.highlightTitles || [] },
+    { source: 'postCaptions', values: profile?.postCaptions || [] },
+    { source: 'postLocations', values: profile?.postLocations || [] },
+  ];
+  const searchableText = evidenceSources
+    .flatMap((item) => item.values)
+    .filter(Boolean)
+    .join(' ');
 
   if (!searchableText.trim()) return { accepted: false, reason: 'profile-data-empty' };
 
   const blacklistMatch = findBlacklistMatch(searchableText, criteria);
   if (blacklistMatch) return { accepted: false, reason: blacklistMatch };
 
-  if (!matchesKeyword(searchableText, criteria.city, 'city')) {
+  const cities = criteria.cities || [criteria.city];
+  const cityEvidence = evidenceSources.find((item) =>
+    item.values.some((value) => matchesAnyKeyword(value, cities, 'city'))
+  );
+  if (!cityEvidence) {
     return { accepted: false, reason: 'city-not-confirmed' };
   }
-  if (!matchesKeyword(searchableText, criteria.niche, 'niche')) {
-    return { accepted: false, reason: 'niche-not-confirmed' };
-  }
 
-  return { accepted: true, reason: 'city-and-niche-confirmed' };
+  return {
+    accepted: true,
+    reason: 'whitelisted-city-confirmed',
+    evidence: cityEvidence.source,
+  };
 }
 
 module.exports = {

@@ -185,6 +185,85 @@ const REGIONAL_SITES = {
   ],
 };
 
+const activeWarmups = new Map();
+const warmupStopRequests = new Set();
+
+class WarmupStoppedError extends Error {
+  constructor() {
+    super('Warmup stopped');
+    this.name = 'WarmupStoppedError';
+  }
+}
+
+function throwIfWarmupStopped(accountId) {
+  if (warmupStopRequests.has(accountId)) throw new WarmupStoppedError();
+}
+
+async function stopWarmup(accountId) {
+  warmupStopRequests.add(accountId);
+  const session = activeWarmups.get(accountId);
+  if (session) {
+    await Promise.allSettled([session.context?.close(), session.browser?.close()]);
+  }
+  return { success: true, running: false, stopped: true };
+}
+
+async function acceptCookiesOnPage(page, site) {
+  const cookieButtons = [
+    'Accept', 'Allow', 'Agree', 'I accept', 'Accept all', 'Allow all', 'I agree',
+    'Accept cookies', 'Accept everything', 'OK', 'OK, accept',
+    'Принять', 'Согласен', 'Разрешить', 'Принять все', 'Принять куки', 'Да, согласен',
+    'Aceptar', 'Permitir', 'Acepto', 'Aceptar todo', 'Aceptar cookies',
+    'Accepter', 'Autoriser', "J'accepte", 'Tout accepter', 'Accepter les cookies',
+    'Annehmen', 'Zustimmen', 'Akzeptieren', 'Alle akzeptieren', 'Cookies akzeptieren',
+  ];
+  const selectors = [
+    '#onetrust-accept-btn-handler',
+    '#didomi-notice-agree-button',
+    '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+    '#cookie-accept',
+    '#accept-all-cookies',
+    '.cookie-accept',
+    '.accept-cookies',
+    'button[id*="accept" i]',
+    'button[class*="accept" i]',
+    '[role="button"][aria-label*="accept" i]',
+  ];
+
+  const clickFirstVisible = async (frame, selector) => {
+    const handles = await frame.$$(selector).catch(() => []);
+    for (const handle of handles) {
+      if (await handle.isVisible().catch(() => false)) {
+        try {
+          await humanClick(page, handle, { timeout: 2000 });
+          console.log(`🍪 [WARMUP] Clicked cookies on ${site}`);
+          return true;
+        } catch {
+          // The banner may rerender between lookup and click. Try the next match.
+          continue;
+        }
+      }
+    }
+    return false;
+  };
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const frames = [page, ...page.frames().filter((frame) => frame !== page.mainFrame())];
+    for (const frame of frames) {
+      for (const selector of selectors) {
+        if (await clickFirstVisible(frame, selector)) return true;
+      }
+      for (const text of cookieButtons) {
+        const escapedText = JSON.stringify(text);
+        const selector = `button:has-text(${escapedText}), a:has-text(${escapedText}), [role="button"]:has-text(${escapedText})`;
+        if (await clickFirstVisible(frame, selector)) return true;
+      }
+    }
+    if (attempt < 2) await wait(750);
+  }
+  return false;
+}
+
 async function getRegionFromProxy(proxy) {
   if (!proxy || !proxy.server) return 'GLOBAL';
 
@@ -234,6 +313,7 @@ async function getNumericSetting(db, key, fallback, min = 1) {
 
 async function startWarmup(accountId, progressCallback = (p) => { }) {
   console.log(`🔥 [WARMUP] Starting for account: ${accountId}`);
+  warmupStopRequests.delete(accountId);
 
   const db = await getDB();
   const acc = await db.get('SELECT * FROM accounts WHERE id = ?', [accountId]);
@@ -264,7 +344,10 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
   const warmupConcurrency = await getNumericSetting(db, 'warmupConcurrency', 12);
   const sitesToVisit = sitePool.sort(() => Math.random() - 0.5).slice(0, warmupSitesLimit);
 
-
+  if (warmupStopRequests.has(accountId)) {
+    warmupStopRequests.delete(accountId);
+    return { success: true, stopped: true };
+  }
   const { browser, context } = await createBrowserContext(
     {
       ...config,
@@ -280,71 +363,24 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
     },
     headless
   );
+  activeWarmups.set(accountId, { browser, context });
 
   try {
+    throwIfWarmupStopped(accountId);
     let completed = 0;
     await db.run('UPDATE accounts SET warmup_running = 1, warmup_progress = 0 WHERE id = ?', [
       accountId,
     ]);
 
     await asyncPool(sitesToVisit, warmupConcurrency, async (currentSite) => {
-
-      const page = await context.newPage();
+      if (warmupStopRequests.has(accountId)) return;
+      let page;
       try {
+        page = await context.newPage();
         console.log(`🔥 [WARMUP] Visiting [${countryCode}]: ${currentSite}`);
         await page.goto(currentSite, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-        const applyCookieConsent = async () => {
-          try {
-            const cookieButtons = [
-              'Accept', 'Allow', 'Agree', 'I accept', 'Accept all', 'Allow all', 'I agree', 'Accept cookies', 'Accept everything',
-              'Принять', 'Согласен', 'Разрешить', 'Принять все', 'ОК', 'OK', 'OK, accept', 'Принять куки', 'Да, согласен',
-              'Aceptar', 'Permitir', 'Acepto', 'Aceptar todo', 'Aceptar cookies',
-              'Accepter', 'Autoriser', 'J\'accepte', 'Tout accepter', 'Accepter les cookies',
-              'Annehmen', 'Zustimmen', 'Akzeptieren', 'Alle akzeptieren', 'Cookies akzeptieren', 'Save settings'
-            ];
-
-            const commonSelectors = [
-              '#onetrust-accept-btn-handler', '#cookie-accept', '.cookie-accept', '.accept-cookies', '#accept-all-cookies',
-              'button[id*="accept" i]', 'button[class*="accept" i]', 'button[id*="cookie" i]', 'button[class*="cookie" i]'
-            ];
-
-            const tryAccept = async (frame) => {
-              for (const selector of commonSelectors) {
-                const handle = await frame.$(selector).catch(() => null);
-                if (handle && (await handle.isVisible())) {
-                  await humanClick(page, handle, { timeout: 2000 }).catch(() => { });
-                  console.log(`🍪 [WARMUP] Clicked selector in frame: "${selector}" on ${currentSite}`);
-                  return true;
-                }
-              }
-              for (const text of cookieButtons) {
-                const handle = await frame.$(`button:has-text("${text}"), a:has-text("${text}"), [role="button"]:has-text("${text}")`).catch(() => null);
-                if (handle && (await handle.isVisible())) {
-                  await humanClick(page, handle, { timeout: 2000 }).catch(() => { });
-                  console.log(`🍪 [WARMUP] Clicked button in frame: "${text}" on ${currentSite}`);
-                  return true;
-                }
-              }
-              return false;
-            };
-
-            if (await tryAccept(page)) return true;
-            const frames = page.frames();
-            for (const frame of frames) {
-              if (frame === page.mainFrame()) continue;
-              if (await tryAccept(frame)) return true;
-            }
-          } catch (e) { }
-          return false;
-        };
-
-        const matched = await applyCookieConsent();
-
-        if (!matched) {
-          await wait(1500);
-          if (Math.random() > 0.3) await applyCookieConsent();
-        }
+        throwIfWarmupStopped(accountId);
+        await acceptCookiesOnPage(page, currentSite);
 
         await wait(Math.random() * 2000 + 1000);
 
@@ -372,22 +408,28 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
             console.log(`🔗 [WARMUP] Navigating deeper into ${currentSite}`);
             await humanClick(page, randomLink, { timeout: 3000 }).catch(() => { });
             await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => { });
+            throwIfWarmupStopped(accountId);
+            await acceptCookiesOnPage(page, page.url());
             await wait(Math.random() * 4000 + 3000);
           }
         }
       } catch (e) {
+        if (e instanceof WarmupStoppedError || warmupStopRequests.has(accountId)) return;
         console.warn(`⚠️ [WARMUP] Failed site ${currentSite}: ${e.message}`);
       } finally {
-        await page.close();
-        completed++;
-        const currentProgress = Math.round((completed / sitesToVisit.length) * 100);
-        await db.all('UPDATE accounts SET warmup_progress = ? WHERE id = ?', [
-          currentProgress,
-          accountId,
-        ]);
-        progressCallback({ current: completed, total: sitesToVisit.length, site: currentSite });
+        await page?.close().catch(() => { });
+        if (!warmupStopRequests.has(accountId)) {
+          completed++;
+          const currentProgress = Math.round((completed / sitesToVisit.length) * 100);
+          await db.run('UPDATE accounts SET warmup_progress = ? WHERE id = ?', [
+            currentProgress,
+            accountId,
+          ]);
+          progressCallback({ current: completed, total: sitesToVisit.length, site: currentSite });
+        }
       }
     });
+    throwIfWarmupStopped(accountId);
 
     const cookies = await context.cookies();
     const lastPage = await context.newPage();
@@ -397,6 +439,8 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
         waitUntil: 'domcontentloaded',
         timeout: 20000,
       });
+      throwIfWarmupStopped(accountId);
+      await acceptCookiesOnPage(lastPage, lastPage.url());
       localStorage = await lastPage.evaluate(() => {
         const data = {};
         for (let i = 0; i < window.localStorage.length; i++) {
@@ -420,14 +464,19 @@ async function startWarmup(accountId, progressCallback = (p) => { }) {
     console.log(`✅ [WARMUP] Completed for ${accountId} (${countryCode})`);
     return { success: true };
   } catch (error) {
-    console.error(`❌ [WARMUP] Error: ${error.message}`);
+    const stopped = error instanceof WarmupStoppedError || warmupStopRequests.has(accountId);
+    if (stopped) console.log(`🛑 [WARMUP] Stopped for ${accountId}`);
+    else console.error(`❌ [WARMUP] Error: ${error.message}`);
     await db
-      .run('UPDATE accounts SET warmup_running = 0 WHERE id = ?', [accountId])
+      .run('UPDATE accounts SET warmup_running = 0, warmup_progress = 0 WHERE id = ?', [accountId])
       .catch(() => { });
+    if (stopped) return { success: true, stopped: true };
     return { success: false, error: error.message };
   } finally {
-    await context.close();
-    await browser.close();
+    activeWarmups.delete(accountId);
+    warmupStopRequests.delete(accountId);
+    await context.close().catch(() => { });
+    await browser.close().catch(() => { });
   }
 }
 
@@ -825,4 +874,6 @@ async function startInstagramCooldown(accountId, progressCallback = (p) => { }) 
 }
 
 exports.startWarmup = startWarmup;
+exports.stopWarmup = stopWarmup;
+exports.isWarmupRunning = (accountId) => activeWarmups.has(accountId);
 exports.startInstagramCooldown = startInstagramCooldown;

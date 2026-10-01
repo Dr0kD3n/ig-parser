@@ -11,7 +11,8 @@ export function filterProfiles(girls, options) {
     hideNoImage,
     cityOnly,
     exceptCity,
-    filterDonor,
+    filterDonorCategories,
+    profileDonorCategories,
     failedImages,
     matchesProfileCity,
     matchesWordsBlacklist,
@@ -20,6 +21,7 @@ export function filterProfiles(girls, options) {
   const query = filterText.toLowerCase();
   const minFollowers = followersMin === '' ? null : Number(followersMin);
   const maxFollowers = followersMax === '' ? null : Number(followersMax);
+  const selectedDonorCategories = new Set(filterDonorCategories || []);
 
   return girls
     .filter((g) => !matchesWordsBlacklist || !matchesWordsBlacklist(g))
@@ -51,7 +53,9 @@ export function filterProfiles(girls, options) {
       const inCity = matchesProfileCity ? matchesProfileCity(g) : !!g.isInCity;
       const matchesCity = (!cityOnly || inCity) && (!exceptCity || !inCity);
       const imgOk = !hideNoImage || ((g.photo_local || g.photo) && !failedImages.has(g.url));
-      const matchesDonor = filterDonor === 'all' || g.donor === filterDonor;
+      const matchesDonorCategory =
+        selectedDonorCategories.size === 0 ||
+        selectedDonorCategories.has(profileDonorCategories?.get(g.url));
 
       return (
         matchesName &&
@@ -61,7 +65,7 @@ export function filterProfiles(girls, options) {
         matchesViewed &&
         matchesCity &&
         imgOk &&
-        matchesDonor
+        matchesDonorCategory
       );
     });
 }

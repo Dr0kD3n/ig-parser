@@ -129,8 +129,6 @@ app.post('/api/settings', async (req, res) => {
       const updateList = async (type, requestKey, items) => {
         if (!Object.hasOwn(req.body, requestKey)) return;
         const cleanItems = (items || []).map((i) => String(i).trim()).filter(Boolean);
-        const existing = await database.get(`SELECT count(*) as c FROM keywords WHERE type = ?`, [type]);
-        if (existing.c > 5 && cleanItems.length === 0 && !req.body.forceEmpty) return;
 
         await database.run(`DELETE FROM keywords WHERE type = ?`, [type]);
         for (const val of cleanItems) {
@@ -148,11 +146,7 @@ app.post('/api/settings', async (req, res) => {
           if (d && typeof d === 'object' && d.url) return { ...d, url: d.url.trim() };
           return d;
         }).filter(Boolean);
-
-        const existingDonorsCount = (await state.StateManager.loadDonors()).length;
-        if (!(existingDonorsCount > 5 && processedDonorsInReq.length === 0 && !req.body.forceEmpty)) {
-          await state.StateManager.saveDonors(processedDonorsInReq);
-        }
+        await state.StateManager.saveDonors(processedDonorsInReq);
       }
       if (Object.hasOwn(req.body, 'showBrowser')) {
         await database.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [

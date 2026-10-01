@@ -8,7 +8,10 @@ export function usePersistedFilters() {
   const [filterTgStatus, setFilterTgStatus] = useState(() => safeStorage.getItem('ig_filter_tg', 'all'));
   const [hideNoImage, setHideNoImage] = useState(() => safeStorage.getItem('ig_hide_no_img') === 'true');
   const [hideViewed, setHideViewed] = useState(() => safeStorage.getItem('ig_hide_viewed') === 'true');
-  const [filterDonor, setFilterDonor] = useState(() => safeStorage.getItem('ig_filter_donor', 'all'));
+  const [filterDonorCategories, setFilterDonorCategories] = useState(() => {
+    const saved = safeStorage.parse('ig_filter_donor_categories', []);
+    return Array.isArray(saved) ? saved.filter((value) => typeof value === 'string') : [];
+  });
   const [followersMin, setFollowersMin] = useState(() => safeStorage.getItem('ig_followers_min', ''));
   const [followersMax, setFollowersMax] = useState(() => safeStorage.getItem('ig_followers_max', ''));
 
@@ -18,7 +21,7 @@ export function usePersistedFilters() {
     safeStorage.setItem('ig_filter_tg', filterTgStatus);
     safeStorage.setItem('ig_hide_no_img', String(hideNoImage));
     safeStorage.setItem('ig_hide_viewed', String(hideViewed));
-    safeStorage.setItem('ig_filter_donor', filterDonor);
+    safeStorage.setItem('ig_filter_donor_categories', JSON.stringify(filterDonorCategories));
     safeStorage.setItem('ig_followers_min', followersMin);
     safeStorage.setItem('ig_followers_max', followersMax);
   }, [
@@ -27,7 +30,7 @@ export function usePersistedFilters() {
     filterTgStatus,
     hideNoImage,
     hideViewed,
-    filterDonor,
+    filterDonorCategories,
     followersMin,
     followersMax,
   ]);
@@ -43,8 +46,8 @@ export function usePersistedFilters() {
     setHideNoImage,
     hideViewed,
     setHideViewed,
-    filterDonor,
-    setFilterDonor,
+    filterDonorCategories,
+    setFilterDonorCategories,
     followersMin,
     setFollowersMin,
     followersMax,

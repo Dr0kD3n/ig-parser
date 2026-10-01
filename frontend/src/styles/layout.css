@@ -156,6 +156,13 @@
       visibility 0s linear 0.16s;
   }
 
+  .profile-primary-filter-fields > .profile-donor-category-filter {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
   .profile-primary-filter-fields.open {
     opacity: 1;
     visibility: visible;

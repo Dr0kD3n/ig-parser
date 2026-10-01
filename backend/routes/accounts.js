@@ -78,12 +78,14 @@ app.post('/api/accounts/:id/browser/start', async (req, res) => {
 
 app.post('/api/accounts/:id/warmup', async (req, res) => {
   const { id } = req.params;
+  if (ctx.warmupStatus.get(id)?.running || warmup.isWarmupRunning(id)) {
+    const result = await warmup.stopWarmup(id);
+    ctx.warmupStatus.set(id, { running: false, stopped: true });
+    return res.json(result);
+  }
   const activeActivity = getActiveInstagramActivity();
   if (activeActivity) {
     return res.status(409).json({ success: false, error: `Instagram activity already running: ${activeActivity}` });
-  }
-  if (ctx.warmupStatus.get(id)?.running) {
-    return res.status(400).json({ success: false, error: 'Warmup already in progress' });
   }
   const activityLease = tryAcquireInstagramActivity(`warmup:${id}`);
   if (!activityLease) {
@@ -97,8 +99,14 @@ app.post('/api/accounts/:id/warmup', async (req, res) => {
     .startWarmup(id, (progress) => {
       ctx.warmupStatus.set(id, { running: true, ...progress });
     })
-    .then(() => {
-      ctx.warmupStatus.set(id, { running: false, done: true });
+    .then((result) => {
+      if (result?.success === false) {
+        ctx.warmupStatus.set(id, { running: false, error: result.error });
+      } else if (result?.stopped) {
+        ctx.warmupStatus.set(id, { running: false, stopped: true });
+      } else {
+        ctx.warmupStatus.set(id, { running: false, done: true });
+      }
     })
     .catch((e) => {
       ctx.warmupStatus.set(id, { running: false, error: e.message });
@@ -107,7 +115,7 @@ app.post('/api/accounts/:id/warmup', async (req, res) => {
       releaseInstagramActivity(activityLease);
     });
 
-  res.json({ success: true });
+  res.json({ success: true, running: true, current: 0, total: 50, site: '' });
 });
 
 app.get('/api/accounts/:id/warmup/status', (req, res) => {

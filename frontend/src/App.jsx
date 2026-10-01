@@ -12,6 +12,7 @@ import { safeStorage } from './utils/storage';
 import { createCityMatcher, createWordsBlacklistMatcher, getTelegramUsername } from './utils/profile';
 import { resolveMessagesForDonor, ensureDefaultDonorGroups } from './utils/donorCategories';
 import { DEFAULT_SETTINGS, LOG_BUFFER, TABS } from './constants/settings';
+import { resolveNichePresets } from './constants/nichePresets';
 import { useDialog } from './context/DialogContext';
 import { useLogStream } from './hooks/useLogStream';
 import { useOperationStatuses } from './hooks/useOperationStatuses';
@@ -27,10 +28,14 @@ export default function App() {
   const [sentDM, setSentDM] = useState(() => safeStorage.parse('ig_sent_dm', []));
   const [failedImages, setFailedImages] = useState(new Set());
 
-  const [settingsData, setSettingsData] = useState(() => ({
-    ...DEFAULT_SETTINGS,
-    ...safeStorage.parse('ig_settings', {}),
-  }));
+  const [settingsData, setSettingsData] = useState(() => {
+    const savedSettings = safeStorage.parse('ig_settings', {});
+    return {
+      ...DEFAULT_SETTINGS,
+      ...savedSettings,
+      nichePresets: resolveNichePresets(savedSettings.nichePresets),
+    };
+  });
 
   useLayoutEffect(() => {
     document.documentElement.classList.toggle(
@@ -251,9 +256,7 @@ export default function App() {
           feedbackCheckEnabled: data.feedbackCheckEnabled === true,
           monochromeMode: data.monochromeMode === true,
           feedbackCheckIntervalMinutes: data.feedbackCheckIntervalMinutes || 60,
-          nichePresets: Array.isArray(data.nichePresets)
-            ? data.nichePresets
-            : prev.nichePresets,
+          nichePresets: resolveNichePresets(data.nichePresets),
           donorGroups: ensureDefaultDonorGroups(Array.isArray(data.donorGroups) ? data.donorGroups : []),
         }));
         pendingSave.current = false; // Reset dirty flag after polling
@@ -797,6 +800,8 @@ export default function App() {
         {activeTab === 'profiles' && (
           <ProfilesTab
             girls={girls}
+            donors={settingsData.donors}
+            nichePresets={settingsData.nichePresets}
             votes={votes}
             failedImages={failedImages}
             onVote={handleVote}

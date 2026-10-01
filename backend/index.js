@@ -131,49 +131,45 @@ const getInstagramPage = async (context) => {
   return page;
 };
 const fetchProfileInfo = async (page, username) => {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const profile = await page.evaluate(async (uname) => {
-      try {
-        const res = await fetch(
-          `/api/v1/users/web_profile_info/?username=${encodeURIComponent(uname)}`,
-          {
-            headers: { 'X-IG-App-ID': '936619743392459' },
-          }
+  await utils_1.wait(1800 + Math.random() * 2200);
+  return page.evaluate(async (uname) => {
+    try {
+      const res = await fetch(
+        `/api/v1/users/web_profile_info/?username=${encodeURIComponent(uname)}`,
+        {
+          headers: { 'X-IG-App-ID': '936619743392459' },
+        }
+      );
+      if (!res.ok) return null;
+
+      const json = await res.json();
+      const u = json.data?.user;
+      if (!u) return null;
+
+      const photoVersions = [
+        ...(Array.isArray(u.hd_profile_pic_versions) ? u.hd_profile_pic_versions : []),
+        u.hd_profile_pic_url_info,
+        u.profile_pic_url_info,
+      ]
+        .filter((entry) => entry?.url)
+        .sort(
+          (left, right) =>
+            (Number(right.width) || 0) * (Number(right.height) || 0) -
+            (Number(left.width) || 0) * (Number(left.height) || 0)
         );
-        if (!res.ok) return null;
 
-        const json = await res.json();
-        const u = json.data?.user;
-        if (!u) return null;
-
-        const photoVersions = [
-          ...(Array.isArray(u.hd_profile_pic_versions) ? u.hd_profile_pic_versions : []),
-          u.hd_profile_pic_url_info,
-          u.profile_pic_url_info,
-        ]
-          .filter((entry) => entry?.url)
-          .sort(
-            (left, right) =>
-              (Number(right.width) || 0) * (Number(right.height) || 0) -
-              (Number(left.width) || 0) * (Number(left.height) || 0)
-          );
-
-        return {
-          name: u.full_name || uname,
-          bio: u.biography || '',
-          photo: photoVersions[0]?.url || u.profile_pic_url_hd || u.profile_pic_url || '',
-          fCount: u.edge_followed_by?.count || 0,
-          pCount: u.edge_owner_to_timeline_media?.count || 0,
-          isPrivate: u.is_private,
-        };
-      } catch {
-        return null;
-      }
-    }, username);
-    if (profile) return profile;
-    if (attempt < 2) await utils_1.wait(400 * (attempt + 1));
-  }
-  return null;
+      return {
+        name: u.full_name || uname,
+        bio: u.biography || '',
+        photo: photoVersions[0]?.url || u.profile_pic_url_hd || u.profile_pic_url || '',
+        fCount: u.edge_followed_by?.count || 0,
+        pCount: u.edge_owner_to_timeline_media?.count || 0,
+        isPrivate: u.is_private,
+      };
+    } catch {
+      return null;
+    }
+  }, username);
 };
 const cachePanelPhoto = async (page, photoUrl) => {
   if (!photoUrl) {
@@ -383,7 +379,7 @@ const matchesWordsBlacklist = (searchString, wordsBlacklist = []) =>
   wordsBlacklist.length > 0 &&
   wordsBlacklist.some((kw) => searchString.includes(String(kw).trim().toLowerCase()));
 
-const analyzeProfile = async (context, url, config, donor = '') => {
+const analyzeProfile = async (context, url, config, donor = '', options = {}) => {
   if (state_1.StateManager.has(url)) return;
   const usernameFromUrl = url.split('/').filter(Boolean).pop() || '';
   if (state_1.StateManager.hasUsername(usernameFromUrl)) {
@@ -481,7 +477,7 @@ const analyzeProfile = async (context, url, config, donor = '') => {
       .first()
       .innerText()
       .catch(() => username);
-    const apiProfile = await fetchProfileInfo(page, username);
+    const apiProfile = options.skipApi ? null : await fetchProfileInfo(page, username);
     const extraData = await page
       .evaluate(
         ({ resolvedProfile }) => {
@@ -602,8 +598,8 @@ const analyzeProfileFastInternal = async (context, url, config, donor = '', apiP
     const data = await fetchProfileInfo(page, username);
 
     if (!data) {
-      logger.warn(`         ⚠️ API не вернул данные, открываем профиль как fallback.`);
-      return analyzeProfile(context, url, config, donor);
+      logger.warn(`         ⚠️ API не вернул данные. Читаем профиль со страницы без повторного API-запроса.`);
+      return analyzeProfile(context, url, config, donor, { skipApi: true });
     }
 
     const searchString = `${data.name} ${data.bio} ${username}`.toLowerCase();
@@ -1178,11 +1174,11 @@ const processDonor = async (context, donorUrl, config, totalAccounts = 0) => {
           }
 
           if (humanEmulation) {
-            const delay = 2000 + Math.random() * 2000;
+            const delay = 6000 + Math.random() * 4000;
             logger.info(`👤 [HUMAN] Пауза ${Math.round(delay / 1000)}с после пачки профилей...`);
             await (0, anti_fraud_1.waitWithActivity)(page, delay);
           } else {
-            await randomDelay(100, 300);
+            await randomDelay(2500, 5000);
           }
 
           if (shouldSkipDonor) break;

@@ -48,6 +48,11 @@
 
 ::-webkit-scrollbar {
   width: 5px;
+  background: transparent;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -68,6 +73,11 @@ html {
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
   min-height: 100vh;
+}
+
+html {
+  overflow-y: overlay;
+  scrollbar-gutter: auto;
 }
 
 /* Background Atmosphere */
@@ -193,4 +203,4 @@ body::before {
   background: hsl(var(--primary));
   box-shadow: var(--shadow-sm);
 }
-
+

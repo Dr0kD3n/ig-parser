@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from 'react';
+import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
   HeartIcon,
   XIcon,
@@ -18,9 +18,29 @@ import {
   hasTelegram,
 } from '../utils/profile';
 import { filterProfiles } from '../utils/profileFilters';
+import { normalizeDonorUrl } from '../utils/donor';
+import { extractDonorNiche, resolveNicheCategory } from '../constants/nichePresets';
 import { usePersistedFilters } from '../hooks/usePersistedFilters';
 
 const ITEMS_PER_PAGE = 60;
+
+function getPrimaryDonorUsername(profile) {
+  return String(profile?.donor || '')
+    .split(',')
+    .map((donor) => donor.replace(/^@/, '').trim())
+    .find(Boolean);
+}
+
+function getProfileDonorCategory(profile, donorMetaByUsername, nichePresets) {
+  const donorUsername = getPrimaryDonorUsername(profile);
+  const donorMeta = donorMetaByUsername.get(normalizeDonorUrl(donorUsername));
+  const donorNiche = extractDonorNiche({
+    niche: profile.donor_niche || donorMeta?.niche,
+    keyword: profile.donor_keyword || donorMeta?.keyword,
+    city: profile.donor_city || donorMeta?.city,
+  });
+  return resolveNicheCategory(donorNiche, nichePresets);
+}
 
 const SkeletonCard = memo(function SkeletonCard() {
   return (
@@ -45,12 +65,15 @@ const ProfileCard = memo(function ProfileCard({
   onImageError,
   onTgCheck,
   authFetch,
+  donorCategory,
 }) {
   const isLiked = votes[g.url] === 'like';
   const isDisliked = votes[g.url] === 'dislike';
   const [checkingTg, setCheckingTg] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const photoSrc = getProfilePhotoSrc(g.photo_local, g.photo);
+  const donorUsername = getPrimaryDonorUsername(g);
+  const donorPhotoSrc = getProfilePhotoSrc(g.donor_photo_local, g.donor_photo);
 
   const handleTgClick = async (e) => {
     e.stopPropagation();
@@ -214,6 +237,16 @@ const ProfileCard = memo(function ProfileCard({
             <div className="profile-card-identity">
               <strong>{g.name}</strong>
               {g.username && g.username !== g.name ? <span>@{g.username}</span> : null}
+              {donorUsername ? (
+                <a
+                  className="profile-card-donor"
+                  href={`https://instagram.com/${encodeURIComponent(donorUsername)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {donorCategory || 'Без категории'}
+                </a>
+              ) : null}
             </div>
             <div className="actions profile-card-actions">
               <button
@@ -244,12 +277,32 @@ const ProfileCard = memo(function ProfileCard({
           </div>
         </div>
       </div>
+      {donorUsername ? (
+        <div className="profile-card-donor-preview" role="tooltip">
+          <div className="donor-popover-header">
+            {donorPhotoSrc ? <img src={donorPhotoSrc} className="donor-popover-img" alt="" /> : null}
+            <div className="donor-popover-name">{g.donor_name || donorCategory || 'Донор'}</div>
+          </div>
+          {donorCategory ? <div className="donor-popover-search">{donorCategory}</div> : null}
+          <div className="donor-popover-stats">
+            {g.donor_followers_count > 0 ? (
+              <span>👥 {g.donor_followers_count.toLocaleString()}</span>
+            ) : null}
+            {g.donor_posts_count > 0 ? (
+              <span>📸 {g.donor_posts_count.toLocaleString()}</span>
+            ) : null}
+          </div>
+          {g.donor_bio ? <div className="donor-popover-bio">{g.donor_bio}</div> : null}
+        </div>
+      ) : null}
     </div>
   );
 });
 
 export default function ProfilesTab({
   girls,
+  donors,
+  nichePresets,
   votes,
   failedImages,
   onVote,
@@ -272,9 +325,37 @@ export default function ProfilesTab({
   const filters = usePersistedFilters();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [primaryFiltersOpen, setPrimaryFiltersOpen] = useState(false);
+  const [donorCategoriesOpen, setDonorCategoriesOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const filtersRef = useRef(null);
   const primaryFiltersRef = useRef(null);
+  const donorMetaByUsername = useMemo(() => {
+    const map = new Map();
+    for (const donor of donors || []) {
+      const url = typeof donor === 'string' ? donor : donor?.url;
+      const username = normalizeDonorUrl(url);
+      if (username) map.set(username, typeof donor === 'string' ? { url: donor } : donor);
+    }
+    return map;
+  }, [donors]);
+  const { profileDonorCategories, donorCategoryOptions } = useMemo(() => {
+    const categoriesByUrl = new Map();
+    const categoryCounts = new Map();
+    for (const profile of girls) {
+      const category = getProfileDonorCategory(profile, donorMetaByUsername, nichePresets);
+      if (!category) continue;
+      categoriesByUrl.set(profile.url, category);
+      categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
+    }
+    const options = Array.from(categoryCounts, ([category, count]) => ({ category, count })).sort(
+      (a, b) => a.category.localeCompare(b.category, 'ru')
+    );
+    return { profileDonorCategories: categoriesByUrl, donorCategoryOptions: options };
+  }, [girls, donorMetaByUsername, nichePresets]);
+  const availableDonorCategories = new Set(donorCategoryOptions.map((item) => item.category));
+  const activeDonorCategories = filters.filterDonorCategories.filter((category) =>
+    availableDonorCategories.has(category)
+  );
 
   const resetPage = () => setCurrentPage(1);
 
@@ -283,13 +364,12 @@ export default function ProfilesTab({
       if (filtersRef.current && !filtersRef.current.contains(event.target)) setFiltersOpen(false);
       if (primaryFiltersRef.current && !primaryFiltersRef.current.contains(event.target)) {
         setPrimaryFiltersOpen(false);
+        setDonorCategoriesOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const uniqueDonors = Array.from(new Set(girls.map((g) => g.donor).filter(Boolean))).sort();
 
   const filtered = filterProfiles(girls, {
     votes,
@@ -299,6 +379,8 @@ export default function ProfilesTab({
     matchesProfileCity,
     matchesWordsBlacklist,
     ...filters,
+    filterDonorCategories: activeDonorCategories,
+    profileDonorCategories,
   });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
@@ -357,21 +439,56 @@ export default function ProfilesTab({
           <option value="yes">Есть Telegram</option>
           <option value="none">Непроверен</option>
         </select>
-        <select
-          className="select-input"
-          value={filters.filterDonor}
-          onChange={(e) => {
-            filters.setFilterDonor(e.target.value);
-            resetPage();
-          }}
-        >
-          <option value="all">Доноры: Все профили</option>
-          {uniqueDonors.map((d) => (
-            <option key={d} value={d}>
-              @{d}
-            </option>
-          ))}
-        </select>
+        <div className="profile-donor-category-filter">
+          <button
+            type="button"
+            className="select-input profile-donor-category-trigger"
+            onClick={() => setDonorCategoriesOpen((open) => !open)}
+            aria-expanded={donorCategoriesOpen}
+            aria-controls="profile-donor-category-options"
+          >
+            {activeDonorCategories.length === 0
+              ? 'Ниши: все категории'
+              : `Ниши выбраны: ${activeDonorCategories.length}`}
+          </button>
+          {donorCategoriesOpen ? (
+            <div
+              id="profile-donor-category-options"
+              className="profile-donor-category-options"
+            >
+              <div className="profile-donor-category-title">Категории ниш</div>
+              {donorCategoryOptions.map(({ category, count }) => (
+                <label className="profile-donor-category-option" key={category}>
+                  <input
+                    type="checkbox"
+                    checked={filters.filterDonorCategories.includes(category)}
+                    onChange={() => {
+                      filters.setFilterDonorCategories((current) =>
+                        current.includes(category)
+                          ? current.filter((value) => value !== category)
+                          : [...current, category]
+                      );
+                      resetPage();
+                    }}
+                  />
+                  <span>{category}</span>
+                  <small>{count}</small>
+                </label>
+              ))}
+              <button
+                type="button"
+                className="profile-donor-category-clear"
+                disabled={filters.filterDonorCategories.length === 0}
+                onClick={() => {
+                  filters.setFilterDonorCategories([]);
+                  resetPage();
+                }}
+              >
+                Сбросить выбор
+              </button>
+            </div>
+          ) : null}
+        </div>
           </div>
         </div>
         <div className="profile-toolbar-meta">
@@ -492,6 +609,7 @@ export default function ProfilesTab({
                 onImageError={onImageError}
                 onTgCheck={onTgCheck}
                 authFetch={authFetch}
+                donorCategory={profileDonorCategories.get(g.url)}
               />
             ))}
         {!isLoading && pageData.length === 0 && (
